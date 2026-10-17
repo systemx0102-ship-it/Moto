@@ -180,10 +180,42 @@ export class Terrain {
     mesh.name = 'terrain';
     const group = new THREE.Group();
     group.add(mesh);
+    group.add(this._skirt(mat));
     group.add(this._farRing());
     if (this.track.theme.water) group.add(this._water());
     this.group = group;
     return group;
+  }
+
+  // flat ground annulus beyond the height field so no sky shows between terrain edge and horizon
+  _skirt(mat) {
+    const th = this.th, w = this.track.theme.water;
+    this.skirtY = w ? w.level - 0.6 : th.base - (th.flat ? 0.2 : th.amp * 0.55 + 3);
+    const segs = 96, radii = [this.size * 0.36, this.size * 0.5, this.size * 0.75, this.size * 1.3, this.size * 3];
+    const pos = [], uv = [], col = [], nor = [], idx = [];
+    for (let r = 0; r < radii.length; r++) {
+      for (let s = 0; s <= segs; s++) {
+        const a = (s / segs) * Math.PI * 2;
+        const x = this.cx + Math.cos(a) * radii[r], z = this.cz + Math.sin(a) * radii[r];
+        pos.push(x, this.skirtY, z); nor.push(0, 1, 0); uv.push(x / 14, z / 14); col.push(0.86, 0.86, 0.86);
+      }
+    }
+    for (let r = 0; r < radii.length - 1; r++) {
+      for (let s = 0; s < segs; s++) {
+        const a = r * (segs + 1) + s, b = a + 1, c = a + segs + 1, d = c + 1;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, mat);
+    m.name = 'skirt';
+    m.receiveShadow = false;
+    return m;
   }
 
   _farRing() {
@@ -207,7 +239,7 @@ export class Terrain {
         let h = Math.pow(ridge, 2.2) * far.height * (0.6 + 0.4 * n.noise(a * 2, 3));
         if (far.mesa) h = Math.round(h / 40) * 40 * 0.9 + h * 0.1;
         const rr = radius + v * radius * 0.25;
-        const hh = -20 + h * Math.sin(v * Math.PI) * (v < 0.5 ? v * 2 : 1);
+        const hh = this.skirtY - 8 + h * Math.sin(v * Math.PI) * (v < 0.5 ? v * 2 : 1);
         pos.push(this.cx + Math.cos(a) * rr, hh, this.cz + Math.sin(a) * rr);
         const t = far.snow ? smoothstep(far.height * 0.35, far.height * 0.6, hh) : 0;
         const c = cBase.clone().lerp(cSnow, t);

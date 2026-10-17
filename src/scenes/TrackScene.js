@@ -5,6 +5,7 @@ import { Terrain } from '../track/Terrain.js';
 import { Environment } from '../track/Environment.js';
 import { Scenery } from '../track/Scenery.js';
 import { Vegetation, WIND } from '../track/Vegetation.js';
+import { Trackside } from '../track/Trackside.js';
 import { WEATHER } from '../track/themes.js';
 import { Save } from '../core/Settings.js';
 import { nextFrame } from '../core/utils.js';
@@ -37,6 +38,10 @@ export class TrackScene {
     await nextFrame();
     ts.vegetation = new Vegetation(ts.track, ts.terrain, q, engine.renderer);
     ts.scene.add(ts.vegetation.build());
+    onProgress(0.72, 'Montando detalles de pista…');
+    await nextFrame();
+    ts.trackside = new Trackside(ts.track, ts.terrain, q);
+    ts.scene.add(ts.trackside.build());
     WIND.strength.value = (WEATHER[def.weather] || WEATHER.clear).wind;
     ts.env.setLamps(ts.scenery.lamps);
     if (ts.terrain.waterMat) {
@@ -55,6 +60,7 @@ export class TrackScene {
   update(dt, camera, focus) {
     WIND.time.value += dt;
     this.env.update(dt, camera, focus);
+    this.trackside?.update(dt);
     if (this.waterNormal) { this.waterNormal.offset.x += dt * 0.004; this.waterNormal.offset.y += dt * 0.0025; }
   }
 

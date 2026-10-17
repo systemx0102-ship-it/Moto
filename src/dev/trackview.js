@@ -15,7 +15,7 @@ const t0 = performance.now();
 const base = TRACK_BY_ID[P.get('track') || 'gp'];
 const ts = await TrackScene.create(engine, { ...base, time: P.get('time') || base.time, weather: P.get('weather') || base.weather });
 if (P.get('noclouds') && ts.env.clouds) { ts.env.clouds.visible = false; if (ts.env.clouds2) ts.env.clouds2.visible = false; }
-if (P.get('pitch')) { /* look up */ }
+if (P.get('hide')) for (const n of P.get('hide').split(',')) { const o = ts.scene.getObjectByName(n); if (o) o.visible = false; }
 if (engine.fx && P.get('drops')) { engine.fx.uRain.value = +P.get('drops'); engine.fx.uTime.value = 3; }
 const buildMs = performance.now() - t0;
 engine.setScene(ts.scene, engine.camera);
@@ -48,5 +48,6 @@ engine.resize();
 engine.render();
 engine.render();
 document.title = `ok build=${buildMs.toFixed(0)}ms calls=${engine.renderer.info.render.calls} tris=${engine.renderer.info.render.triangles} L=${ts.track.L.toFixed(0)}`;
+window.__ts = ts; window.__engine = engine;
 window.__ready = true;
 })().catch((e) => { document.title = 'ERR ' + e.message; console.error(e); window.__ready = true; });
