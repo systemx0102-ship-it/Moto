@@ -1,8 +1,8 @@
 // Visual / environmental configuration per track theme.
 export const THEMES = {
   gp: {
-    rockGround: 'stone', dirtGround: 'dirt', dirtAmt: 0.5,
-    ground: 'grass', runoffGround: 'gravel', barrier: 'tirewall', fence: true, grandstands: true,
+    rockGround: 'stone', dirtGround: 'dirt', dirtAmt: 0.5, apron: 2.5, gravelTraps: true,
+    ground: 'grass', runoffGround: 'grass', barrier: 'tirewall', fence: true, grandstands: true,
     road: { base: [58, 60, 64], edge: '#f4f4f4', centerDash: false, rubber: true, edgeRed: false },
     terrain: { amp: 18, scale: 420, base: -2, ridged: false, color: 0x7a9a50, rockColor: 0x8a8070 },
     far: { height: 140, color: 0x6a7a68, snow: false },

@@ -124,6 +124,7 @@ export class Track {
     out.onCurb = this.curbMask ? (this.curbAt(seg, d)) : false;
     out.offRoad = ad > this.halfW + (out.onCurb ? 1.2 : 0);
     out.barrier = ad >= this.barrierD - 0.35;
+    out.gravel = this.gravelMask && ad > this.halfW + (this.theme.apron || 0) + 1.2 ? (this.gravelMask[seg] & (d < 0 ? 1 : 2)) !== 0 : false;
     return out;
   }
 
@@ -242,15 +243,40 @@ export class Track {
     roadMesh.name = 'road';
     group.add(roadMesh);
 
-    // runoff (both sides) with world-space UVs
+    // runoff (both sides) with world-space UVs; optional asphalt apron
     const rg = groundTextures(th.runoffGround || 'grass', 11);
     const runMat = new THREE.MeshStandardMaterial({ map: rg.map, normalMap: rg.normalMap, roughnessMap: rg.roughnessMap, color: 0xffffff });
+    const apron = th.apron || 0;
     for (const side of [-1, 1]) {
-      const a = side * this.halfW, b = side * (this.barrierD + 2.5);
+      const a = side * (this.halfW + apron), b = side * (this.barrierD + 2.5);
       const geo = this.ribbon(side < 0 ? [b, a] : [a, b], 4, () => -0.012, null, null, true);
       const m = new THREE.Mesh(geo, runMat);
       m.receiveShadow = true;
       group.add(m);
+    }
+    if (apron) {
+      const at = groundTextures('asphaltDark', 21);
+      const apMat = new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, roughness: 0.9, color: 0xb0b4b8 });
+      for (const side of [-1, 1]) {
+        const a = side * this.halfW, b = side * (this.halfW + apron);
+        const m = new THREE.Mesh(this.ribbon(side < 0 ? [b, a] : [a, b], 2, () => -0.004, null, null, true), apMat);
+        m.receiveShadow = true;
+        group.add(m);
+      }
+    }
+    // gravel traps on the outside of corners
+    this._computeGravel();
+    if (this.gravelRuns.length) {
+      const gt = groundTextures('gravel', 23);
+      const gMat = new THREE.MeshStandardMaterial({ map: gt.map, normalMap: gt.normalMap, roughnessMap: gt.roughnessMap, color: 0xd8d2c4 });
+      for (const run of this.gravelRuns) {
+        const side = run.side;
+        const a = side * (this.halfW + apron + 1.2), b = side * (this.barrierD - 0.4);
+        const geo = this.ribbon(side < 0 ? [b, a] : [a, b], 3, (i, d) => 0.004 + Math.sin(i * 1.7 + d) * 0.01, null, [run.i0, run.i1], true);
+        const m = new THREE.Mesh(geo, gMat);
+        m.receiveShadow = true;
+        group.add(m);
+      }
     }
     // curbs
     const ct = curbTexture();
@@ -271,6 +297,32 @@ export class Track {
     group.add(this._buildStart());
     this.group = group;
     return group;
+  }
+
+  _computeGravel() {
+    const N = this.N;
+    this.gravelMask = new Uint8Array(N);
+    this.gravelRuns = [];
+    if (!this.theme.gravelTraps) return;
+    const k = this.c.kappaSmooth;
+    const pre = Math.round(10 / this.ds), post = Math.round(45 / this.ds);
+    for (let i = 0; i < N; i++) {
+      if (Math.abs(k[i]) < 1 / 220) continue;
+      const outside = k[i] > 0 ? 2 : 1;
+      for (let j = -pre; j <= post; j++) this.gravelMask[(i + j + N) % N] |= outside;
+    }
+    for (let j = -60; j <= 25; j++) this.gravelMask[(j + N) % N] = 0;
+    const mask = this.gravelMask;
+    for (const [bit, side] of [[1, -1], [2, 1]]) {
+      let start = -1, g0 = 0;
+      while (g0 < N && (mask[g0] & bit)) g0++;
+      for (let n = 0; n <= N; n++) {
+        const i = (g0 + n) % N;
+        const on = (mask[i] & bit) !== 0 && n < N;
+        if (on && start < 0) start = g0 + n;
+        if (!on && start >= 0) { this.gravelRuns.push({ side, i0: start, i1: g0 + n }); start = -1; }
+      }
+    }
   }
 
   _computeCurbs() {

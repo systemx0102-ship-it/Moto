@@ -5,7 +5,7 @@ export const TRACKS = [
   {
     id: 'gp', name: 'AUTÓDROMO MÍTICO', place: 'Circuito internacional', theme: 'gp', time: 'day', weather: 'clear',
     blurb: 'Circuito de Gran Premio con recta de 650 m, horquilla y chicane final. Grip máximo.',
-    width: 14, runoff: 13, runoffMat: 'gravel', bank: 0.25, laps: 3,
+    width: 14, runoff: 13, runoffMat: 'grass', bank: 0.25, laps: 3,
     corners: [[0, 700, 45], [150, 760, 60], [380, 620, 120], [420, 450, 30], [250, 420, 50], [330, 250, 80], [600, 180, 25], [560, 40, 150], [300, -60, 40], [240, 60, 35], [160, -20, 35], [40, -120, 70]],
     startEdge: 11,
     elevation: [[0, 0], [0.15, 4], [0.3, 12], [0.45, 8], [0.6, 2], [0.75, 6], [0.9, 1]],

@@ -175,7 +175,7 @@ export class BikePhysics {
 
     // resistances
     const drag = 0.5 * RHO * this.CdA * (1 - this.draft * 0.35) * (this.nitroOn ? 0.82 : 1) * this.v * this.v;
-    const rolling = (0.015 + (P.offRoad ? 0.05 + (1 - this.offroadGrip) * 0.16 : 0)) * this.mass * G;
+    const rolling = (0.015 + (P.offRoad ? 0.05 + (1 - this.offroadGrip) * 0.16 : 0) + (P.gravel ? 0.35 * (1.2 - this.offroadGrip) : 0)) * this.mass * G;
     const align = Math.cos(this.vh - Math.atan2(P.tx, P.tz));
     const slopeF = this.mass * G * Math.sin(Math.atan(P.grade)) * align;
     let a = 0;
