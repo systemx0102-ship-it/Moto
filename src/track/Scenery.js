@@ -155,7 +155,7 @@ export class Scenery {
     const th = this.track.theme;
     const dens = this.q.density;
     const T = th.trees;
-    const total = Math.round(1400 * T.density * dens);
+    const total = this.useVegetation ? 0 : Math.round(1400 * T.density * dens);
     if (total > 0) {
       if (T.pine) this._scatter(pineGeo(!!T.snowy), Math.round(total * T.pine), { minD: 6, maxD: 420, scale: [0.8, 1.6], tint: 0.12 });
       if (T.broad) this._scatter(broadGeo(3), Math.round(total * T.broad * 0.6), { minD: 7, maxD: 380, scale: [0.8, 1.4], tint: 0.15 });

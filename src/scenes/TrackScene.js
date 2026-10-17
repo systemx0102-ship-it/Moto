@@ -4,6 +4,7 @@ import { Track } from '../track/Track.js';
 import { Terrain } from '../track/Terrain.js';
 import { Environment } from '../track/Environment.js';
 import { Scenery } from '../track/Scenery.js';
+import { Vegetation, WIND } from '../track/Vegetation.js';
 import { Save } from '../core/Settings.js';
 import { nextFrame } from '../core/utils.js';
 import { waterNormalTexture } from '../core/textures.js';
@@ -29,7 +30,13 @@ export class TrackScene {
     onProgress(0.6, 'Plantando escenario…');
     await nextFrame();
     ts.scenery = new Scenery(ts.track, ts.terrain, q);
+    ts.scenery.useVegetation = true;
     ts.scene.add(ts.scenery.build());
+    onProgress(0.68, 'Haciendo crecer el bosque…');
+    await nextFrame();
+    ts.vegetation = new Vegetation(ts.track, ts.terrain, q, engine.renderer);
+    ts.scene.add(ts.vegetation.build());
+    WIND.strength.value = { storm: 2.2, rain: 1.4, wet: 0.9, snow: 1.0, clear: 0.8 }[def.weather] ?? 1;
     ts.env.setLamps(ts.scenery.lamps);
     if (ts.terrain.waterMat) {
       const wn = waterNormalTexture();
@@ -45,6 +52,7 @@ export class TrackScene {
   }
 
   update(dt, camera, focus) {
+    WIND.time.value += dt;
     this.env.update(dt, camera, focus);
     if (this.waterNormal) { this.waterNormal.offset.x += dt * 0.004; this.waterNormal.offset.y += dt * 0.0025; }
   }
