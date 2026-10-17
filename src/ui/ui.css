@@ -154,7 +154,7 @@ button { font-family: inherit; }
 .hud-laps { position: absolute; left: 24px; top: clamp(78px, 9.5vw, 104px); }
 .hud-laps .lap { font-size: 15px; letter-spacing: .18em; font-weight: 700; }
 .hud-laps .times { margin-top: 6px; font-family: var(--font); font-size: 16px; line-height: 1.35; font-weight: 600; }
-.hud-laps .times b { font-family: var(--font-h); font-size: 13px; color: var(--dim); font-weight: 500; display: inline-block; width: 70px; letter-spacing: .1em; }
+.hud-laps .times b { font-family: var(--font-h); font-size: 12px; color: var(--dim); font-weight: 500; display: inline-block; width: 86px; letter-spacing: .1em; }
 .hud-tower { position: absolute; left: 22px; top: clamp(170px, 20vw, 200px); width: 210px; font-family: var(--font); }
 .tw-row { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 8px; margin-bottom: 2px; background: rgba(5, 8, 16, .66); font-size: 14px; font-weight: 700; border-left: 3px solid transparent; transition: transform .3s; }
 .tw-row .n { width: 18px; text-align: right; font-family: var(--font-h); font-size: 12px; color: var(--dim); }
@@ -249,8 +249,23 @@ button { font-family: inherit; }
   .menu-left { top: auto; bottom: 60px; transform: none; }
   .logo { margin-bottom: 10px; }
 }
+@media (max-height: 820px) {
+  .menu-left { gap: 8px; }
+  .menu-left .btn { padding: 10px 22px 10px 18px; font-size: 15px; }
+  .logo { margin-bottom: 14px; }
+  .logo .l1, .logo .l2 { font-size: clamp(34px, 5vw, 64px); }
+  .logo .l3 { margin-top: 6px; font-size: 12px; }
+}
+@media (max-height: 620px) {
+  .menu-left { gap: 5px; top: 46%; }
+  .menu-left .btn { padding: 7px 18px 7px 14px; font-size: 13px; }
+  .logo { margin-bottom: 8px; }
+  .logo .l1, .logo .l2 { font-size: clamp(28px, 4.2vw, 48px); }
+  .logo .l3 { display: none; }
+  .menu-foot { padding-top: 6px; padding-bottom: 6px; font-size: 12px; }
+  .hud-tower { transform: scale(.8); transform-origin: top left; }
+  .track-card { min-height: 160px; }
+}
 @media (max-height: 520px) {
   .hud-tower { display: none; }
-  .menu-left .btn { padding: 9px 18px; }
-  .logo { margin-bottom: 8px; }
 }

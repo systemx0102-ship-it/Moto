@@ -157,15 +157,15 @@ export class HUD {
     const gear = spec.engine.electric ? 'D' : String(ph.gear);
     const shiftLight = !spec.engine.electric && rpmF > 0.93;
     g.fillStyle = shiftLight ? '#ff3b4e' : 'rgba(0,229,255,0.16)';
-    const gx = C + S * 0.2, gy = C + S * 0.22, gw = S * 0.14, gh = S * 0.15;
+    const gx = C, gy = C + S * 0.27, gw = S * 0.14, gh = S * 0.14;
     g.beginPath(); g.roundRect ? g.roundRect(gx - gw / 2, gy - gh / 2, gw, gh, S * 0.02) : g.rect(gx - gw / 2, gy - gh / 2, gw, gh); g.fill();
     g.fillStyle = shiftLight ? '#fff' : '#00e5ff';
     g.font = `900 ${S * 0.1}px Orbitron, sans-serif`; g.textBaseline = 'middle';
     g.fillText(gear, gx, gy + S * 0.005);
     g.fillStyle = 'rgba(160,190,220,0.8)';
     g.font = `700 ${S * 0.035}px Orbitron, sans-serif`;
-    g.fillText(spec.engine.electric ? 'kW' : 'x1000', C - S * 0.2, C + S * 0.22);
-    if (ph.nitroOn) { g.fillStyle = '#ff2bd6'; g.font = `900 ${S * 0.045}px Orbitron, sans-serif`; g.fillText('NITRO', C, C - S * 0.16); }
+    g.fillText(spec.engine.electric ? 'MOTOR' : 'x1000 RPM', C, C - S * 0.09);
+    if (ph.nitroOn) { g.fillStyle = '#ff2bd6'; g.font = `900 ${S * 0.05}px Orbitron, sans-serif`; g.fillText('NITRO', C, C - S * 0.16); }
   }
 
   _drawLean(ph) {

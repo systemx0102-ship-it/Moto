@@ -1,0 +1,59 @@
+=====================================================================
+                    MOTO MÍTICO · ULTRA RACING 3D
+=====================================================================
+
+CÓMO JUGAR (sin instalar nada)
+------------------------------
+1. Descomprime el ZIP en cualquier carpeta.
+2. Windows: doble clic en "JUGAR (Windows).bat"
+   Mac:     doble clic en "JUGAR (Mac).command"
+   Linux:   ejecuta "jugar-linux.sh"
+   (o abre directamente "index.html" con Chrome, Edge o Firefox)
+3. Haz clic o pulsa una tecla para activar el sonido.
+
+Recomendado: Google Chrome o Microsoft Edge actualizados y una
+tarjeta gráfica con aceleración por hardware activada.
+Si va lento: AJUSTES > GRÁFICOS > Calidad BAJO o MEDIO.
+Si tu equipo es potente: AJUSTES > GRÁFICOS > Calidad ULTRA.
+
+CONTROLES
+---------
+  Acelerar ................ W  /  Flecha arriba      (Mando: RT)
+  Frenar .................. S  /  Flecha abajo       (Mando: LT)
+  Inclinar ................ A D  /  Flechas izq/der  (Mando: stick)
+  Freno trasero / derrape . ESPACIO                  (Mando: B)
+  Nitro ................... SHIFT  /  N               (Mando: A)
+  Caballito ............... X                        (Mando: X)
+  Subir / bajar marcha .... E  /  Q                  (Mando: RB / LB)
+  Cambiar cámara .......... C                        (Mando: Y)
+  Mirar atrás ............. B
+  Volver a la pista ....... R                        (Mando: SELECT)
+  Pausa ................... ESC  /  P                (Mando: START)
+
+En móvil/tablet: activa "Controles táctiles" en AJUSTES > JUEGO.
+
+MODOS DE JUEGO
+--------------
+  * Carrera rápida  – hasta 11 rivales controlados por IA.
+  * Campeonato      – 6 rondas con puntos estilo Gran Premio y podio.
+  * Contrarreloj    – compite contra tu fantasma (se guarda tu mejor vuelta).
+  * Paseo libre     – rueda sin límite de vueltas.
+
+LAS 12 MOTOS (todas distintas, 0 personajes)
+--------------------------------------------
+  Raptor RR1000 (superbike), Apex GP-V4 (prototipo GP con alerones),
+  Viper 900 Triple (naked), Volt Phantom X (eléctrica sin bujes),
+  Iron Baron 1800 (crucero V-twin), Ghost Bobber (bobber springer),
+  Café Bullet 650 (café racer), Thunder Drag V-Max (power cruiser),
+  Mud Hornet 450 (motocross), Fang SM 700 (supermotard),
+  Atlas GT 1300 (trail bóxer), Ringo 2T 500 (clásica dos tiempos).
+
+LOS 6 CIRCUITOS
+---------------
+  Autódromo Mítico (día), Costa Dorada (atardecer), Neo Tokio (noche,
+  mojado), Cañón Rojo (desierto con saltos), Alpes Nevados (nieve) y
+  Bosque Tormenta (lluvia y rayos).
+
+Todo (modelos 3D, texturas, sonido de motores y música) se genera por
+código en tiempo real: el juego no necesita conexión a internet.
+Tus récords, fantasmas y ajustes se guardan en el navegador.

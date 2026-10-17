@@ -6,10 +6,12 @@ const out = process.argv[2] || '/tmp';
 const track = process.argv[3] || 'gp';
 const quality = process.argv[4] || 'bajo';
 const simSeconds = +(process.argv[5] || 60);
+const laps = +(process.argv[6] || 3);
+const camMode = +(process.argv[7] || 0);
 const W = 960, H = 540;
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const ctx = await b.newContext({ viewport: { width: W, height: H } });
-await ctx.addInitScript((q) => { try { const k = 'motomitico.save.v1'; const d = JSON.parse(localStorage.getItem(k) || '{}'); d.settings = { ...(d.settings || {}), quality: q }; localStorage.setItem(k, JSON.stringify(d)); } catch (e) {} }, quality);
+await ctx.addInitScript((q) => { try { const k = 'motomitico.save.v1'; const d = JSON.parse(localStorage.getItem(k) || '{}'); d.settings = { ...(d.settings || {}), quality: q.q, laps: q.laps, camera: q.cam }; localStorage.setItem(k, JSON.stringify(d)); } catch (e) {} }, { q: quality, laps, cam: camMode });
 const p = await ctx.newPage();
 const errors = [];
 p.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
@@ -54,8 +56,16 @@ console.log('full gas', JSON.stringify(await sim(5, { throttle: 1 })));
 await p.evaluate(() => window.__game.engine.render());
 await p.screenshot({ path: `${out}/s4_race1.png` });
 let last;
-for (let k = 0; k < simSeconds / 15; k++) { last = await sim(15, { auto: true }); console.log(`auto ${k}`, JSON.stringify(last)); if (last.phase !== 'race') break; }
-await p.evaluate(() => window.__game.engine.render());
-await p.screenshot({ path: `${out}/s5_race2.png` });
+for (let k = 0; k < simSeconds / 15; k++) {
+  last = await sim(15, { auto: true }); console.log(`auto ${k}`, JSON.stringify(last));
+  if (k === 1) { await p.evaluate(() => window.__game.engine.render()); await p.screenshot({ path: `${out}/s5_race2.png` }); }
+  if (last.phase !== 'race') break;
+}
+// let the finish sequence play out, then results
+for (let k = 0; k < 6; k++) { const st = await p.evaluate(() => window.__game.state); if (st !== 'race') break; await sim(2, { auto: true }); }
+await p.evaluate(() => { const g = window.__game; g.engine.onUpdate = g._origUpdate; });
+await p.waitForTimeout(2500);
+console.log('state', await p.evaluate(() => window.__game.state));
+await p.screenshot({ path: `${out}/s6_results.png` });
 console.log('ERRORS:', errors.length ? errors.slice(0, 8).join('\n') : 'none');
 await b.close();

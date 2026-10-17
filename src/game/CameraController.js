@@ -56,10 +56,14 @@ export class CameraController {
       const tx = ph.x - fx * dist * back, tz = ph.z - fz * dist * back;
       const ty = ph.y + hgt + (ph.airborne ? 0.3 : 0);
       if (!this.initialized) this.pos.set(tx, ty, tz);
-      const k = 1 - Math.exp(-(far ? 5 : 7.5) * dt);
-      this.pos.x += (tx - this.pos.x) * k;
-      this.pos.z += (tz - this.pos.z) * k;
-      this.pos.y += (ty - this.pos.y) * (1 - Math.exp(-4 * dt));
+      // stiff along the direction of travel (no lag at speed), softer sideways
+      const ex = tx - this.pos.x, ez = tz - this.pos.z;
+      const along = ex * fx + ez * fz;
+      const latx = ex - along * fx, latz = ez - along * fz;
+      const kA = 1 - Math.exp(-28 * dt), kL = 1 - Math.exp(-(far ? 4.5 : 6.5) * dt);
+      this.pos.x += along * fx * kA + latx * kL;
+      this.pos.z += along * fz * kA + latz * kL;
+      this.pos.y += (ty - this.pos.y) * (1 - Math.exp(-5 * dt));
       // stay above the surface
       const g = this.track.project(this.pos.x, this.pos.z, ph.hint, this._proj || (this._proj = {}));
       const minY = (Math.abs(g.d) < this.track.barrierD + 3 ? g.y : this.pos.y - 5) + 0.6;
