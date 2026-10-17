@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "MOTO MÍTICO — juego de carreras de motos 3D",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "node tools/build.mjs",
     "dev": "node tools/build.mjs --watch",

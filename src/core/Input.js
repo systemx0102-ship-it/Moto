@@ -145,3 +145,4 @@ class InputManager {
 }
 
 export const Input = new InputManager();
+if (typeof window !== 'undefined') window.__INPUT = Input;

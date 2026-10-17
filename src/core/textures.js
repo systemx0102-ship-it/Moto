@@ -490,7 +490,9 @@ export function flameTexture() {
     side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.5, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
     g.globalCompositeOperation = 'destination-out';
     g.fillStyle = side; g.fillRect(0, 0, 64, 256);
-    return toTexture(c, { wrap: false, aniso: false });
+    const t = toTexture(c, { wrap: false, aniso: false });
+    t.flipY = false; // hot end at v=0 (cone base)
+    return t;
   });
 }
 
@@ -525,14 +527,15 @@ export function starsTexture() {
   });
 }
 
-export function cloudTexture(seed = 8) {
-  return cached(`cloud:${seed}`, () => {
+export function cloudTexture(seed = 8, coverage = 0.5) {
+  return cached(`cloud:${seed}:${coverage}`, () => {
     const W = 1024, H = 256;
     const n = makeTileFbm(seed, 4, 6);
+    const thr = 0.62 - coverage * 0.3;
     const { c } = fillPixels(W, H, (x, y, o) => {
       const v = n(x / W, y / H) * 0.5 + 0.5;
       const fade = Math.sin((y / H) * Math.PI);
-      const a = clamp((v - 0.48) * 3, 0, 1) * fade;
+      const a = clamp((v - thr) * 3.2, 0, 1) * fade;
       o[0] = o[1] = o[2] = 255; o[3] = a * 255;
     });
     const t = toTexture(c, { wrap: false });
