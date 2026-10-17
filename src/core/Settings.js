@@ -28,6 +28,8 @@ const DEFAULTS = {
     rivals: 7,
     difficulty: 'normal',
     assist: true,
+    timeSel: 'auto',
+    weatherSel: 'auto',
   },
   records: {}, // trackId -> { lap, race, bike }
   ghosts: {}, // trackId -> { bike, lap, data(base64) }

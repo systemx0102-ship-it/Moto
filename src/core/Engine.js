@@ -27,6 +27,9 @@ const FinalShader = {
     uContrast: { value: 1.04 },
     uCenter: { value: new THREE.Vector2(0.5, 0.52) },
     uDamage: { value: 0 },
+    uRain: { value: 0 },
+    uSpeed: { value: 0 },
+    uAspect: { value: 1.7 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -34,13 +37,41 @@ const FinalShader = {
   `,
   fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse;
-    uniform float uTime, uBlur, uCA, uVignette, uGrain, uFlash, uTintAmt, uSat, uContrast, uDamage;
+    uniform float uTime, uBlur, uCA, uVignette, uGrain, uFlash, uTintAmt, uSat, uContrast, uDamage, uRain, uSpeed, uAspect;
     uniform vec3 uFlashColor, uTint;
     uniform vec2 uCenter;
     varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+    // raindrops on the lens: returns uv offset (refraction) and a mask in z
+    vec3 drops(vec2 uv) {
+      vec3 acc = vec3(0.0);
+      for (int L = 0; L < 3; L++) {
+        float fl = float(L);
+        vec2 grid = vec2(9.0 + fl * 7.0, 5.0 + fl * 4.0);
+        vec2 g = vec2(uv.x * uAspect / 1.7, uv.y) * grid;
+        // drops slide down (and sideways with speed)
+        g.y += uTime * (0.05 + fl * 0.04) * (1.0 + uSpeed * 2.0);
+        vec2 id = floor(g);
+        vec2 f = fract(g) - 0.5;
+        float n = hash(id + fl * 17.0);
+        float life = fract(uTime * (0.08 + n * 0.12) + n * 7.0);
+        if (n < uRain * (0.55 - fl * 0.12)) {
+          vec2 p = vec2(hash(id + 1.3) - 0.5, hash(id + 2.7) - 0.5) * 0.55;
+          float rad = (0.16 + 0.12 * hash(id + 5.1)) * (1.0 - fl * 0.2);
+          vec2 d = f - p;
+          d.y *= 1.0 + uSpeed * 1.5;
+          float m = smoothstep(rad, rad * 0.55, length(d)) * smoothstep(1.0, 0.7, life) * smoothstep(0.0, 0.08, life);
+          acc.xy += d * m * 0.06 / grid * 9.0;
+          acc.z = max(acc.z, m);
+        }
+      }
+      return acc;
+    }
     void main(){
-      vec2 dir = vUv - uCenter;
+      vec2 uvIn = vUv;
+      vec3 dr = vec3(0.0);
+      if (uRain > 0.001) { dr = drops(vUv); uvIn += dr.xy; }
+      vec2 dir = uvIn - uCenter;
       float dist = length(dir);
       vec3 col;
       float ca = uCA * (1.0 + uBlur * 6.0) * dist;
@@ -51,7 +82,7 @@ const FinalShader = {
         for (int i = 0; i < 10; i++) {
           float t = float(i) / 9.0;
           float w = 1.0 - t * 0.7;
-          vec2 uv = vUv - dir * amt * t;
+          vec2 uv = uvIn - dir * amt * t;
           acc.r += texture2D(tDiffuse, uv + dir * ca).r * w;
           acc.g += texture2D(tDiffuse, uv).g * w;
           acc.b += texture2D(tDiffuse, uv - dir * ca).b * w;
@@ -59,10 +90,12 @@ const FinalShader = {
         }
         col = acc / wsum;
       } else {
-        col.r = texture2D(tDiffuse, vUv + dir * ca).r;
-        col.g = texture2D(tDiffuse, vUv).g;
-        col.b = texture2D(tDiffuse, vUv - dir * ca).b;
+        col.r = texture2D(tDiffuse, uvIn + dir * ca).r;
+        col.g = texture2D(tDiffuse, uvIn).g;
+        col.b = texture2D(tDiffuse, uvIn - dir * ca).b;
       }
+      // drop highlights
+      col = mix(col, col * 0.85 + vec3(0.06), dr.z * 0.5);
       // grading
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(l), col, uSat);
@@ -165,6 +198,7 @@ export class Engine {
     this.renderer.setPixelRatio(clamp(scale, 0.35, 3));
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
+    if (this.finalPass) this.finalPass.uniforms.uAspect.value = w / h;
     this.camera.updateProjectionMatrix();
     if (this.composer) {
       this.composer.setPixelRatio(this.renderer.getPixelRatio());

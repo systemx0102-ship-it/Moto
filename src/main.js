@@ -75,7 +75,7 @@ class Game {
     this.lastCfg = cfg;
     Audio.init();
     Audio.stopMusic();
-    const progress = this.ui.loading(cfg.trackDef);
+    const progress = this.ui.loading(cfg.trackDef, cfg);
     await sleep(120);
     this.garage.deactivate();
     try {

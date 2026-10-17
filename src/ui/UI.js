@@ -10,8 +10,10 @@ import { Input } from '../core/Input.js';
 import { formatTime, clamp } from '../core/utils.js';
 
 const ICON = { race: '▶', champ: '♛', trial: '◷', free: '∞', garage: '⚙', settings: '☰', records: '★', back: '◀', play: '▶', retry: '↻', replay: '⏵', exit: '⏏', cam: '◉' };
-const TIME_LABEL = { day: 'DÍA', sunset: 'ATARDECER', dusk: 'ANOCHECER', night: 'NOCHE' };
-const WEATHER_LABEL = { clear: 'DESPEJADO', wet: 'MOJADO', snow: 'NIEVE', storm: 'TORMENTA', rain: 'LLUVIA' };
+const TIME_LABEL = { dawn: 'AMANECER', day: 'DÍA', sunset: 'ATARDECER', dusk: 'ANOCHECER', night: 'NOCHE' };
+const WEATHER_LABEL = { clear: 'DESPEJADO', cloudy: 'NUBLADO', wet: 'MOJADO', rain: 'LLUVIA', storm: 'TORMENTA', fog: 'NIEBLA', snow: 'NIEVE' };
+const TIME_OPTS = [['auto', 'AUTO'], ['dawn', 'AMANECER'], ['day', 'DÍA'], ['sunset', 'ATARDECER'], ['dusk', 'ANOCHECER'], ['night', 'NOCHE']];
+const WEATHER_OPTS = [['auto', 'AUTO'], ['clear', 'DESPEJADO'], ['cloudy', 'NUBLADO'], ['rain', 'LLUVIA'], ['storm', 'TORMENTA'], ['fog', 'NIEBLA'], ['snow', 'NIEVE']];
 const DIFF = [['facil', 'FÁCIL'], ['normal', 'NORMAL'], ['mitico', 'MÍTICO']];
 const TIPS = [
   'Inclinar más no siempre es girar más: si te pasas del límite de agarre, la moto se abre.',
@@ -269,6 +271,9 @@ export class UI {
         opts.append(stepper('Rivales', () => S.rivals, (d) => { S.rivals = clamp(S.rivals + d, 1, 11); Save.save(); }, (v) => String(v)));
         opts.append(stepper('Dificultad', () => DIFF.findIndex((x) => x[0] === S.difficulty), (d) => { const k = clamp(DIFF.findIndex((x) => x[0] === S.difficulty) + d, 0, 2); S.difficulty = DIFF[k][0]; Save.save(); }, (k) => DIFF[k][1]));
       }
+      const cyc = (key, list, d) => { const k = list.findIndex((x) => x[0] === S[key]); S[key] = list[(Math.max(0, k) + d + list.length) % list.length][0]; Save.save(); };
+      opts.append(stepper('Hora', () => S.timeSel, (d) => cyc('timeSel', TIME_OPTS, d), (v) => v === 'auto' ? `AUTO · ${TIME_LABEL[t.time]}` : TIME_LABEL[v]));
+      opts.append(stepper('Clima', () => S.weatherSel, (d) => cyc('weatherSel', WEATHER_OPTS, d), (v) => v === 'auto' ? `AUTO · ${WEATHER_LABEL[t.weather]}` : WEATHER_LABEL[v]));
       const bikeRow = h('div', { class: 'opt' }, h('span', { class: 'lab' }, 'Moto'), h('span', { style: { fontFamily: 'var(--font-h)', fontWeight: 700 } }, bike.short));
       opts.append(bikeRow);
       const ghost = Save.data.ghosts[t.id];
@@ -276,7 +281,7 @@ export class UI {
     };
     const go = this.btn('¡A correr!', ICON.play, () => {
       const t = TRACKS[sel];
-      g.startRace({ mode, trackDef: t, bikeId: Save.data.garage.bike, livery: Save.data.garage.livery[Save.data.garage.bike] ?? 0, laps: mode === 'free' ? 9999 : S.laps, rivals: mode === 'race' ? S.rivals : 0, difficulty: S.difficulty });
+      g.startRace({ mode, trackDef: t, bikeId: Save.data.garage.bike, livery: Save.data.garage.livery[Save.data.garage.bike] ?? 0, laps: mode === 'free' ? 9999 : S.laps, rivals: mode === 'race' ? S.rivals : 0, difficulty: S.difficulty, time: S.timeSel, weather: S.weatherSel });
     }, 'primary');
     const bikeBtn = this.btn('Cambiar moto', ICON.garage, () => this.garage(() => this.trackSelect(mode)), 'small');
     const back = this.btn('Volver', ICON.back, () => this.mainMenu(), 'small');
@@ -293,7 +298,8 @@ export class UI {
   trackSelectBack() { this.trackSelect(this._tsMode || 'race'); }
 
   // ---------------------------------------------------------------- loading
-  loading(def) {
+  loading(def, cfg = {}) {
+    def = { ...def, time: cfg.time && cfg.time !== 'auto' ? cfg.time : def.time, weather: cfg.weather && cfg.weather !== 'auto' ? cfg.weather : def.weather };
     const s = this._screen('loading');
     const fill = h('i', {});
     const msg = h('div', { class: 'boot-msg' }, 'Cargando…');

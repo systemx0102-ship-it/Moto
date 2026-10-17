@@ -5,6 +5,7 @@ import { Terrain } from '../track/Terrain.js';
 import { Environment } from '../track/Environment.js';
 import { Scenery } from '../track/Scenery.js';
 import { Vegetation, WIND } from '../track/Vegetation.js';
+import { WEATHER } from '../track/themes.js';
 import { Save } from '../core/Settings.js';
 import { nextFrame } from '../core/utils.js';
 import { waterNormalTexture } from '../core/textures.js';
@@ -36,7 +37,7 @@ export class TrackScene {
     await nextFrame();
     ts.vegetation = new Vegetation(ts.track, ts.terrain, q, engine.renderer);
     ts.scene.add(ts.vegetation.build());
-    WIND.strength.value = { storm: 2.2, rain: 1.4, wet: 0.9, snow: 1.0, clear: 0.8 }[def.weather] ?? 1;
+    WIND.strength.value = (WEATHER[def.weather] || WEATHER.clear).wind;
     ts.env.setLamps(ts.scenery.lamps);
     if (ts.terrain.waterMat) {
       const wn = waterNormalTexture();

@@ -50,8 +50,20 @@ export const THEMES = {
   },
 };
 
+// Weather presets (multipliers over the time-of-day lighting)
+export const WEATHER = {
+  clear: { label: 'DESPEJADO', clouds: 0.3, fogMul: 1, sunMul: 1, hemiMul: 1, wind: 0.8 },
+  cloudy: { label: 'NUBLADO', clouds: 0.85, fogMul: 1.7, sunMul: 0.38, hemiMul: 1.3, wind: 1.2, overcast: true, gray: 0.45 },
+  wet: { label: 'ASFALTO MOJADO', clouds: 0.6, fogMul: 1.3, sunMul: 0.7, hemiMul: 1.1, wind: 0.9, wet: true, gray: 0.2 },
+  rain: { label: 'LLUVIA', clouds: 0.95, fogMul: 2.6, sunMul: 0.22, hemiMul: 1.15, wind: 1.5, wet: true, rain: 6000, overcast: true, gray: 0.6, drops: 0.6 },
+  storm: { label: 'TORMENTA', clouds: 1, fogMul: 3.2, sunMul: 0.14, hemiMul: 1.05, wind: 2.4, wet: true, rain: 10000, lightning: true, overcast: true, gray: 0.7, drops: 1 },
+  fog: { label: 'NIEBLA', clouds: 0.9, fogMul: 11, sunMul: 0.3, hemiMul: 1.25, wind: 0.3, overcast: true, gray: 0.55, fogLight: true },
+  snow: { label: 'NIEVE', clouds: 0.9, fogMul: 3.2, sunMul: 0.4, hemiMul: 1.35, wind: 1.0, snow: 7000, overcast: true, gray: 0.5, snowy: true },
+};
+
 // Time of day presets
 export const TIMES = {
+  dawn: { sunElev: 7, sunAzim: 95, turbidity: 6, rayleigh: 3.2, mie: 0.008, exposure: 0.55, bloom: [0.3, 0.5, 1.2], sun: 2.2, sunColor: 0xffb98a, hemi: 0.6, hemiSky: 0xd8b8d8, hemiGround: 0x403848, fog: [0xc8a8b8, 0.0008], env: 0.75 },
   day: { sunElev: 52, sunAzim: 135, turbidity: 3, rayleigh: 2.2, mie: 0.004, exposure: 0.5, bloom: [0.22, 0.4, 1.4], sun: 3.2, sunColor: 0xfff4e6, hemi: 0.9, hemiSky: 0xbcd4ff, hemiGround: 0x6a5a40, fog: [0xb8c8dc, 0.00045], env: 0.9 },
   sunset: { sunElev: 4, sunAzim: 250, turbidity: 9, rayleigh: 2.6, mie: 0.012, exposure: 0.6, bloom: [0.3, 0.5, 1.2], sun: 2.6, sunColor: 0xffa060, hemi: 0.55, hemiSky: 0xffb890, hemiGround: 0x403040, fog: [0xd89a78, 0.0008], env: 0.8 },
   dusk: { sunElev: 6, sunAzim: 200, turbidity: 14, rayleigh: 0.8, mie: 0.02, exposure: 0.68, bloom: [0.45, 0.5, 0.85], sun: 1.1, sunColor: 0xa8b4d0, hemi: 1.1, hemiSky: 0x5a6a88, hemiGround: 0x1a2018, fog: [0x3a4450, 0.0026], env: 0.45, overcast: true },

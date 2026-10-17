@@ -173,7 +173,7 @@ export class Scenery {
     if (th.buildings === 'city') this._city();
     if (th.buildings === 'villas') this._houses('villa');
     if (th.buildings === 'chalets') this._houses('chalet');
-    if (th.lamps) this._lampPosts();
+    if (th.lamps || this.track.def.time === 'night') this._lampPosts();
     this._marshalPosts();
     return this.group;
   }

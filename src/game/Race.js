@@ -41,7 +41,9 @@ export class Race {
 
   async load(onProgress) {
     const engine = this.game.engine;
-    const def = this.cfg.trackDef;
+    const base = this.cfg.trackDef;
+    const def = { ...base, time: this.cfg.time && this.cfg.time !== 'auto' ? this.cfg.time : base.time, weather: this.cfg.weather && this.cfg.weather !== 'auto' ? this.cfg.weather : base.weather };
+    this.def = def;
     this.ts = await TrackScene.create(engine, def, onProgress);
     this.track = this.ts.track;
     this.scene = this.ts.scene;
@@ -110,7 +112,7 @@ export class Race {
 
     // headlight for the player at night / dusk / storm
     const T = this.ts.env.T;
-    if (T.night || T.overcast || this.track.def.weather === 'storm') {
+    if (T.night || T.overcast || this.ts.env.W.overcast || T.sunElev < 8) {
       const hl = this.player.model.headlights[0];
       if (hl) {
         const spot = new THREE.SpotLight(0xfff2dd, 900, 140, 0.42, 0.45, 1.4);
@@ -604,6 +606,10 @@ export class Race {
     fx.uDamage.value = this._damage * 0.35;
     fx.uFlash.value = Math.max(0, fx.uFlash.value - dt * 3);
     fx.uVignette.value = 0.3 + sp * 0.1;
+    const W = this.ts.env.W;
+    const drops = (W.drops || 0) * (this.cam.mode === 3 ? 0.6 : 1);
+    fx.uRain.value = damp(fx.uRain.value, drops * (this.phase === 'replay' ? 0.5 : 1), 1.5, dt);
+    fx.uSpeed.value = clamp(p.v / 60, 0, 1);
   }
 
   // ------------------------------------------------------------------ ghost
@@ -740,6 +746,6 @@ export class Race {
     this.ghostModel?.dispose();
     this.ts?.dispose();
     const fx = this.game.engine.fx;
-    if (fx) { fx.uBlur.value = 0; fx.uTintAmt.value = 0; fx.uDamage.value = 0; fx.uFlash.value = 0; }
+    if (fx) { fx.uBlur.value = 0; fx.uTintAmt.value = 0; fx.uDamage.value = 0; fx.uFlash.value = 0; fx.uRain.value = 0; }
   }
 }

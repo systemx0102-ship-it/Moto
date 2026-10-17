@@ -19,7 +19,7 @@ export class Track {
     this.N = c.N; this.L = c.L; this.ds = c.ds;
     this.W = def.width; this.halfW = def.width / 2; this.runoff = def.runoff;
     this.barrierD = this.halfW + this.runoff;
-    this.wet = def.weather === 'wet' || def.weather === 'storm';
+    this.wet = def.weather === 'wet' || def.weather === 'storm' || def.weather === 'rain';
     this._buildGrid();
     this.computeRacingLine();
   }
@@ -233,8 +233,8 @@ export class Track {
     const repeats = Math.max(1, Math.round(this.L / (this.W * 2)));
     this.roadMat = new THREE.MeshStandardMaterial({
       map: roadTex.map, normalMap: roadTex.normalMap, roughnessMap: roadTex.roughnessMap,
-      roughness: this.wet ? 0.55 : 1.0, metalness: this.wet ? 0.15 : 0.0, normalScale: new THREE.Vector2(0.6, 0.6),
-      envMapIntensity: this.wet ? 1.6 : 0.6, color: this.wet ? 0xb8bcc4 : 0xffffff,
+      roughness: this.wet ? 0.85 : 1.0, metalness: this.wet ? 0.08 : 0.0, normalScale: new THREE.Vector2(this.wet ? 0.18 : 0.6, this.wet ? 0.18 : 0.6),
+      envMapIntensity: this.wet ? 1.15 : 0.6, color: this.wet ? 0x9ea2aa : 0xffffff,
     });
     const road = this.ribbon([-this.halfW, this.halfW], 8, (i, d) => 0, (i, u) => [u, (i / this.N) * repeats]);
     const roadMesh = new THREE.Mesh(road, this.roadMat);

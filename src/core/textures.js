@@ -133,11 +133,14 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
         const hh = height[y * W + x];
-        let rv = wet ? 70 + hh * 90 : 200 + hh * 50;
+        let rv = wet ? 120 + hh * 90 : 200 + hh * 50;
         if (wet) {
           const u = x / W, v = y / H;
-          const puddle = n3(u * 1.0, v * 2) > 0.15 ? 0.25 : 1;
-          rv *= puddle;
+          // puddles collect in the dips; tyre tracks are drier
+          const pv = n3(u * 1.0, v * 2);
+          const puddle = pv > 0.12 ? 0.2 : pv > 0.02 ? 0.55 : 1;
+          const track = Math.exp(-Math.pow((u - 0.35) * 9, 2)) + Math.exp(-Math.pow((u - 0.65) * 9, 2));
+          rv = rv * puddle + track * 30;
         }
         rimg.data[i] = rv; rimg.data[i + 1] = rv; rimg.data[i + 2] = rv; rimg.data[i + 3] = 255;
       }

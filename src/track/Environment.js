@@ -1,7 +1,7 @@
 // Sky, sun, fog, environment reflections, clouds, weather and night lighting.
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { TIMES } from './themes.js';
+import { TIMES, WEATHER } from './themes.js';
 import { starsTexture, cloudTexture, softCircleTexture } from '../core/textures.js';
 import { rng, clamp } from '../core/utils.js';
 
@@ -15,6 +15,7 @@ export class Environment {
     this.quality = quality;
     this.T = TIMES[track.def.time] || TIMES.day;
     this.weather = track.def.weather;
+    this.W = WEATHER[this.weather] || WEATHER.clear;
     this.time = 0;
     this.lampLights = [];
     this.onThunder = null;
@@ -22,9 +23,9 @@ export class Environment {
   }
 
   _build() {
-    const T = this.T, scene = this.scene, q = this.quality;
+    const T = this.T, W = this.W, scene = this.scene, q = this.quality;
     const r = this.engine.renderer;
-    r.toneMappingExposure = T.exposure;
+    r.toneMappingExposure = T.exposure * (W.overcast && !T.night ? 1.15 : 1);
     if (T.bloom) this.engine.setBloom(...T.bloom);
     // sun direction
     const phi = (90 - T.sunElev) * DEG, theta = T.sunAzim * DEG;
@@ -37,22 +38,19 @@ export class Environment {
     // sky
     const envScene = new THREE.Scene();
     if (!T.night) {
-      const sky = new Sky();
-      sky.scale.setScalar(4500);
-      const u = sky.material.uniforms;
-      u.turbidity.value = T.turbidity; u.rayleigh.value = T.rayleigh;
-      u.mieCoefficient.value = T.mie; u.mieDirectionalG.value = 0.86;
-      u.sunPosition.value.copy(this.sunDir);
-      scene.add(sky);
-      this.sky = sky;
-      const envSky = new Sky();
-      envSky.scale.setScalar(900);
-      Object.assign(envSky.material.uniforms.turbidity, { value: T.turbidity });
-      envSky.material.uniforms.rayleigh.value = T.rayleigh;
-      envSky.material.uniforms.mieCoefficient.value = T.mie;
-      envSky.material.uniforms.mieDirectionalG.value = 0.86;
-      envSky.material.uniforms.sunPosition.value.copy(this.sunDir);
-      envScene.add(envSky);
+      const mkSky = (scale) => {
+        const sky = new Sky();
+        sky.scale.setScalar(scale);
+        const u = sky.material.uniforms;
+        const g = W.gray || 0;
+        u.turbidity.value = T.turbidity + g * 14; u.rayleigh.value = T.rayleigh * (1 - g * 0.75);
+        u.mieCoefficient.value = T.mie + g * 0.02; u.mieDirectionalG.value = 0.86 - g * 0.3;
+        u.sunPosition.value.copy(this.sunDir);
+        return sky;
+      };
+      this.sky = mkSky(4500);
+      scene.add(this.sky);
+      envScene.add(mkSky(900));
     } else {
       this.sky = this._nightSky(4200);
       scene.add(this.sky);
@@ -73,20 +71,22 @@ export class Environment {
     const pm = new THREE.PMREMGenerator(r);
     this.envRT = pm.fromScene(envScene, 0, 1, 2000);
     scene.environment = this.envRT.texture;
-    scene.environmentIntensity = T.env;
+    scene.environmentIntensity = T.env * (W.overcast ? 1.1 : 1);
     pm.dispose();
 
     // clouds
-    if (!T.night) {
-      const dense = T.overcast || this.weather === 'storm';
-      const ct = cloudTexture(this.track.def.id.length, dense ? 0.95 : this.weather === 'snow' ? 0.6 : 0.3);
+    const coverage = Math.max(W.clouds, T.overcast ? 0.95 : 0);
+    if (!T.night || coverage > 0.6) {
+      const dense = coverage > 0.8;
+      const ct = cloudTexture(this.track.def.id.length, coverage);
       ct.repeat.set(3, 1);
+      const base = T.night ? 0x15171e : dense ? (W.lightning ? 0x4a5260 : 0x7a8290) : 0xffffff;
       const cmat = new THREE.MeshBasicMaterial({
         map: ct, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false,
-        color: new THREE.Color(dense ? 0x6a7280 : 0xffffff).multiplyScalar(T.sunElev < 10 ? 0.9 : 1.0),
-        opacity: dense ? 0.95 : 0.85,
+        color: new THREE.Color(base).multiplyScalar(T.sunElev < 10 && !T.night ? 0.95 : 1.0),
+        opacity: dense ? 0.96 : 0.85,
       });
-      if (T.sunElev < 10 && !dense) cmat.color.set(0xffc8a0);
+      if (T.sunElev < 10 && !dense && !T.night) cmat.color.set(T.sunAzim < 180 ? 0xffd0d8 : 0xffc8a0);
       const cg = new THREE.SphereGeometry(3000, 48, 12, 0, Math.PI * 2, 0, Math.PI * 0.42);
       this.clouds = new THREE.Mesh(cg, cmat);
       this.clouds.renderOrder = -1;
@@ -100,15 +100,26 @@ export class Environment {
       }
     }
 
-    // fog
-    scene.fog = new THREE.FogExp2(T.fog[0], T.fog[1] * (this.weather === 'storm' ? 1.4 : this.weather === 'snow' ? 1.3 : 1));
+    // fog: overcast weather pulls the fog colour toward a neutral grey
+    const fogCol = new THREE.Color(T.fog[0]);
+    if (W.gray) {
+      const l = fogCol.r * 0.3 + fogCol.g * 0.59 + fogCol.b * 0.11;
+      const grey = new THREE.Color(l, l * 1.02, l * 1.06);
+      if (W.fogLight && !T.night) grey.multiplyScalar(1.25);
+      if (W.snowy && !T.night) grey.lerp(new THREE.Color(0xdde4ee), 0.5);
+      fogCol.lerp(grey, W.gray);
+    }
+    scene.fog = new THREE.FogExp2(fogCol, T.fog[1] * W.fogMul);
     scene.background = T.night ? new THREE.Color(0x02030a) : null;
+    this.fogBase = scene.fog.density;
 
     // lights
-    const hemi = new THREE.HemisphereLight(T.hemiSky, T.hemiGround, T.hemi);
+    const hemi = new THREE.HemisphereLight(T.hemiSky, T.hemiGround, T.hemi * W.hemiMul);
+    if (W.gray) hemi.color.lerp(new THREE.Color(0xc8ccd4), W.gray * 0.6);
     scene.add(hemi);
     this.hemi = hemi;
-    const sun = new THREE.DirectionalLight(T.sunColor, T.sun);
+    this.hemiBase = hemi.intensity;
+    const sun = new THREE.DirectionalLight(T.sunColor, T.sun * W.sunMul);
     sun.castShadow = q.shadows > 0;
     if (sun.castShadow) {
       sun.shadow.mapSize.set(q.shadows, q.shadows);
@@ -121,13 +132,14 @@ export class Environment {
     this.sun = sun;
 
     // weather particles
-    if (this.weather === 'storm' || this.weather === 'rain') this._rain(this.weather === 'storm' ? 9000 : 5000);
-    if (this.weather === 'snow') this._snow(6000);
+    const dens = clamp(q.density, 0.4, 1.3);
+    if (W.rain) this._rain(Math.round(W.rain * dens));
+    if (W.snow) this._snow(Math.round(W.snow * dens));
     this.nextLightning = 6 + Math.random() * 6;
     this.flash = 0;
 
     // night street-light pool
-    const nl = T.night || T.overcast ? (q.shadows >= 2048 ? 8 : q.shadows ? 5 : 3) : 0;
+    const nl = T.night || T.overcast || W.lightning ? (q.shadows >= 2048 ? 8 : q.shadows ? 5 : 3) : 0;
     for (let i = 0; i < nl; i++) {
       const pl = new THREE.PointLight(T.night ? 0xffd7a0 : 0xffe0b0, 0, 45, 1.6);
       scene.add(pl);
@@ -251,7 +263,7 @@ export class Environment {
     if (this.snowMat) { this.snowMat.uniforms.uTime.value = this.time; this.snowMat.uniforms.uCam.value.copy(camera.position); }
 
     // lightning
-    if (this.weather === 'storm') {
+    if (this.W.lightning) {
       this.nextLightning -= dt;
       if (this.nextLightning <= 0) {
         this.nextLightning = 7 + Math.random() * 12;
@@ -261,7 +273,7 @@ export class Environment {
       let fl = 0;
       if (this.flashSeq) for (const t of this.flashSeq) { const d = this.time - t; if (d >= 0 && d < 0.12) fl = Math.max(fl, 1 - d / 0.12); }
       this.flash = fl;
-      this.hemi.intensity = this.T.hemi + fl * 4;
+      this.hemi.intensity = this.hemiBase + fl * 4;
       if (this.rainMat) this.rainMat.uniforms.uFlash.value = fl;
       const fx2 = this.engine.fx;
       if (fx2) fx2.uFlash.value = Math.max(fx2.uFlash.value, fl * 0.12);

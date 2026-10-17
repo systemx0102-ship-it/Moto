@@ -12,7 +12,9 @@ const P = new URLSearchParams(location.search);
 if (P.get('q')) Save.settings.quality = P.get('q');
 const engine = new Engine(document.getElementById('stage'));
 const t0 = performance.now();
-const ts = await TrackScene.create(engine, TRACK_BY_ID[P.get('track') || 'gp']);
+const base = TRACK_BY_ID[P.get('track') || 'gp'];
+const ts = await TrackScene.create(engine, { ...base, time: P.get('time') || base.time, weather: P.get('weather') || base.weather });
+if (engine.fx && P.get('drops')) { engine.fx.uRain.value = +P.get('drops'); engine.fx.uTime.value = 3; }
 const buildMs = performance.now() - t0;
 engine.setScene(ts.scene, engine.camera);
 engine.camera.fov = 62; engine.camera.far = 6000; engine.camera.updateProjectionMatrix();

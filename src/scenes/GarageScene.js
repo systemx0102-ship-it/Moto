@@ -244,7 +244,8 @@ export class GarageScene {
     this.engine.setScene(this.scene, this.camera);
     this.engine.setBloom(0.5, 0.55, 0.82);
     const fx = this.engine.fx;
-    if (fx) { fx.uBlur.value = 0; fx.uVignette.value = 0.38; fx.uTintAmt.value = 0; fx.uFlash.value = 0; fx.uDamage.value = 0; }
+    if (fx) { fx.uBlur.value = 0; fx.uVignette.value = 0.38; fx.uTintAmt.value = 0; fx.uFlash.value = 0; fx.uDamage.value = 0; fx.uRain.value = 0; }
+    this.engine.renderer.toneMappingExposure = 1;
   }
 
   deactivate() { this.active = false; }
