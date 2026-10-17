@@ -166,6 +166,8 @@ const GROUND = {
   gravel: { a: [150, 144, 132], b: [184, 178, 166], c: [110, 104, 96], scale: 16, pebbles: true, rough: 245, bump: 4 },
   forest: { a: [52, 62, 30], b: [84, 74, 40], c: [36, 40, 22], scale: 5, pebbles: true, blades: true, rough: 240, bump: 3 },
   rock: { a: [150, 82, 52], b: [186, 112, 72], c: [112, 58, 38], scale: 3, strata: true, rough: 220, bump: 5 },
+  stone: { a: [104, 102, 98], b: [150, 148, 142], c: [72, 72, 70], scale: 4, strata: true, pebbles: true, rough: 225, bump: 5 },
+  mossStone: { a: [84, 92, 70], b: [128, 132, 118], c: [56, 62, 48], scale: 4, strata: true, pebbles: true, rough: 235, bump: 5 },
   asphaltDark: { a: [30, 32, 36], b: [48, 50, 56], c: [22, 22, 26], scale: 10, rough: 200, bump: 2 },
   volcanic: { a: [34, 30, 30], b: [58, 50, 48], c: [20, 18, 18], scale: 6, pebbles: true, rough: 230, bump: 4 },
 };

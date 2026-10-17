@@ -17,14 +17,14 @@ const FinalShader = {
     uTime: { value: 0 },
     uBlur: { value: 0 },
     uCA: { value: 0.0015 },
-    uVignette: { value: 0.32 },
-    uGrain: { value: 0.035 },
+    uVignette: { value: 0.2 },
+    uGrain: { value: 0.02 },
     uFlash: { value: 0 },
     uFlashColor: { value: new THREE.Color(1, 1, 1) },
     uTint: { value: new THREE.Color(1, 1, 1) },
     uTintAmt: { value: 0 },
-    uSat: { value: 1.08 },
-    uContrast: { value: 1.04 },
+    uSat: { value: 1.12 },
+    uContrast: { value: 1.05 },
     uCenter: { value: new THREE.Vector2(0.5, 0.52) },
     uDamage: { value: 0 },
     uRain: { value: 0 },
@@ -103,7 +103,7 @@ const FinalShader = {
       col = mix(col, col * uTint, uTintAmt);
       // vignette
       float v = smoothstep(0.95, 0.25, dist * (1.0 + uVignette));
-      col *= mix(1.0, v, uVignette * 2.2);
+      col *= mix(1.0, v, uVignette * 1.6);
       // damage pulse (red edges)
       col = mix(col, vec3(0.9, 0.05, 0.02), uDamage * smoothstep(0.3, 0.75, dist));
       // grain

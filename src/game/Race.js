@@ -605,7 +605,7 @@ export class Race {
     this._damage = Math.max(0, (this._damage || 0) - dt * 1.5);
     fx.uDamage.value = this._damage * 0.35;
     fx.uFlash.value = Math.max(0, fx.uFlash.value - dt * 3);
-    fx.uVignette.value = 0.3 + sp * 0.1;
+    fx.uVignette.value = 0.18 + sp * 0.1;
     const W = this.ts.env.W;
     const drops = (W.drops || 0) * (this.cam.mode === 3 ? 0.6 : 1);
     fx.uRain.value = damp(fx.uRain.value, drops * (this.phase === 'replay' ? 0.5 : 1), 1.5, dt);

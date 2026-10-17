@@ -1,6 +1,5 @@
 // Sky, sun, fog, environment reflections, clouds, weather and night lighting.
 import * as THREE from 'three';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { TIMES, WEATHER } from './themes.js';
 import { starsTexture, cloudTexture, softCircleTexture } from '../core/textures.js';
 import { rng, clamp } from '../core/utils.js';
@@ -38,19 +37,9 @@ export class Environment {
     // sky
     const envScene = new THREE.Scene();
     if (!T.night) {
-      const mkSky = (scale) => {
-        const sky = new Sky();
-        sky.scale.setScalar(scale);
-        const u = sky.material.uniforms;
-        const g = W.gray || 0;
-        u.turbidity.value = T.turbidity + g * 14; u.rayleigh.value = T.rayleigh * (1 - g * 0.75);
-        u.mieCoefficient.value = T.mie + g * 0.02; u.mieDirectionalG.value = 0.86 - g * 0.3;
-        u.sunPosition.value.copy(this.sunDir);
-        return sky;
-      };
-      this.sky = mkSky(4500);
+      this.sky = this._skyDome(4500);
       scene.add(this.sky);
-      envScene.add(mkSky(900));
+      envScene.add(this._skyDome(900));
     } else {
       this.sky = this._nightSky(4200);
       scene.add(this.sky);
@@ -145,6 +134,46 @@ export class Environment {
       scene.add(pl);
       this.lampLights.push(pl);
     }
+  }
+
+  // Art-directed analytic sky: zenith/horizon gradient, sun disk and halo, overcast greying.
+  _skyDome(radius) {
+    const T = this.T, W = this.W;
+    const P = T.sky || { zenith: 0x1d5ccc, horizon: 0xb4d2f0, ground: 0x6a7480, glow: 0.8, hglow: 0.3, k: 2.3 };
+    const lin = (hex) => new THREE.Color(hex); // Color() converts sRGB hex to linear working space
+    const g = W.gray || 0;
+    const grey = new THREE.Color(0x8c949e);
+    const zen = lin(P.zenith).lerp(grey.clone().multiplyScalar(0.85), g);
+    const hor = lin(P.horizon).lerp(grey.clone().multiplyScalar(1.15), g * 0.9);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uZenith: { value: zen.multiplyScalar(P.k) }, uHorizon: { value: hor.multiplyScalar(P.k) }, uGround: { value: lin(P.ground).multiplyScalar(P.k * 0.6) },
+        uSunDir: { value: this.sunDir.clone() }, uSunColor: { value: new THREE.Color(T.sunColor) },
+        uGlow: { value: P.glow * (1 - g * 0.85) }, uHGlow: { value: P.hglow * (1 - g * 0.7) }, uDisk: { value: 1 - g * 0.97 },
+      },
+      vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
+      fragmentShader: `uniform vec3 uZenith, uHorizon, uGround, uSunDir, uSunColor; uniform float uGlow, uHGlow, uDisk; varying vec3 vDir;
+        void main(){
+          vec3 d = normalize(vDir);
+          float h = d.y;
+          float t = pow(clamp(h, 0.0, 1.0), 0.42);
+          vec3 col = mix(uHorizon, uZenith, t);
+          col = mix(col, uGround, smoothstep(0.0, -0.06, h));
+          float sd = max(dot(d, uSunDir), 0.0);
+          // warm band along the horizon in the sun's direction
+          float az = max(dot(normalize(vec2(d.x, d.z) + 1e-5), normalize(vec2(uSunDir.x, uSunDir.z) + 1e-5)), 0.0);
+          col += uSunColor * pow(az, 4.0) * pow(1.0 - clamp(h, 0.0, 1.0), 6.0) * uHGlow * 0.6;
+          col += uSunColor * (pow(sd, 6.0) * 0.18 + pow(sd, 48.0) * 0.5) * uGlow;
+          col += uSunColor * smoothstep(0.99955, 0.99975, sd) * 40.0 * uDisk;
+          gl_FragColor = vec4(col, 1.0);
+          #include <colorspace_fragment>
+        }`,
+      side: THREE.BackSide, depthWrite: false, fog: false,
+    });
+    const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 24), mat);
+    m.renderOrder = -2;
+    m.frustumCulled = false;
+    return m;
   }
 
   _nightSky(radius) {

@@ -14,6 +14,8 @@ const engine = new Engine(document.getElementById('stage'));
 const t0 = performance.now();
 const base = TRACK_BY_ID[P.get('track') || 'gp'];
 const ts = await TrackScene.create(engine, { ...base, time: P.get('time') || base.time, weather: P.get('weather') || base.weather });
+if (P.get('noclouds') && ts.env.clouds) { ts.env.clouds.visible = false; if (ts.env.clouds2) ts.env.clouds2.visible = false; }
+if (P.get('pitch')) { /* look up */ }
 if (engine.fx && P.get('drops')) { engine.fx.uRain.value = +P.get('drops'); engine.fx.uTime.value = 3; }
 const buildMs = performance.now() - t0;
 engine.setScene(ts.scene, engine.camera);
@@ -39,7 +41,7 @@ if (P.get('aerial')) {
 } else {
   engine.camera.position.set(cp.x, cp.y + h, cp.z);
   const la = ts.track.pointAt(s + 20, 0);
-  engine.camera.lookAt(la.x, la.y + 1, la.z);
+  engine.camera.lookAt(la.x, la.y + 1 + (+P.get('up') || 0), la.z);
 }
 ts.update(0.016, engine.camera, new THREE.Vector3(p.x, p.y, p.z));
 engine.resize();

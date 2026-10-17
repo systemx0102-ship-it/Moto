@@ -3,6 +3,41 @@ import * as THREE from 'three';
 import { Noise2D, smoothstep, clamp, rng } from '../core/utils.js';
 import { groundTextures } from '../core/textures.js';
 
+// Terrain material: anti-tiled base ground + triplanar rock on slopes + macro dirt patches
+export function splatMaterial(theme) {
+  const g = groundTextures(theme.ground, 5), rk = groundTextures(theme.rockGround || 'stone', 8), dt = groundTextures(theme.dirtGround || 'dirt', 13);
+  const mat = new THREE.MeshStandardMaterial({ map: g.map, normalMap: g.normalMap, roughnessMap: g.roughnessMap, vertexColors: true, color: 0xffffff });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.tRock = { value: rk.map };
+    sh.uniforms.tDirt = { value: dt.map };
+    sh.uniforms.uDirtAmt = { value: theme.dirtAmt ?? 0.5 };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWN; varying vec3 vWP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWN = normalize(mat3(modelMatrix) * normal); vWP = (modelMatrix * vec4(position, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tRock; uniform sampler2D tDirt; uniform float uDirtAmt; varying vec3 vWN; varying vec3 vWP;')
+      .replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          vec4 gA = texture2D(map, vMapUv);
+          vec4 gB = texture2D(map, vMapUv * 0.31 + vec2(0.37, 0.71));
+          float macro = texture2D(tDirt, vWP.xz * 0.0023).g;
+          float macro2 = texture2D(map, vWP.xz * 0.0011).g;
+          vec4 ground = mix(gA, gB, 0.42) * (0.82 + macro2 * 0.36);
+          vec3 bw = pow(abs(vWN), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+          vec4 rockC = texture2D(tRock, vWP.zy * 0.06) * bw.x + texture2D(tRock, vWP.xz * 0.05) * bw.y + texture2D(tRock, vWP.xy * 0.06) * bw.z;
+          vec4 dirtC = texture2D(tDirt, vMapUv * 0.7);
+          float slope = 1.0 - clamp(vWN.y, 0.0, 1.0);
+          float wRock = smoothstep(0.2, 0.42, slope + (macro - 0.5) * 0.2);
+          float wDirt = smoothstep(0.52, 0.7, macro) * (1.0 - wRock) * uDirtAmt;
+          vec4 c = mix(ground, dirtC, wDirt);
+          c = mix(c, rockC, wRock);
+          diffuseColor *= c;
+        #endif`);
+  };
+  mat.customProgramCacheKey = () => 'splat';
+  return mat;
+}
+
 export class Terrain {
   constructor(track, quality) {
     this.track = track;
@@ -128,22 +163,18 @@ export class Terrain {
     this.heights = heights;
     geo.computeVertexNormals();
     const nrm = geo.attributes.normal;
-    const c = new THREE.Color();
+    void base; void rock;
     for (let i = 0; i < pos.count; i++) {
-      const slope = 1 - nrm.getY(i);
-      const t = smoothstep(0.12, 0.4, slope);
-      c.copy(base).lerp(rock, t);
-      const v = 0.88 + r() * 0.12 + this.noise.noise(pos.getX(i) / 60, pos.getZ(i) / 60) * 0.08;
-      colors[i * 3] = c.r * v; colors[i * 3 + 1] = c.g * v; colors[i * 3 + 2] = c.b * v;
+      // subtle large-scale value variation + darker hollows (fake AO)
+      const n1 = this.noise.noise(pos.getX(i) / 60, pos.getZ(i) / 60), n2 = this.noise.noise(pos.getX(i) / 220 + 7, pos.getZ(i) / 220);
+      const v = 0.9 + r() * 0.06 + n1 * 0.07 + n2 * 0.06;
+      colors[i * 3] = v * (1 + n2 * 0.04); colors[i * 3 + 1] = v; colors[i * 3 + 2] = v * (1 - n2 * 0.03);
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     // world-space uv for tiling
     const uv = geo.attributes.uv;
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / 14, pos.getZ(i) / 14);
-    const gt = groundTextures(this.track.theme.ground, 5);
-    const mat = new THREE.MeshStandardMaterial({
-      map: gt.map, normalMap: gt.normalMap, roughnessMap: gt.roughnessMap, vertexColors: true, color: 0xffffff,
-    });
+    const mat = splatMaterial(this.track.theme);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.name = 'terrain';
