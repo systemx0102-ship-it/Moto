@@ -1,0 +1,20 @@
+{
+  "name": "moto-mitico",
+  "version": "1.0.0",
+  "description": "MOTO MÍTICO — juego de carreras de motos 3D",
+  "private": true,
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "dev": "node tools/build.mjs --watch",
+    "package": "node tools/build.mjs && node tools/package.mjs",
+    "test": "node tools/smoke-test.mjs"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "@fontsource/orbitron": "5.1.0",
+    "@fontsource/rajdhani": "5.1.0"
+  }
+}
