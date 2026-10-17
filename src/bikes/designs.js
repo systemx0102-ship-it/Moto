@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import {
   setupChassis, wheel, caliper, fork, frontFender, rearFender, swingarm, chain, belt, shock,
   finnedCylinder, crankcase, radiator, header, muffler, expansionChamber, headlightRound, ledStrip,
-  tailLight, mirror, handlebar, dash, footpegs, numberPlate, closedLathe,
+  tailLight, mirror, handlebar, dash, footpegs, numberPlate, closedLathe, details,
   loft, tube, taperTube, lathe, box, cyl, sphere, place, rod, spring, torus, mirrorZ, V, DEG,
 } from './parts.js';
 import { M } from '../core/materials.js';
@@ -163,6 +163,7 @@ function superbike(ctx) {
   shock(ctx, [-0.08, 0.62, 0], [-0.2, 0.36, 0], { r: 0.026, springColor: 0xe2b521 });
   frontFender(ctx, { from: 1.8, len: 1.7, w: 0.13, mat: mats.paintSolid });
   rearFender(ctx, { from: 1.9, len: 1.4, mat: M.carbon(), w: 0.2 });
+  details(ctx, { damper: true, plate: { pos: [-0.86, 0.76, 0], tilt: 0.3 }, signalsF: [[0.7, 0.83, 0.205], [0.7, 0.83, -0.205]] });
 }
 
 // 2. MotoGP prototype
@@ -215,6 +216,7 @@ function gp(ctx) {
   shock(ctx, [-0.06, 0.62, 0], [-0.18, 0.36, 0], { r: 0.025, springColor: 0xd8d8d8 });
   frontFender(ctx, { from: 1.8, len: 1.6, w: 0.13, mat: M.carbon() });
   ctx.headlights.push({ pos: [0.88, 0.84, 0], group: 'chassis', r: 0.0, none: true });
+  details(ctx, { damper: true, kickstand: false });
 }
 
 // 3. Naked streetfighter with trellis frame + single-sided swingarm
@@ -295,6 +297,7 @@ function naked(ctx) {
   shock(ctx, [-0.05, 0.66, 0.02], [-0.18, 0.37, 0.02], { r: 0.027, springColor: 0xc81e1e, reservoir: true });
   frontFender(ctx, { from: 1.8, len: 1.6, w: 0.13, mat: mats.paintSolid });
   rearFender(ctx, { from: 1.9, len: 1.3, mat: M.black(), w: 0.19 });
+  details(ctx, { plate: { pos: [-0.75, 0.76, 0], tilt: 0.3 }, signalsF: [[0.6, 0.8, 0.14], [0.6, 0.8, -0.14]], signalsFGroup: 'steer' });
 }
 
 // 4. Electric hyperbike
@@ -369,6 +372,7 @@ function electric(ctx) {
   dash(ctx, [0.42, 0.95, 0], 0.14, 0.07, { tilt: -1.05 });
   footpegs(ctx, -0.2, 0.42, 0.18);
   frontFender(ctx, { from: 1.8, len: 1.6, w: 0.13, mat: mats.paint2Solid });
+  details(ctx, { plate: { pos: [-0.86, 0.84, 0], tilt: 0.35 }, signalsF: [[0.8, 0.78, 0.16], [0.8, 0.78, -0.16]] });
 }
 
 // 5. Cruiser
@@ -426,8 +430,8 @@ function cruiser(ctx) {
   seatLoft(ctx, -0.12, -0.48, 0.67, 0.17, 0.05, { dip: -0.02, frontRise: 0.04 });
   seatLoft(ctx, -0.48, -0.72, 0.72, 0.11, 0.04);
   // deep valanced fenders
-  frontFender(ctx, { from: 1.3, len: 2.7, w: 0.17, gap: 0.03, mat: mats.paintSolid });
-  rearFender(ctx, { from: 1.8, len: 2.6, w: 0.25, gap: 0.035, mat: mats.paintSolid, group: 'chassis' });
+  frontFender(ctx, { from: 1.3, len: 2.7, w: 0.17, gap: 0.03, mat: mats.paintSolid, skirts: 0.09 });
+  rearFender(ctx, { from: 1.8, len: 2.6, w: 0.25, gap: 0.035, mat: mats.paintSolid, group: 'chassis', skirts: 0.1 });
   // twin chrome shocks
   for (const s of [-1, 1]) shock(ctx, [-0.6, 0.37, s * 0.15], [-0.56, 0.62, s * 0.14], { r: 0.026, springMat: M.chrome(), bodyMat: M.chrome() });
   // headlight + spots, pullback bars
@@ -442,6 +446,7 @@ function cruiser(ctx) {
     const fb = box(0.26, 0.015, 0.1, 0.006); place(fb, { p: [0.22, 0.3, s * 0.27] }); A.add('chassis', fb, M.rubber());
     const fbr = box(0.27, 0.02, 0.11, 0.006); place(fbr, { p: [0.22, 0.29, s * 0.27] }); A.add('chassis', fbr, M.chrome());
   }
+  { const hp = ctx.sp(ctx.Lf + 0.02); details(ctx, { plate: { pos: [-1.0, 0.56, 0], tilt: 0.55 }, signalsF: [[hp[0] + 0.1, hp[1] + 0.03, 0.22], [hp[0] + 0.1, hp[1] + 0.03, -0.22]], signalsFGroup: 'steer' }); }
 }
 
 // 6. Bobber
@@ -493,6 +498,7 @@ function bobber(ctx) {
   dash(ctx, [0.3, 0.95, 0], 0.05, 0.05, { tilt: -1.4 });
   footpegs(ctx, 0.28, 0.28, 0.24);
   frontFender(ctx, { from: 2.0, len: 1.3, w: 0.15, mat: mats.paintSolid, gap: 0.02 });
+  details(ctx, { plate: { pos: [-0.8, 0.5, 0], tilt: 0.9, group: 'swingarm' } });
 }
 
 // 7. Café racer
@@ -562,6 +568,7 @@ function cafe(ctx) {
   for (const s of [-1, 1]) shock(ctx, [-0.6, 0.36, s * 0.13], [-0.5, 0.75, s * 0.1], { r: 0.024, springMat: M.chrome(), bodyMat: M.chrome() });
   frontFender(ctx, { from: 1.6, len: 2.0, w: 0.12, mat: M.chrome(), gap: 0.02 });
   rearFender(ctx, { from: 2.4, len: 1.6, mat: M.chrome(), w: 0.15 });
+  { const hp = ctx.sp(ctx.Lf + 0.04); details(ctx, { plate: { pos: [-0.72, 0.68, 0], tilt: 0.3 }, signalsF: [[hp[0] + 0.06, hp[1] - 0.02, 0.15], [hp[0] + 0.06, hp[1] - 0.02, -0.15]], signalsFGroup: 'steer' }); }
 }
 
 // 8. Power cruiser / drag
@@ -626,6 +633,7 @@ function drag(ctx) {
   footpegs(ctx, 0.05, 0.32, 0.2);
   for (const s of [-1, 1]) shock(ctx, [-0.6, 0.38, s * 0.16], [-0.42, 0.64, s * 0.13], { r: 0.026, springColor: 0xc81e1e });
   frontFender(ctx, { from: 1.8, len: 1.6, w: 0.14, mat: mats.paintSolid });
+  { const hp = ctx.sp(ctx.Lf + 0.05); details(ctx, { plate: { pos: [-0.76, 0.6, 0], tilt: 0.35 }, signalsF: [[hp[0] + 0.1, hp[1], 0.17], [hp[0] + 0.1, hp[1], -0.17]], signalsFGroup: 'steer' }); }
 }
 
 // 9. Motocross + 10. Supermoto share the MX body
@@ -732,6 +740,7 @@ function mxBody(ctx, sm) {
   dash(ctx, [pc[0] + 0.0, pc[1] + 0.1, 0], 0.05, 0.03, { group: 'steer', tilt: -1.0 });
   footpegs(ctx, -0.12, 0.42, 0.17);
   shock(ctx, [-0.1, 0.78, 0], [-0.26, 0.42, 0], { r: 0.034, springColor: sm ? 0xc81e1e : 0x4a8a2a, reservoir: true });
+  if (sm) details(ctx, { plate: { pos: [-0.95, 0.82, 0], tilt: 0.6 } }); else details(ctx, { kickstand: false });
 }
 
 function mx(ctx) { mxBody(ctx, false); }
@@ -820,6 +829,7 @@ function adventure(ctx) {
   footpegs(ctx, -0.12, 0.42, 0.19);
   shock(ctx, [-0.08, 0.7, 0.03], [-0.25, 0.4, 0.03], { r: 0.03, springColor: 0xd4a431, reservoir: true });
   frontFender(ctx, { from: 1.8, len: 1.7, w: 0.12, mat: mats.paintSolid, gap: 0.02 });
+  details(ctx, { plate: { pos: [-1.02, 0.84, 0], tilt: 0.2 }, signalsF: [[0.64, 0.95, 0.24], [0.64, 0.95, -0.24]] });
 }
 
 // 12. 80s two-stroke GP replica
@@ -852,6 +862,7 @@ function twostroke(ctx) {
   footpegs(ctx, -0.22, 0.42, 0.15, { plates: true });
   shock(ctx, [-0.06, 0.6, 0], [-0.18, 0.35, 0], { r: 0.024, springColor: 0xd4a431 });
   frontFender(ctx, { from: 1.8, len: 1.7, w: 0.12, mat: mats.paintSolid });
+  details(ctx, { damper: true, kickstand: false });
 }
 
 export const DESIGNS = { superbike, gp, naked, electric, cruiser, bobber, cafe, drag, mx, sm, adventure, twostroke };

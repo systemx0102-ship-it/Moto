@@ -594,6 +594,62 @@ export function tireTexture(knobby = false) {
   });
 }
 
+// Tyre normal map: tread grooves + sidewall lettering relief
+export function tireNormalTexture(knobby = false) {
+  return cached(`tireN:${knobby}`, () => {
+    const W = 1024, H = 128;
+    const hgt = new Float32Array(W * H).fill(0.5);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const v = y / H, u = x / W;
+        let h = 0.5;
+        if (v > 0.3 && v < 0.7) {
+          if (!knobby) {
+            // swept grooves
+            const k = (u * 24 + Math.abs(v - 0.5) * 3) % 1;
+            if (k < 0.05 && Math.abs(v - 0.5) > 0.04 && Math.abs(v - 0.5) < 0.17) h = 0.1;
+          }
+        } else {
+          // sidewall ribs
+          h = 0.5 + Math.sin(v * 160) * 0.05;
+        }
+        hgt[y * W + x] = h;
+      }
+    }
+    return toTexture(heightToNormal(hgt, W, H, 6), { srgb: false });
+  });
+}
+
+// Roller chain links (u around, v along)
+export function chainTexture() {
+  return cached('chainTex', () => {
+    const { c, g } = makeCanvas(32, 64);
+    g.fillStyle = '#2a2b2e'; g.fillRect(0, 0, 32, 64);
+    for (let i = 0; i < 2; i++) {
+      g.fillStyle = i ? '#8a8d92' : '#5a5d62';
+      g.fillRect(0, i * 32 + 2, 32, 26);
+      g.fillStyle = '#c0c4c8';
+      g.beginPath(); g.arc(16, i * 32 + 6, 4, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(16, i * 32 + 24, 4, 0, Math.PI * 2); g.fill();
+    }
+    return toTexture(c);
+  });
+}
+
+export function licensePlateTexture(text = 'MTC 0001') {
+  return cached(`lic:${text}`, () => {
+    const { c, g } = makeCanvas(256, 150);
+    g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, 256, 150);
+    g.fillStyle = '#123fb0'; g.fillRect(0, 0, 34, 150);
+    g.fillStyle = '#ffd400'; g.font = '700 18px Arial'; g.textAlign = 'center'; g.fillText('M', 17, 118);
+    g.strokeStyle = '#111'; g.lineWidth = 4; g.strokeRect(2, 2, 252, 146);
+    g.fillStyle = '#111'; g.font = '900 52px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const [a, b] = text.split(' ');
+    g.fillText(a, 145, 48); g.fillText(b || '', 145, 106);
+    return toTexture(c, { wrap: false });
+  });
+}
+
 // Livery for loft-generated body panels. u = along bike (0 rear -> 1 front),
 // v = around section: 0 bottom, .25 +z side, .5 top, .75 -z side, 1 bottom.
 export function liveryTexture(livery, label = '', number = '') {

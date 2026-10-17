@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Assembly } from './Assembly.js';
 import { DESIGNS } from './designs.js';
 import { M } from '../core/materials.js';
-import { liveryTexture, numberPlateTexture, makeCanvas, toTexture } from '../core/textures.js';
+import { liveryTexture, numberPlateTexture, makeCanvas, toTexture, licensePlateTexture } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
 
 function liveryMaterials(spec, livery, opts) {
@@ -26,6 +26,7 @@ function liveryMaterials(spec, livery, opts) {
     neon: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: livery.accent, emissiveIntensity: 3.2, roughness: 0.3 }),
     plate: new THREE.MeshStandardMaterial({ map: numberPlateTexture(livery.number || '1', livery.plate || '#ffffff', '#111111'), roughness: 0.5, side: THREE.DoubleSide }),
     plateSolid: new THREE.MeshStandardMaterial({ color: livery.plate || '#ffffff', roughness: 0.45 }),
+    license: new THREE.MeshStandardMaterial({ map: licensePlateTexture(`${spec.short.slice(0, 3)} ${String(100 + spec.id.length * 37 + (opts.seed || 0)).padStart(4, '0')}`), roughness: 0.35, metalness: 0.2 }),
   };
   // live dashboard
   const dc = makeCanvas(256, 128);

@@ -1,6 +1,6 @@
 // Shared PBR material library.
 import * as THREE from 'three';
-import { carbonTexture, brushedTexture, leatherTexture, titaniumTexture, radiatorTexture, tireTexture } from './textures.js';
+import { carbonTexture, brushedTexture, leatherTexture, titaniumTexture, radiatorTexture, tireTexture, tireNormalTexture, chainTexture } from './textures.js';
 
 const lib = new Map();
 function get(key, make) {
@@ -53,7 +53,10 @@ export const M = {
     return get('rubber', () => new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.92, metalness: 0 }));
   },
   tire(knobby = false) {
-    return get(`tire:${knobby}`, () => new THREE.MeshStandardMaterial({ map: tireTexture(knobby), roughness: 0.88, metalness: 0 }));
+    return get(`tire:${knobby}`, () => new THREE.MeshStandardMaterial({ map: tireTexture(knobby), normalMap: tireNormalTexture(knobby), normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.86, metalness: 0 }));
+  },
+  chain() {
+    return get('chain', () => { const t = chainTexture(); return new THREE.MeshStandardMaterial({ map: t, metalness: 0.85, roughness: 0.38 }); });
   },
   plastic(color = 0x141416) {
     return get(`plastic:${color}`, () => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05 }));

@@ -216,6 +216,18 @@ export function caliper(ctx, group, axle, discR, z, angleDeg, color = 0xc81e1e, 
   const g2 = box(0.03 * size, 0.07 * size, 0.04, 0.006);
   place(g2, { p: [axle[0] + Math.cos(a) * (r + 0.02), axle[1] + Math.sin(a) * (r + 0.02), z], r: [0, 0, a + Math.PI / 2] });
   ctx.A.add(group, g2, M.anodized(color));
+  // mounting bolts + brand window
+  const zs = z + Math.sign(z || 1) * 0.027;
+  for (const k of [-1, 1]) {
+    const ab = a + k * 0.16;
+    const b = cyl(0.0065, 0.0065, 0.012, 6, 'z');
+    b.translate(axle[0] + Math.cos(ab) * (r + 0.005), axle[1] + Math.sin(ab) * (r + 0.005), zs);
+    ctx.A.add(group, b, M.chrome());
+  }
+  const win = box(0.012, 0.05 * size, 0.004, 0.002);
+  place(win, { p: [axle[0] + Math.cos(a) * r, axle[1] + Math.sin(a) * r, zs + Math.sign(z || 1) * 0.002], r: [0, 0, a + Math.PI / 2] });
+  ctx.A.add(group, win, M.plastic(0xf2f2f2));
+  (ctx.calipers || (ctx.calipers = [])).push({ group, pos: [axle[0] + Math.cos(a) * (r + 0.03), axle[1] + Math.sin(a) * (r + 0.03), z], a });
 }
 
 // ---------------------------------------------------------------------------
@@ -288,10 +300,12 @@ export function frontFender(ctx, o = {}) {
     g.translate(ctx.front.x + (o.dx ?? 0), ctx.front.y + (o.dy ?? 0), 0);
     ctx.A.add(o.group || 'forkSlider', g, o.mat || ctx.mats.paint);
   }
-  if (o.skirts) {
+  const skirt = o.skirts ?? 0.035;
+  if (skirt > 0) {
     for (const z of [-w / 2, w / 2]) {
-      const sk = new THREE.RingGeometry(R - o.skirts, R, 24, 1, Math.PI / 2 - t0 - len + Math.PI, len);
-      sk.translate(ctx.front.x, ctx.front.y, z);
+      // fender angle t (from the bottom toward the front) -> ring phi = t - PI/2
+      const sk = new THREE.RingGeometry(R - skirt, R + 0.002, 28, 1, t0 - Math.PI / 2, len);
+      sk.translate(ctx.front.x + (o.dx ?? 0), ctx.front.y + (o.dy ?? 0), z);
       if (z < 0) flipGeometry(sk);
       ctx.A.add(o.group || 'forkSlider', sk, o.mat || ctx.mats.paint);
     }
@@ -312,12 +326,13 @@ export function rearFender(ctx, o = {}) {
     g.translate(ctx.rear.x, ctx.rear.y, 0);
     ctx.A.add(o.group || 'swingarm', g, o.mat || M.black());
   }
-  if (o.skirts) {
+  const skirt = o.skirts ?? 0.03;
+  if (skirt > 0) {
     for (const z of [-w / 2, w / 2]) {
-      const sk = new THREE.RingGeometry(R - o.skirts, R, 24, 1, Math.PI / 2 - t0 - len + Math.PI, len);
+      const sk = new THREE.RingGeometry(R - skirt, R + 0.002, 28, 1, t0 - Math.PI / 2, len);
       sk.translate(ctx.rear.x, ctx.rear.y, z);
       if (z < 0) flipGeometry(sk);
-      ctx.A.add(o.group || 'chassis', sk, o.mat || M.black());
+      ctx.A.add(o.group || 'swingarm', sk, o.mat || M.black());
     }
   }
 }
@@ -377,8 +392,9 @@ export function chain(ctx, o = {}) {
   const rr = o.rearR ?? 0.1, fr = 0.04;
   const top0 = [fs[0], fs[1] + fr, z], top1 = [rs[0], rs[1] + rr, z];
   const bot0 = [fs[0], fs[1] - fr, z], bot1 = [rs[0], rs[1] - rr, z];
-  ctx.A.add('swingarm', rod(top0, top1, 0.006, 6), M.darkChrome());
-  ctx.A.add('swingarm', rod(bot0, bot1, 0.006, 6), M.darkChrome());
+  const lenT = Math.hypot(top1[0] - top0[0], top1[1] - top0[1]);
+  ctx.A.add('swingarm', uvScale(rod(top0, top1, 0.0065, 6), 1, lenT / 0.0127), M.chain());
+  ctx.A.add('swingarm', uvScale(rod(bot0, bot1, 0.0065, 6), 1, lenT / 0.0127), M.chain());
   const spr = cyl(fr, fr, 0.01, 16, 'z');
   spr.translate(fs[0], fs[1], z);
   ctx.A.add('chassis', spr, M.darkChrome());
@@ -456,11 +472,19 @@ export function crankcase(ctx, c, size, o = {}) {
       const bolt = cyl(0.02, 0.02, 0.01, 8, 'z');
       place(bolt, { p: [c[0] + (o.coverDx ?? 0), c[1] + (o.coverDy ?? -size[1] * 0.08), c[2] + z * (size[2] / 2 + 0.027)] });
       ctx.A.add('chassis', bolt, M.chrome());
+      const cr = (o.coverR ?? size[1] * 0.38) * 0.86;
+      for (let k = 0; k < 8; k++) {
+        const ak = (k / 8) * Math.PI * 2;
+        const hb = cyl(0.0055, 0.0055, 0.008, 6, 'z');
+        place(hb, { p: [c[0] + (o.coverDx ?? 0) + Math.cos(ak) * cr, c[1] + (o.coverDy ?? -size[1] * 0.08) + Math.sin(ak) * cr, c[2] + z * (size[2] / 2 + 0.026)] });
+        ctx.A.add('chassis', hb, M.chrome());
+      }
     }
   }
 }
 
 export function radiator(ctx, c, w, h, o = {}) {
+  (ctx.radiators || (ctx.radiators = [])).push({ c, w, h });
   const g = box(0.04, h, w, 0.008);
   place(g, { p: c, r: [0, 0, o.tilt ?? -0.2] });
   ctx.A.add('chassis', g, M.radiator());
@@ -648,6 +672,98 @@ export function numberPlate(ctx, c, size, mat, o = {}) {
   const g = new THREE.PlaneGeometry(size[0], size[1]);
   place(g, { p: c, r: o.r ?? [0, 0, 0] });
   ctx.A.add(o.group || 'chassis', g, mat);
+}
+
+function uvScale(g, su, sv) {
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// Fine detail: brake lines, cables, radiator hoses, turn signals, plate, kickstand, damper
+export function details(ctx, o = {}) {
+  const A = ctx.A;
+  const hose = M.rubber();
+  const banjo = M.chrome();
+  const rightEnd = ctx.barEnds ? ctx.barEnds.find((e) => e[2] > 0) : null;
+  const leftEnd = ctx.barEnds ? ctx.barEnds.find((e) => e[2] < 0) : null;
+  const back = (p, k) => [p[0] - ctx.n.x * k, p[1] - ctx.n.y * k, p[2]];
+  for (const c of ctx.calipers || []) {
+    if (c.group === 'forkSlider') {
+      const sgn = Math.sign(c.pos[2]) || 1;
+      const z = c.pos[2] + sgn * 0.018;
+      const p0 = [c.pos[0], c.pos[1], z];
+      const pA = back(ctx.fp(0.3, z + sgn * 0.012), 0.045);
+      const pB = back(ctx.fp(ctx.Lf - 0.04, z * 0.9), 0.06);
+      const mc = rightEnd ? [rightEnd[0] + 0.01, rightEnd[1] - 0.02, rightEnd[2] - 0.17] : back(ctx.fp(ctx.Lf + ctx.headLen + 0.05, 0.12), 0.05);
+      const mid = [pB[0] - 0.02, pB[1] + 0.1, sgn * 0.03];
+      const path = sgn > 0 ? [p0, pA, pB, mid, mc] : [p0, pA, pB, mid, [mid[0] + 0.01, mid[1] + 0.03, 0.02]];
+      A.add('steer', tube(path, 0.0052, { radial: 6 }), hose);
+      const bj = cyl(0.009, 0.009, 0.02, 8, 'z'); bj.translate(p0[0], p0[1], p0[2]);
+      A.add('steer', bj, banjo);
+    } else if (c.group === 'swingarm') {
+      const [px, py] = ctx.pivot;
+      const z = c.pos[2] + 0.012;
+      const path = [[c.pos[0], c.pos[1], z], [c.pos[0] + 0.12, c.pos[1] + 0.04, z], [px - 0.1, py + 0.07, z - 0.02], [px + 0.02, py + 0.1, z - 0.04]];
+      A.add('swingarm', tube(path, 0.005, { radial: 6 }), hose);
+    }
+  }
+  // throttle & clutch cables from the levers to the head stock
+  for (const e of [leftEnd, rightEnd]) {
+    if (!e) continue;
+    const s = Math.sign(e[2]);
+    const head = ctx.sp(ctx.Lf + ctx.headLen * 0.4);
+    const path = [[e[0] + 0.01, e[1] - 0.015, e[2] - s * 0.15], [e[0] + 0.07, e[1] - 0.06, e[2] * 0.7], [head[0] + 0.1, head[1] + 0.08, s * 0.07], [head[0] + 0.02, head[1] - 0.06, s * 0.07]];
+    A.add('steer', tube(path, 0.004, { radial: 5 }), M.black());
+  }
+  // radiator hoses
+  for (const r of ctx.radiators || []) {
+    for (const s of [-1, 1]) {
+      const z = (r.c[2] || 0) + s * r.w * 0.32;
+      const top = [r.c[0] - 0.03, r.c[1] + r.h * 0.35, z];
+      A.add('chassis', tube([top, [top[0] - 0.08, top[1] + 0.03, z * 0.8], [top[0] - 0.18, top[1] - 0.02, z * 0.5]], 0.011, { radial: 8 }), hose);
+      const bot = [r.c[0] - 0.02, r.c[1] - r.h * 0.4, z];
+      A.add('chassis', tube([bot, [bot[0] - 0.06, bot[1] - 0.05, z * 0.8], [bot[0] - 0.16, bot[1] - 0.08, z * 0.5]], 0.011, { radial: 8 }), hose);
+    }
+  }
+  // turn signals
+  const amber = M.emissive(0xff8a00, 0.25);
+  const signal = (grp, p, dir) => {
+    const stalk = rod([p[0] - dir * 0.02, p[1], p[2] * 0.82], p, 0.006, 6);
+    A.add(grp, stalk, M.black());
+    const lens = sphere(0.022, 12, 8); lens.scale(1.5, 0.8, 0.9); lens.translate(p[0] + dir * 0.01, p[1], p[2]);
+    A.add(grp, lens, amber);
+  };
+  if (o.signalsF) for (const p of o.signalsF) signal(o.signalsFGroup || 'chassis', p, 1);
+  if (o.plate) {
+    const pl = o.plate;
+    // hanger bracket
+    A.add(pl.group || 'chassis', rod([pl.pos[0] + 0.1, pl.pos[1] + 0.12, 0], [pl.pos[0] + 0.01, pl.pos[1] + 0.04, 0], 0.01, 6), M.black());
+    const plateBox = box(0.008, 0.11, 0.18, 0.004);
+    place(plateBox, { p: pl.pos, r: [0, 0, pl.tilt ?? 0.25] });
+    A.add(pl.group || 'chassis', plateBox, M.black());
+    const face = new THREE.PlaneGeometry(0.17, 0.1);
+    face.rotateY(-Math.PI / 2);
+    face.rotateZ(pl.tilt ?? 0.25);
+    face.translate(pl.pos[0] - 0.006, pl.pos[1], pl.pos[2]);
+    A.add(pl.group || 'chassis', face, ctx.mats.license);
+    for (const s of [-1, 1]) signal(pl.group || 'chassis', [pl.pos[0] + 0.03, pl.pos[1] + 0.07, s * 0.12], -1);
+  }
+  // folded kickstand (left side)
+  if (o.kickstand !== false) {
+    const [px, py] = ctx.pivot;
+    const a = [px + 0.12, py - 0.12, -0.11], b2 = [px - 0.2, py - 0.17, -0.15];
+    A.add('chassis', rod(a, b2, 0.011, 8), M.black());
+    const foot = box(0.04, 0.008, 0.025, 0.003); foot.translate(b2[0] - 0.01, b2[1] - 0.008, b2[2]);
+    A.add('chassis', foot, M.black());
+  }
+  // steering damper
+  if (o.damper) {
+    const h0 = ctx.sp(ctx.Lf + ctx.headLen + 0.02);
+    const dm = rod([h0[0] - 0.02, h0[1] + 0.01, -0.11], [h0[0] - 0.02, h0[1] + 0.01, 0.11], 0.012, 10);
+    A.add('chassis', dm, M.anodized(0xd4a431));
+  }
 }
 
 export { V, DEG, loft, tube, taperTube, lathe, box, cyl, sphere, place, rod, between, spring, ring, torus, mirrorZ };
