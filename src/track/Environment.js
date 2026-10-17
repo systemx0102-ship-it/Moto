@@ -1,7 +1,8 @@
 // Sky, sun, fog, environment reflections, clouds, weather and night lighting.
 import * as THREE from 'three';
 import { TIMES, WEATHER } from './themes.js';
-import { starsTexture, cloudTexture, softCircleTexture } from '../core/textures.js';
+import { starsTexture, cloudTexture, softCircleTexture, litCloudTexture, flareTexture } from '../core/textures.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { rng, clamp } from '../core/utils.js';
 
 const DEG = Math.PI / 180;
@@ -67,26 +68,44 @@ export class Environment {
     const coverage = Math.max(W.clouds, T.overcast ? 0.95 : 0);
     if (!T.night || coverage > 0.6) {
       const dense = coverage > 0.8;
-      const ct = cloudTexture(this.track.def.id.length, coverage);
-      ct.repeat.set(3, 1);
-      const base = T.night ? 0x15171e : dense ? (W.lightning ? 0x4a5260 : 0x7a8290) : 0xffffff;
+      const thetaLen = Math.PI * 0.46;
+      // sun position in dome texture space (SphereGeometry: x = -cos(phi) sin(theta), z = sin(phi) sin(theta))
+      const sd = this.sunDir;
+      const phi = Math.atan2(sd.z, -sd.x);
+      const sunU = ((phi / (Math.PI * 2)) % 1 + 1) % 1;
+      const sunY = Math.min(1.3, Math.acos(Math.max(-1, Math.min(1, sd.y))) / thetaLen);
+      const sunset = T.sunElev < 12 && !T.night;
+      let lit = sunset ? (T.sunAzim < 180 ? 0xffd2c0 : 0xffb070) : 0xffffff;
+      let shadow = sunset ? 0x5a4a60 : 0x8a96aa;
+      if (T.night) { lit = 0x2a2e3a; shadow = 0x0c0e14; }
+      else if (dense) { lit = W.lightning ? 0x6a7280 : 0xa4acb8; shadow = W.lightning ? 0x2a3038 : 0x5a626e; }
+      const ct = litCloudTexture(this.track.def.id.length + 3, coverage, sunU, sunY, lit, shadow, dense ? 0.55 : 0.35);
       const cmat = new THREE.MeshBasicMaterial({
-        map: ct, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false,
-        color: new THREE.Color(base).multiplyScalar(T.sunElev < 10 && !T.night ? 0.95 : 1.0),
-        opacity: dense ? 0.96 : 0.85,
+        map: ct, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false, opacity: dense ? 0.97 : 0.92,
       });
-      if (T.sunElev < 10 && !dense && !T.night) cmat.color.set(T.sunAzim < 180 ? 0xffd0d8 : 0xffc8a0);
-      const cg = new THREE.SphereGeometry(3000, 48, 12, 0, Math.PI * 2, 0, Math.PI * 0.42);
+      const cg = new THREE.SphereGeometry(3000, 64, 16, 0, Math.PI * 2, 0, thetaLen);
       this.clouds = new THREE.Mesh(cg, cmat);
       this.clouds.renderOrder = -1;
       scene.add(this.clouds);
       if (dense) {
         const c2 = this.clouds.clone();
-        c2.material = cmat.clone(); c2.material.opacity = 0.8;
-        c2.scale.setScalar(0.92); c2.rotation.y = 1.3;
+        c2.material = cmat.clone(); c2.material.opacity = 0.75;
+        c2.scale.setScalar(0.92);
         this.clouds2 = c2;
         scene.add(c2);
       }
+    }
+    // sun lens flare when the sun is visible
+    if (!T.night && (W.gray || 0) < 0.4 && q.post) {
+      const lf = new Lensflare();
+      const sunCol = new THREE.Color(T.sunColor);
+      lf.addElement(new LensflareElement(flareTexture('glow'), T.sunElev < 12 ? 900 : 600, 0, sunCol));
+      lf.addElement(new LensflareElement(flareTexture('hex'), 70, 0.35, new THREE.Color(0.5, 0.7, 1.0)));
+      lf.addElement(new LensflareElement(flareTexture('hex'), 110, 0.55, new THREE.Color(0.9, 0.6, 1.0)));
+      lf.addElement(new LensflareElement(flareTexture('ring'), 160, 0.75, new THREE.Color(0.6, 1.0, 0.8)));
+      lf.addElement(new LensflareElement(flareTexture('hex'), 60, 0.9, new THREE.Color(1.0, 0.8, 0.5)));
+      this.flare = lf;
+      scene.add(lf);
     }
 
     // fog: overcast weather pulls the fog colour toward a neutral grey
@@ -286,8 +305,9 @@ export class Environment {
     sun.target.position.set(fx, f.y, fz);
     sun.position.set(fx + this.lightDir.x * 200, f.y + this.lightDir.y * 200, fz + this.lightDir.z * 200);
     if (this.sky) this.sky.position.copy(camera.position);
-    if (this.clouds) { this.clouds.position.set(camera.position.x, 0, camera.position.z); this.clouds.rotation.y += dt * 0.004; }
-    if (this.clouds2) { this.clouds2.position.set(camera.position.x, 0, camera.position.z); this.clouds2.rotation.y += dt * 0.007; }
+    if (this.flare) this.flare.position.copy(camera.position).addScaledVector(this.sunDir, 2500);
+    if (this.clouds) { this.clouds.position.set(camera.position.x, 0, camera.position.z); this.clouds.rotation.y += dt * 0.0006; }
+    if (this.clouds2) { this.clouds2.position.set(camera.position.x, 0, camera.position.z); this.clouds2.rotation.y += dt * 0.0011; }
     if (this.rainMat) { this.rainMat.uniforms.uTime.value = this.time; this.rainMat.uniforms.uCam.value.copy(camera.position); }
     if (this.snowMat) { this.snowMat.uniforms.uTime.value = this.time; this.snowMat.uniforms.uCam.value.copy(camera.position); }
 

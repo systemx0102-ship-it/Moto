@@ -549,6 +549,97 @@ export function cloudTexture(seed = 8, coverage = 0.5) {
   });
 }
 
+// Sun-lit cloud panorama for the sky dome (u = azimuth, v = zenith->horizon band).
+// sunU/sunY: sun position in texture space (0..1). Lighting is ray-marched toward the sun.
+export function litCloudTexture(seed, coverage, sunU, sunY, lit, shadow, ambient = 0.35) {
+  const key = `litcloud:${seed}:${coverage.toFixed(2)}:${sunU.toFixed(3)}:${sunY.toFixed(3)}:${lit}:${shadow}`;
+  return cached(key, () => {
+    const W = 1536, H = 384;
+    const n = makeTileFbm(seed, 6, 6);
+    const n2 = makeTileFbm(seed + 3, 24, 3);
+    const dens = new Float32Array(W * H);
+    const thr = 0.6 - coverage * 0.32;
+    for (let y = 0; y < H; y++) {
+      const v = y / H;
+      const fade = Math.min(1, Math.sin(v * Math.PI) * 1.6);
+      for (let x = 0; x < W; x++) {
+        const u = x / W;
+        // stretch horizontally near the horizon for perspective
+        const d = n(u, v * (0.6 + v * 0.8)) * 0.5 + 0.5 + n2(u, v) * 0.08;
+        dens[y * W + x] = clamp((d - thr) * 3.4, 0, 1) * fade;
+      }
+    }
+    const L = hexToRgb(lit), S = hexToRgb(shadow);
+    const { c, g } = makeCanvas(W, H);
+    const img = g.createImageData(W, H);
+    const sx = sunU * W, sy = sunY * H;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        const dd = dens[i];
+        if (dd <= 0.001) { img.data[i * 4 + 3] = 0; continue; }
+        let dx = sx - x; if (dx > W / 2) dx -= W; if (dx < -W / 2) dx += W;
+        let dy = sy - y;
+        const len = Math.hypot(dx, dy) || 1;
+        dx /= len; dy /= len;
+        let acc = 0;
+        for (let k = 1; k <= 7; k++) {
+          const px = ((Math.round(x + dx * k * 5) % W) + W) % W, py = Math.round(y + dy * k * 5);
+          if (py < 0 || py >= H) break;
+          acc += dens[py * W + px];
+        }
+        const light = Math.exp(-acc * 0.75);
+        const toward = Math.max(0, 1 - len / (W * 0.25));
+        const silver = Math.pow(1 - dd, 2) * toward * 0.8;
+        const k2 = clamp(ambient + light * (1 - ambient) + silver, 0, 1.4);
+        img.data[i * 4] = clamp(S[0] + (L[0] - S[0]) * k2, 0, 255);
+        img.data[i * 4 + 1] = clamp(S[1] + (L[1] - S[1]) * k2, 0, 255);
+        img.data[i * 4 + 2] = clamp(S[2] + (L[2] - S[2]) * k2, 0, 255);
+        img.data[i * 4 + 3] = clamp(Math.pow(dd, 0.8) * 255, 0, 255);
+      }
+    }
+    g.putImageData(img, 0, 0);
+    const t = toTexture(c, { wrap: false });
+    t.wrapS = THREE.RepeatWrapping;
+    return t;
+  });
+}
+
+export function flareTexture(kind = 'glow') {
+  return cached(`flare:${kind}`, () => {
+    const S = 256, C = S / 2;
+    const { c, g } = makeCanvas(S, S);
+    if (kind === 'glow') {
+      const grd = g.createRadialGradient(C, C, 0, C, C, C);
+      grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.08, 'rgba(255,250,235,0.9)');
+      grd.addColorStop(0.25, 'rgba(255,220,170,0.25)'); grd.addColorStop(1, 'rgba(255,200,150,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, S, S);
+      // streaks
+      g.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 6; k++) {
+        g.save(); g.translate(C, C); g.rotate((k / 6) * Math.PI);
+        const lg = g.createLinearGradient(-C, 0, C, 0);
+        lg.addColorStop(0, 'rgba(255,240,220,0)'); lg.addColorStop(0.5, 'rgba(255,240,220,0.35)'); lg.addColorStop(1, 'rgba(255,240,220,0)');
+        g.fillStyle = lg; g.fillRect(-C, -1.2, S, 2.4); g.restore();
+      }
+    } else if (kind === 'hex') {
+      g.fillStyle = 'rgba(255,255,255,0.5)';
+      g.beginPath();
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; g.lineTo(C + Math.cos(a) * C * 0.9, C + Math.sin(a) * C * 0.9); }
+      g.closePath(); g.fill();
+      g.globalCompositeOperation = 'destination-out';
+      const grd = g.createRadialGradient(C, C, 0, C, C, C);
+      grd.addColorStop(0, 'rgba(0,0,0,0.6)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, S, S);
+    } else {
+      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 6;
+      g.beginPath(); g.arc(C, C, C * 0.85, 0, Math.PI * 2); g.stroke();
+    }
+    const t = toTexture(c, { wrap: false, aniso: false });
+    return t;
+  });
+}
+
 export function numberPlateTexture(num, bg = '#ffffff', fg = '#111111') {
   return cached(`plate:${num}:${bg}:${fg}`, () => {
     const { c, g } = makeCanvas(256, 256);
