@@ -164,8 +164,9 @@ const RIBBON_VS = /* glsl */`
 const RIBBON_FS = /* glsl */`
   varying vec4 vC;
   void main() {
-    float f = 1.0 - vC.w * vC.w;
-    gl_FragColor = vec4(vC.rgb * f * f, 1.0);
+    // hot core line inside a soft glow
+    float w2 = vC.w * vC.w, h = 1.0 - w2;
+    gl_FragColor = vec4(vC.rgb * (exp(-w2 * 9.0) * 0.8 + h * h * 0.2), 1.0);
     ${OUT}
   }`;
 
@@ -483,6 +484,8 @@ export class BikeGlow {
     this._up = new THREE.Vector3();
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
+    this._lastCam = new THREE.Vector3();
+    this._camCut = true;
     this._m = new THREE.Matrix4();
     this._g = { S: 0, I: 0 }; // size / intensity of the last glare drawn
     this._beamGeo = beamGeometry();
@@ -631,12 +634,16 @@ export class BikeGlow {
     this.pxK = H / (2 * Math.tan((camera.fov * Math.PI) / 360));
     this.resK = H / 720;
     this.maxS = H * 0.2;
+    // trails are exposed by the camera: kept relative to it, and dropped on a camera cut
+    this._camCut = this._camCut || this._lastCam.distanceToSquared(cam) > Math.max(64, (120 * dt) ** 2);
+    this._lastCam.copy(cam);
     this.ribbons.begin(cam);
     for (let i = 0; i < this.st.length; i++) this._bike(this.st[i], dt, cam);
     this.glare.flush();
     this.decals.flush();
     this.refl.flush();
     this.ribbons.end();
+    this._camCut = false;
   }
 
   _bike(s, dt, cam) {
@@ -720,7 +727,7 @@ export class BikeGlow {
       const d = s.discs[i];
       const heat = d.front ? s.heatF : s.heatR;
       d.mesh.visible = discOn && heat > 0.12;
-      if (d.mesh.visible) { d.mat.uniforms.uHeat.value = heat; d.mat.uniforms.uGain.value = 0.3 + 1.25 * night; }
+      if (d.mesh.visible) { d.mat.uniforms.uHeat.value = heat; d.mat.uniforms.uGain.value = 0.15 + 1.4 * night; }
     }
 
     // ---- exhaust backfire flames / electric arcs
@@ -742,7 +749,7 @@ export class BikeGlow {
         const pn = this._v.copy(n).transformDirection(inv), pp = this._v2.set(gx, gy, gz).applyMatrix4(inv);
         u.uPlane.value.set(pn.x, pn.y, pn.z, -pn.dot(pp));
         // looking into the lamp the glare takes over; the shaft reads from the side/behind
-        u.uInt.value = 1.6 * bi * (1 - 0.8 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
+        u.uInt.value = (b.isPlayer ? 1 : 1.6) * bi * (1 - 0.8 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
       }
       // (the player's bike has a real spotlight doing this)
       if (!b.isPlayer && near && night > 0.3) {
@@ -771,7 +778,7 @@ export class BikeGlow {
     const G = this.G, gl = this.glare;
     const mpp = d / this.pxK;
     const pull = Math.min(0.5 + d * 0.03, d * 0.4);
-    let S = (head ? 64 : 46) * this.resK * (0.25 + 0.75 * G) * Math.pow(E, 0.4);
+    let S = (head ? 76 : 48) * this.resK * (0.25 + 0.75 * G) * Math.pow(E, 0.4);
     let ci = (head ? 3.4 : 2.6) * (0.16 + 0.84 * G) * Math.pow(E, 0.25);
     // distant lamps stay crisp points instead of shimmering sub-pixel sprites
     const minS = (head ? 3.2 : 2.6) * this.resK;
@@ -813,8 +820,12 @@ export class BikeGlow {
     this.refl.add(rx, ry, rz, n.x, n.y, n.z, c[0] * k, c[1] * k, c[2] * k, seed, hw, len, (hl * 0.9) / d);
   }
 
+  // Long-exposure streak behind a lamp. Samples are stored relative to the camera, as a
+  // tracking shot would expose them: bikes running with the camera leave short streaks,
+  // bikes passing a static camera draw the full ribbon.
   _trailUpdate(tr, s, amt, crashed, cam) {
     const L = tr.light, buf = tr.buf, M = tr.M;
+    if (this._camCut) tr.n = 0;
     // the rider's own trail would stream under a chase camera: keep it short
     const own = s.b.isPlayer && s.dist < 12;
     const life = tr.head ? 0.3 : own ? 0.22 : 0.45;
@@ -822,23 +833,23 @@ export class BikeGlow {
       // brightness baked per sample: lamp facing and brake state at that instant
       const c = tr.head ? s.hc : TAIL;
       const k = tr.head
-        ? amt * L.view * (0.2 + 0.7 * this.night) * L.k
-        : amt * Math.max(0.15, L.view) * (0.5 + 1.6 * this.night) * (1 + 1.9 * s.brake);
+        ? amt * L.view * (0.3 + 1.2 * this.night) * L.k
+        : amt * Math.max(0.25, L.view) * (1.2 + 4 * this.night) * (1 + 1.6 * s.brake);
+      const rx = L.wx - cam.x, ry = L.wy - cam.y, rz = L.wz - cam.z;
       let o = tr.headI * 7;
-      const jump = tr.n > 0 && (buf[o] - L.wx) ** 2 + (buf[o + 1] - L.wy) ** 2 + (buf[o + 2] - L.wz) ** 2 > 225;
-      if (jump) tr.n = 0;
+      if (tr.n > 0 && (buf[o] - rx) ** 2 + (buf[o + 1] - ry) ** 2 + (buf[o + 2] - rz) ** 2 > 225) tr.n = 0; // respawn
       if (tr.n === 0 || this.time - tr.lastPush >= 1 / 50) {
         tr.headI = (tr.headI + 1) % M; tr.n = Math.min(M, tr.n + 1); tr.lastPush = this.time;
         o = tr.headI * 7;
         buf[o + 3] = this.time;
       }
-      buf[o] = L.wx; buf[o + 1] = L.wy; buf[o + 2] = L.wz;
+      buf[o] = rx; buf[o + 1] = ry; buf[o + 2] = rz;
       buf[o + 4] = c[0] * k; buf[o + 5] = c[1] * k; buf[o + 6] = c[2] * k;
     }
     if (tr.n < 2) return;
     // emit newest -> oldest into the ribbon scratch
     const R = this.ribbons, sp = R.sp, sw = R.sw, sc = R.sc;
-    const w0 = tr.head ? 0.03 : 0.026;
+    const w0 = tr.head ? 0.05 : 0.045;
     const n0 = own ? 4 : 1.5, n1 = own ? 9 : 6;
     let n = 0;
     for (let j = 0; j < tr.n && n < 64; j++) {
@@ -846,15 +857,15 @@ export class BikeGlow {
       const age = this.time - buf[o + 3];
       if (age > life) break;
       const x = buf[o], y = buf[o + 1], z = buf[o + 2];
-      const dd = Math.sqrt((x - cam.x) ** 2 + (y - cam.y) ** 2 + (z - cam.z) ** 2);
+      const dd = Math.sqrt(x * x + y * y + z * z);
       const f = 1 - age / life;
-      // most of the energy right behind the lamp, a long faint tail
-      let a = f * f * Math.sqrt(f) * sstep(n0, n1, dd);
-      // never thinner than ~1.3 px (no shimmer); dim instead
-      let w = w0 * (0.35 + 0.65 * f);
-      const wMin = (1.3 * this.resK * dd) / this.pxK;
+      // an even streak (constant speed) that dies away toward its end
+      let a = f * Math.sqrt(f) * sstep(n0, n1, dd);
+      // never thinner than ~2 px (no shimmer); dim instead
+      let w = w0 * (0.45 + 0.55 * f);
+      const wMin = (2 * this.resK * dd) / this.pxK;
       if (w < wMin) { a *= w / wMin; w = wMin; }
-      sp[n * 3] = x; sp[n * 3 + 1] = y; sp[n * 3 + 2] = z;
+      sp[n * 3] = x + cam.x; sp[n * 3 + 1] = y + cam.y; sp[n * 3 + 2] = z + cam.z;
       sw[n] = w;
       sc[n * 3] = buf[o + 4] * a; sc[n * 3 + 1] = buf[o + 5] * a; sc[n * 3 + 2] = buf[o + 6] * a;
       n++;
