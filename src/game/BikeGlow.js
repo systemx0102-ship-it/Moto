@@ -246,12 +246,14 @@ const BEAM_FS = /* glsl */`
       }
       t1 = max(ex, t0);
     }
-    float seg = (t1 - t0) / 5.0, acc = 0.0;
-    for (int i = 0; i < 5; i++) acc += dens(o + d * (t0 + seg * (float(i) + 0.5)));
+    // 7 samples along the chord, jittered per pixel so long chords never band
+    float seg = (t1 - t0) / 7.0, acc = 0.0;
+    float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    for (int i = 0; i < 7; i++) acc += dens(o + d * (t0 + seg * (float(i) + j)));
     // mist scatters forward (Henyey-Greenstein, g = 0.5): faint seen from behind the lamp,
     // stronger looking back into it; normalised to 1 seen side-on
-    float ph = min(1.396 / pow(1.25 + d.x, 1.5), 2.5);
-    gl_FragColor = vec4(uColor * (acc * seg * ph * uInt * fogT(t0 + seg * 2.5)), 1.0);
+    float ph = min(1.396 / pow(1.25 + d.x, 1.5), 1.8);
+    gl_FragColor = vec4(uColor * (acc * seg * ph * uInt * fogT(t0 + seg * 3.5)), 1.0);
     ${OUT}
   }`;
 
@@ -736,7 +738,7 @@ export class BikeGlow {
 
     // ---- volumetric headlight beam + light pool on the road
     if (s.beam) {
-      const bi = night * (0.3 + this.scatter);
+      const bi = night * (0.3 + 0.8 * this.scatter);
       const on = bi > 0.12 && dist < Tq.beamDist;
       s.beam.mesh.visible = on;
       if (on) {
@@ -749,10 +751,10 @@ export class BikeGlow {
         const pn = this._v.copy(n).transformDirection(inv), pp = this._v2.set(gx, gy, gz).applyMatrix4(inv);
         u.uPlane.value.set(pn.x, pn.y, pn.z, -pn.dot(pp));
         // looking into the lamp the glare takes over; the shaft reads from the side/behind
-        u.uInt.value = (b.isPlayer ? 1 : 1.6) * bi * (1 - 0.8 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
+        u.uInt.value = (b.isPlayer ? 1 : 1.6) * Math.min(bi, 1.1) * (1 - 0.8 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
       }
       // (the player's bike has a real spotlight doing this)
-      if (!b.isPlayer && near && night > 0.3) {
+      if (!b.isPlayer && near && night > 0.3 && !p.crashed) {
         const c = s.hc, k = 0.11 * night;
         this.decals.add(gx + hx * 7.5, gy, gz + hz * 7.5, n.x, n.y, n.z, hx, hz, 6.5, 1.8, c[0] * k, c[1] * k, c[2] * k, 0.55);
       }
