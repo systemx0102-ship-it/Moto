@@ -103,22 +103,27 @@ const GHOSTS = /* glsl */`
     vec2 x = (vUv - 0.5) * vec2(uAspect, 1.0);
     vec2 hr = haloUv(x, uHalo * 1.04), hg = haloUv(x, uHalo), hb = haloUv(x, uHalo * 0.96);
     float hw = pow(clamp(1.0 - length((hg - 0.5) * vec2(uAspect, 1.0)) / 0.45, 0.0, 1.0), 4.0);
-    acc += vec3(texture2D(tSoft, hr).r, texture2D(tSoft, hg).g, texture2D(tSoft, hb).b) * hw * 0.3;
+    acc += vec3(texture2D(tSoft, hr).r, texture2D(tSoft, hg).g, texture2D(tSoft, hb).b) * hw * 0.14;
     gl_FragColor = vec4(acc, 1.0);
   }
 `;
 
 // Anamorphic streak pyramid (after Keijiro's Kino Streak). The source keeps only
-// compact highlights (bright minus its wide glow) so lamps and tail lights streak
-// while big lit areas (sky, wet-road reflections) do not smear sideways.
+// compact highlights (much brighter than their wide glow) so lamps, headlights and
+// tail lights streak while big lit areas (sky, wet-road sheen) do not smear sideways.
 const STREAK_PRE = /* glsl */`
   uniform sampler2D tSrc, tBlur;
-  uniform float uIsolate, uCut;
+  uniform float uIsolate, uCut, uDesat;
   varying vec2 vUv;
   void main(){
-    vec3 c = max(texture2D(tSrc, vUv).rgb - texture2D(tBlur, vUv).rgb * uIsolate, 0.0);
-    float br = max(c.r, max(c.g, c.b));
-    gl_FragColor = vec4(c * (max(br - uCut, 0.0) / max(br, 1e-4)), 1.0);
+    vec3 c = texture2D(tSrc, vUv).rgb;
+    vec3 g = texture2D(tBlur, vUv).rgb;
+    float br = max(c.r, max(c.g, c.b)), gb = max(g.r, max(g.g, g.b));
+    float peak = smoothstep(uIsolate, uIsolate * 3.0, br / (gb + 0.04));
+    c *= peak * max(br - uCut, 0.0) / max(br, 1e-4);
+    // the cylindrical lens reads blue-white whatever the source colour
+    c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), uDesat);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 // halve the width only
@@ -179,9 +184,9 @@ const COMPOSITE_VS = /* glsl */`
 const COMPOSITE_FS = /* glsl */`
   precision highp float;
   uniform sampler2D tDiffuse, tStreak, tFlare, tGlow, tDirt, tRays;
-  uniform vec3 uStreakTint, uRayColor, uSunGlare;
+  uniform vec3 uStreakTint, uRayColor, uSunGlare, uSunLine;
   uniform vec2 uSunPos;
-  uniform float uStreak, uFlare, uDirt, uRays, uInvExposure, uAspect;
+  uniform float uStreak, uFlare, uDirt, uRays, uSunOn, uInvExposure, uAspect;
   #include <tonemapping_pars_fragment>
   #include <colorspace_pars_fragment>
   varying vec2 vUv;
@@ -191,14 +196,19 @@ const COMPOSITE_FS = /* glsl */`
     vec3 lens = texture2D(tStreak, vUv).rgb * uStreakTint * uStreak;
     lens += texture2D(tFlare, vUv).rgb * uFlare * (0.45 + dirt * 1.6);
     lens += texture2D(tGlow, vUv).rgb * dirt * uDirt;
-    if (uRays > 0.0) {
-      // squared so open sky reads as shafts and occluders cut clear gaps
+    if (uSunOn > 0.0) {
+      // shafts: powered so open sky reads as beams and occluders cut clear gaps
       float ry = texture2D(tRays, vUv).r;
-      lens += pow(ry, 1.4) * 1.6 * uRayColor * uRays;
-      // sun glare on the dirty glass + a faint veil, scaled by how open the sky around the sun is
+      lens += ry * ry * 1.8 * uRayColor * uRays;
+      // how much of the sun disk is unoccluded drives its glare and streak
       float open = texture2D(tRays, uSunPos).r;
-      float r = length((vUv - uSunPos) * vec2(uAspect, 1.0));
+      vec2 d = (vUv - uSunPos) * vec2(uAspect, 1.0);
+      float r = length(d);
       lens += uSunGlare * open * (dot(dirt, vec3(0.333)) * exp(-r * 3.5) + exp(-r * 2.0) * 0.02);
+      // anamorphic line through the sun: hairline core + soft wide wings
+      float ax = abs(d.x), ay = abs(d.y);
+      float line = exp(-ay * 300.0) * (exp(-ax * 1.4) + 2.5 * exp(-ax * 8.0)) + exp(-ay * 45.0) * exp(-ax * 4.0) * 0.12;
+      lens += uSunLine * open * line;
     }
     #ifdef LENS_ONLY
       c.rgb = vec3(0.0);
@@ -225,7 +235,7 @@ const COMPOSITE_FS = /* glsl */`
 `;
 
 // grade amounts are ~0..1; these map them to energy that reads well on screen
-const STREAK_GAIN = 3, FLARE_GAIN = 2.5;
+const STREAK_GAIN = 3, FLARE_GAIN = 2.5, SUNLINE_GAIN = 1.2;
 
 const TONE_DEFINES = {
   [THREE.LinearToneMapping]: 'LINEAR_TONE_MAPPING', [THREE.ReinhardToneMapping]: 'REINHARD_TONE_MAPPING',
@@ -252,8 +262,8 @@ class LensComposite extends Pass {
     this.fx = fx;
     this.uniforms = {
       tDiffuse: tex(), tStreak: tex(), tFlare: tex(), tGlow: tex(), tDirt: { value: lensDirtTexture() }, tRays: tex(),
-      uStreakTint: { value: new THREE.Color() }, uRayColor: { value: new THREE.Color() }, uSunGlare: { value: new THREE.Color() },
-      uSunPos: { value: new THREE.Vector2(0.5, 0.5) }, uStreak: f(), uFlare: f(), uDirt: f(), uRays: f(), uInvExposure: f(1), uAspect: f(1.7),
+      uStreakTint: { value: new THREE.Color() }, uRayColor: { value: new THREE.Color() }, uSunGlare: { value: new THREE.Color() }, uSunLine: { value: new THREE.Color() },
+      uSunPos: { value: new THREE.Vector2(0.5, 0.5) }, uStreak: f(), uFlare: f(), uDirt: f(), uRays: f(), uSunOn: f(), uInvExposure: f(1), uAspect: f(1.7),
       toneMappingExposure: f(1),
     };
     this.material = new THREE.RawShaderMaterial({ uniforms: this.uniforms, vertexShader: COMPOSITE_VS, fragmentShader: COMPOSITE_FS, depthTest: false, depthWrite: false });
@@ -290,7 +300,7 @@ export class LensFX {
     this.tier = tier;
     this.maxLevels = tier >= 3 ? 7 : tier >= 2 ? 6 : 5;
     // look (set from the grade) and sun state (set by the engine every frame)
-    this.p = { streak: 0, flare: 0, dirt: 0, rays: 0, thr: 1.5, rayThr: 0.7, rayLen: 0.7, stretch: 0.86 };
+    this.p = { streak: 0, flare: 0, dirt: 0, rays: 0, thr: 1.5, rayThr: 0.7, rayLen: 0.7, stretch: 0.86, cut: 1, isolate: 1.6, desat: 0.5, sunLine: 1 };
     this.streakTint = new THREE.Color(0.5, 0.72, 1);
     this.rayTint = new THREE.Color(1, 1, 1);
     this.sunPos = new THREE.Vector2(0.5, 0.5);
@@ -299,11 +309,11 @@ export class LensFX {
     this.aspect = 1.7;
     this.debug = false;
     this.quad = new FullScreenQuad(null);
-    this.mBright = mat(BRIGHT, { tDiffuse: tex(), uTexel: v2(), uSun: v2(), uExposure: f(1), uThreshold: f(1.5), uClamp: f(10), uRayThr: f(0.7), uRayR: f(0.3), uRayOn: f(), uAspect: f(1.7) });
+    this.mBright = mat(BRIGHT, { tDiffuse: tex(), uTexel: v2(), uSun: v2(), uExposure: f(1), uThreshold: f(1.5), uClamp: f(10), uRayThr: f(0.5), uRayR: f(0.42), uRayOn: f(), uAspect: f(1.7) });
     this.mDown = mat(DOWN, { tSrc: tex(), uTexel: v2() });
     this.mBlur = mat(BLUR, { tSrc: tex(), uTexel: v2() });
     this.mGhost = mat(GHOSTS, { tSrc: tex(), tSoft: tex(), uAspect: f(1.7), uHalo: f(0.42) }, { GHOSTS: tier >= 2 ? 6 : 4 });
-    this.mSPre = mat(STREAK_PRE, { tSrc: tex(), tBlur: tex(), uIsolate: f(0.9), uCut: f(1) });
+    this.mSPre = mat(STREAK_PRE, { tSrc: tex(), tBlur: tex(), uIsolate: f(1.6), uCut: f(1), uDesat: f(0.5) });
     this.mSDown = mat(STREAK_DOWN, { tSrc: tex(), uTexel: v2() });
     this.mSUp = mat(STREAK_UP, { tLow: tex(), tHigh: tex(), uTexel: v2(), uStretch: f(0.86) });
     this.mRays = mat(RAYS, { tSrc: tex(), uSun: v2(), uStep: f(0.1), uAlpha: f() });
@@ -356,6 +366,7 @@ export class LensFX {
     const p = this.p;
     p.streak = g.streak; p.flare = g.flare; p.dirt = g.dirt; p.rays = g.rays;
     p.thr = g.thr; p.rayThr = g.rayThr; p.rayLen = g.rayLen; p.stretch = g.stretch;
+    p.cut = g.cut; p.isolate = g.isolate; p.desat = g.desat; p.sunLine = g.sunLine;
     this.streakTint.setRGB(...g.streakTint);
     this.rayTint.setRGB(...g.rayTint);
   }
@@ -373,20 +384,23 @@ export class LensFX {
   }
 
   prepare(renderer, src) {
-    const p = this.p, u = this.composite.uniforms;
-    const rays = p.rays * this.sunVis;
-    const doRays = rays > 0.002;
+    const p = this.p, u = this.composite.uniforms, vis = this.sunVis;
+    // sun (or moon) on screen: sky mask + radial blur, also tells how open the disk is
+    const doRays = vis > 0.002 && (p.rays > 0.001 || p.dirt > 0.001 || p.sunLine * p.streak > 0.001);
     const doFlare = p.flare > 0.001 || p.dirt > 0.001;
     const doStreak = p.streak > 0.001;
     // what the composite may use this frame (stale targets are weighted by zero)
     u.uStreak.value = doStreak ? p.streak * STREAK_GAIN : 0;
     u.uFlare.value = doFlare ? p.flare * FLARE_GAIN : 0;
     u.uDirt.value = doFlare ? p.dirt : 0;
-    u.uRays.value = doRays ? rays : 0;
+    u.uSunOn.value = doRays ? 1 : 0;
+    u.uRays.value = doRays ? p.rays * vis : 0;
     if (!doRays && !doFlare && !doStreak) return;
     u.uStreakTint.value.copy(this.streakTint);
     u.uRayColor.value.copy(this.sunColor).multiply(this.rayTint);
-    u.uSunGlare.value.copy(this.sunColor).multiplyScalar(this.sunVis * p.dirt);
+    u.uSunGlare.value.copy(this.sunColor).multiplyScalar(vis * p.dirt);
+    // the sun's streak keeps some of its own colour
+    u.uSunLine.value.copy(this.sunColor).lerp(this.streakTint, 0.5).multiplyScalar(vis * p.streak * p.sunLine * SUNLINE_GAIN);
     u.uSunPos.value.copy(this.sunPos);
 
     // bright pass (+ sky mask around the sun in alpha)
@@ -422,6 +436,7 @@ export class LensFX {
       const D = this.down, Up = this.up, n = Up.length;
       m = this.mSPre; U = m.uniforms;
       U.tSrc.value = this.bright.texture; U.tBlur.value = this.glow.texture;
+      U.uCut.value = p.cut; U.uIsolate.value = p.isolate; U.uDesat.value = p.desat;
       this._draw(renderer, m, D[0]);
       m = this.mSDown; U = m.uniforms;
       for (let i = 1; i <= n; i++) {

@@ -259,9 +259,8 @@ export class Engine {
   // 'neutral' for menus) adjusted by weather ('rain', 'storm', 'fog'…). Cached.
   setGrade(time = 'neutral', weather = 'clear') {
     const L = this.look;
-    const key = `${time}|${weather}`;
-    if (L.key === key) return;
-    L.key = key;
+    if (L.time === time && L.weather === weather) return;
+    L.time = time; L.weather = weather;
     L.grade = resolveGrade(time, weather);
     this._applyLook();
   }
@@ -275,7 +274,7 @@ export class Engine {
   }
 
   _newLook() {
-    return { key: 'neutral|clear', grade: resolveGrade('neutral'), sunDir: new THREE.Vector3(0, 1, 0), sunColor: new THREE.Color(1, 1, 1), sunAmt: 0 };
+    return { time: 'neutral', weather: 'clear', grade: resolveGrade('neutral'), sunDir: new THREE.Vector3(0, 1, 0), sunColor: new THREE.Color(1, 1, 1), sunAmt: 0 };
   }
 
   _applyLook() {
