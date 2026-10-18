@@ -168,7 +168,7 @@ export class RpgRace {
     for (const id of ['deriva', 'relampago']) {
       if (this.boostT[id] > 0) { this.boostT[id] -= dt; k *= id === 'deriva' ? 1.08 : 1.1; }
     }
-    const last = race.phase === 'race' && !P.finished && P.phys.lap === race.laps - 1 && race.laps > 1;
+    const last = race.phase === 'race' && !P.finished && !P.out && P.phys.lap === race.laps - 1;
     if (this.perks.has('instinto') && last) {
       k *= 1.06;
       if (!this._instinto) { this._instinto = true; this._perk('instinto', '+6 % de potencia en la última vuelta'); }

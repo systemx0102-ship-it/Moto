@@ -10,6 +10,7 @@ import { TYPE_NAME } from '../rpg/data.js';
 import { RICON } from '../rpg/ui/common.js';
 
 const TAU = Math.PI * 2;
+const WARN_SVG = '<svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>';
 
 export class HUD {
   constructor(root, race) {
@@ -444,7 +445,8 @@ export class HUD {
     });
     E.rPk = h('div', { class: 'k' }); E.rPn = h('div', { class: 'n' });
     E.rPl = h('div', { class: 'k' }); E.rPv = h('div', { class: 'v' });
-    E.rPlate = h('div', { class: 'rpg-plate' }, h('span', { class: 'ic', html: RICON.boss }), h('div', { class: 'who' }, E.rPk, E.rPn), h('div', { class: 'gap' }, E.rPl, E.rPv));
+    E.rPic = h('span', { class: 'ic' });
+    E.rPlate = h('div', { class: 'rpg-plate' }, E.rPic, h('div', { class: 'who' }, E.rPk, E.rPn), h('div', { class: 'gap' }, E.rPl, E.rPv));
     E.rFeed = h('div', { class: 'rpg-feed' });
     this.root.append(E.rObj, E.rPlate, E.rFeed);
     this._rFeed = [];
@@ -470,7 +472,11 @@ export class HUD {
     if (pkey !== this._rPkey) {
       this._rPkey = pkey;
       E.rPlate.className = 'rpg-plate' + (pl ? ` on ${pl.cls}` : '');
-      if (pl) { E.rPk.textContent = pl.kicker; E.rPn.textContent = pl.name; E.rPl.textContent = pl.label; E.rPv.textContent = pl.value; }
+      if (pl) {
+        E.rPk.textContent = pl.kicker; E.rPn.textContent = pl.name; E.rPl.textContent = pl.label; E.rPv.textContent = pl.value;
+        const ico = /boss/.test(pl.cls) ? RICON.boss : /danger|out/.test(pl.cls) ? WARN_SVG : '';
+        if (ico !== this._rIco) { this._rIco = ico; E.rPic.innerHTML = ico; }
+      }
     }
     // feed
     while (rt.feed.length) this._rpgFeedAdd(rt.feed.shift());
