@@ -56,10 +56,10 @@ export const ENGINES = {
   vtwin: {
     stroke: 4, fire: [0, 315], amp: [1, 0.86], tiers: [900, 1950, 4200],
     rise: 4.5, decay: 62, neg: 0.85, noise: 0.32, nzDecay: 45, nzLP: 3200, var: 0.12, jit: 2.2,
-    res: [[96, 2.5, 0.8], [235, 3, 0.9], [640, 3.5, 0.65]], spread: 0.07, dry: 0.6, drive: 1.8,
+    res: [[96, 2.5, 0.7], [235, 3, 1], [640, 3.5, 0.8]], spread: 0.07, dry: 0.6, drive: 1.8,
     intake: { res: [[140, 3, 1], [520, 4, 0.5]], decay: 110, amt: 0.8 },
     mech: { tick: 0.35, whine: 0.03, order: 9, trans: 4.5 },
-    lp: [900, 3200], pk: [120, 4, 0.9], intMix: 0.4, gain: 2.53, pops: 0.8, lim: [0.085, 0.04],
+    lp: [950, 3800], pk: [120, 2, 0.9], intMix: 0.4, gain: 2.85, pops: 0.8, lim: [0.085, 0.04],
   },
   // 90° V-twin: 270°/450°, short open pipes — sharper bark than the 45°.
   vtwin2: {
@@ -68,7 +68,7 @@ export const ENGINES = {
     res: [[125, 3, 0.8], [335, 3.5, 0.9], [910, 4, 0.6]], spread: 0.06, dry: 0.6, drive: 2.2,
     intake: { res: [[150, 3, 1], [610, 4, 0.5]], decay: 100, amt: 0.8 },
     mech: { tick: 0.3, whine: 0.03, order: 10, trans: 5 },
-    lp: [1350, 4800], pk: [165, 4, 1], intMix: 0.4, gain: 2.4, pops: 1.25, lim: [0.08, 0.038],
+    lp: [1350, 4800], pk: [165, 2.5, 1], intMix: 0.4, gain: 2.6, pops: 1.25, lim: [0.08, 0.038],
   },
   // Parallel twin with 270° crank (fires like a 90° V-twin), 2-into-2 peashooters: throbby, mellow.
   twin: {
@@ -113,7 +113,7 @@ export const ENGINES = {
     res: [[112, 2.5, 0.8], [300, 3, 0.85], [850, 3.5, 0.55]], spread: 0.06, dry: 0.6, drive: 2,
     intake: { res: [[150, 3, 1], [560, 4, 0.6]], decay: 100, amt: 0.9 },
     mech: { tick: 0.25, whine: 0.04, order: 12, trans: 5 },
-    lp: [1200, 4000], pk: [140, 4, 0.9], intMix: 0.45, gain: 2.02, pops: 1, lim: [0.08, 0.036],
+    lp: [1200, 4000], pk: [140, 2.5, 0.9], intMix: 0.45, gain: 2.15, pops: 1, lim: [0.08, 0.036],
   },
   // 500 GP two-stroke V4: one bang per cylinder per revolution, expansion chambers that "come on
   // the pipe" in the power band, 4-stroking "ring-ding-ding" at low rpm and on the overrun.
@@ -127,7 +127,7 @@ export const ENGINES = {
     lp: [2400, 8000], pk: [1450, 0, 2.2], band: [0.68, 0.98, 8, 0.3], intMix: 0.35, gain: 1.27, pops: 0.35, lim: [0.06, 0.028],
   },
   // Electric superbike: inverter + motor orders + straight-cut reduction gear (built live).
-  electric: { electric: true, gain: 1.3, gear: 11.37, pwm: 9200 },
+  electric: { electric: true, gain: 0.92, gear: 11.37, pwm: 9200 },
 };
 for (const k of Object.keys(ENGINES)) ENGINES[k].id = k;
 
@@ -324,7 +324,7 @@ function dspKit() {
   function genImpact(fs, R) {
     const L = Math.floor(fs * 0.9), x = new Float32Array(L), body = new Float32Array(L), crack = new Float32Array(L);
     let ph = 0;
-    const modes = [[380, 0.25, 0.22], [1050, 0.18, 0.17], [2280, 0.12, 0.1], [3900, 0.08, 0.05]].map(([f, d, a]) => [f * (0.9 + 0.2 * R()), d * (0.8 + 0.4 * R()), a * (0.5 + R())]);
+    const modes = [[380, 0.14, 0.13], [1050, 0.1, 0.1], [2280, 0.07, 0.06], [3900, 0.05, 0.03]].map(([f, d, a]) => [f * (0.9 + 0.2 * R()), d * (0.8 + 0.4 * R()), a * (0.5 + R())]);
     for (let i = 0; i < L; i++) {
       const t = i / fs, att = 1 - Math.exp(-t / 0.0008);
       ph += (TAU * (45 + 75 * Math.exp(-t / 0.05))) / fs;
@@ -362,7 +362,7 @@ function dspKit() {
     for (const [f, q, g] of [[1850, 9, 1], [3350, 12, 0.8], [5150, 10, 0.55], [7600, 8, 0.35]]) filt(ex, coef('bp', f, q, fs), x, g, true, warmLen(f, q, fs));
     filt(ex, coef('hp', 2500, 0.7, fs), x, 0.35, true, 512);
     dcLoop(x, fs);
-    return scale(x, 0.25 / (rms(x) || 1));
+    return scale(x, Math.min(0.25 / (rms(x) || 1), 0.9 / (peakAbs(x) || 1)));
   }
   // Gravel / dirt crunch (loop): Poisson grains of varying size and brightness.
   function genGravel(fs, R) {
@@ -378,7 +378,7 @@ function dspKit() {
     add(700, 0.0006, 0.003, 1);
     add(60, 0.002, 0.008, 2.2);
     dcLoop(x, fs);
-    return scale(x, 0.25 / (rms(x) || 1));
+    return scale(x, Math.min(0.25 / (rms(x) || 1), 0.9 / (peakAbs(x) || 1)));
   }
   // Thunder: close crack, then long rolling rumble built from overlapping low-passed bursts.
   function genThunder(fs, R) {
@@ -878,9 +878,12 @@ export class AudioSystem {
     this._eng = {}; this._irs = {}; this.B = {}; this._waiters = {}; this._inflight = new Map(); this._jobs = [];
     this.master = ctx.createGain();
     this.comp = ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -14; this.comp.knee.value = 8; this.comp.ratio.value = 4;
-    this.comp.attack.value = 0.004; this.comp.release.value = 0.18;
-    this.master.connect(this.comp).connect(ctx.destination);
+    this.comp.threshold.value = -14; this.comp.ratio.value = 4;
+    // brick-wall safety limiter after the bus compressor: no digital clipping when engines, crashes and music pile up
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -4; this.limiter.knee.value = 0; this.limiter.ratio.value = 20;
+    this.limiter.attack.value = 0.001; this.limiter.release.value = 0.06;
+    this.master.connect(this.comp).connect(this.limiter).connect(ctx.destination);
     this.sfx = ctx.createGain(); this.sfx.connect(this.master);
     this.music = ctx.createGain(); this.music.connect(this.master);
     this.ui = ctx.createGain(); this.ui.connect(this.master);
@@ -1121,16 +1124,16 @@ export class AudioSystem {
     const near = (o.dist || 0) > 12 ? 12 / o.dist : 1; // TV camera: rolling noise from afar, no rider wind
     const windK = near < 1 ? 0.15 : 1, ground = o.airborne ? 0 : near;
     // wind
-    const wl = w * w * 0.3 * (0.55 + 0.6 * onb) * windK;
+    const wl = w * w * 0.42 * (0.55 + 0.6 * onb) * windK;
     set(L.windLow, wl, 0.1); set(L.buffD, wl * 0.8, 0.1);
     L.buffSrc.playbackRate.setTargetAtTime(0.4 + w * 2.2, t, 0.2);
-    set(L.windMid, Math.pow(w, 2.2) * 0.16 * windK, 0.1);
+    set(L.windMid, Math.pow(w, 2.2) * 0.22 * windK, 0.1);
     L.windBP.frequency.setTargetAtTime(300 + w * 1300, t, 0.1);
-    set(L.windHigh, Math.pow(w, 3) * 0.07 * (0.7 + 0.6 * onb) * windK, 0.1);
+    set(L.windHigh, Math.pow(w, 3) * 0.095 * (0.7 + 0.6 * onb) * windK, 0.1);
     // tyres
     const s = clamp(slip, 0, 1) * ground, wet = o.wet ? 1 : 0;
     const sq = smooth(0.12, 0.65, s) * (wet ? 0.3 : 1) * clamp(v / 6, 0, 1);
-    set(L.sqG, sq * 0.085, 0.04);
+    set(L.sqG, sq * 0.11, 0.04);
     L.sqO.frequency.setTargetAtTime(780 + 420 * s + v * 1.5, t, 0.05);
     L.sqJit.gain.setTargetAtTime(18 + 50 * s, t, 0.05);
     set(L.scrubG, clamp(s * 1.3, 0, 1) * 0.13 * clamp(v / 10, 0, 1), 0.04);
@@ -1140,15 +1143,15 @@ export class AudioSystem {
     // kerbs (ridges every ~0.55 m)
     const curb = o.curb ? 1 : 0;
     L.curbO.frequency.setTargetAtTime(Math.max(4, v / 0.55), t, 0.03);
-    set(L.curbG, curb * clamp(v / 8, 0, 1) * 0.32 * ground, 0.03);
+    set(L.curbG, curb * clamp(v / 8, 0, 1) * 0.22 * ground, 0.03);
     // off-road surfaces
     const gr = o.gravel ? 1 : 0, sp = clamp(v / 20, 0, 1.4) * offR * ground;
     L.grSrc.playbackRate.setTargetAtTime(0.6 + v / 25, t, 0.1);
     L.dirtLfo.playbackRate.setTargetAtTime(1 + v / 8, t, 0.1);
-    set(L.grG, sp * (gr ? 0.4 : 0.1)); set(L.dirtG, sp * (gr ? 0.25 : 0.35)); set(L.grassG, sp * (gr ? 0.02 : 0.06));
+    set(L.grG, sp * (gr ? 0.22 : 0.06)); set(L.dirtG, sp * (gr ? 0.2 : 0.3)); set(L.grassG, sp * (gr ? 0.02 : 0.06));
     // scraping metal + sliding body
     const sc = clamp(scrape, 0, 1) * near;
-    set(L.scG, sc * 0.35, 0.03); set(L.slideG, sc * 0.16 * clamp(v / 8, 0, 1), 0.05);
+    set(L.scG, sc * 0.25, 0.03); set(L.slideG, sc * 0.16 * clamp(v / 8, 0, 1), 0.05);
     L.scSrc.playbackRate.setTargetAtTime(0.7 + clamp(v / 30, 0, 1) * 0.6, t, 0.1);
     set(L.niG, o.nitro ? 0.04 : 0, 0.08);
   }
@@ -1220,11 +1223,11 @@ export class AudioSystem {
   crash() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this._impact(1.45, t);
-    this._play(this._pick('shatter'), { gain: 0.5, rate: 0.9 + Math.random() * 0.2, when: t + 0.01, rev: 0.3 });
+    this._impact(1.3, t);
+    this._play(this._pick('shatter'), { gain: 0.4, rate: 0.9 + Math.random() * 0.2, when: t + 0.01, rev: 0.3 });
     const gr = this._play(this.B.grind[0], { gain: 0, loop: true, when: t, rev: 0.2, dur: 2.6 });
     if (gr) {
-      gr.g.gain.setValueAtTime(0.0001, t); gr.g.gain.linearRampToValueAtTime(0.38, t + 0.06); gr.g.gain.setTargetAtTime(0, t + 0.5, 0.5);
+      gr.g.gain.setValueAtTime(0.0001, t); gr.g.gain.linearRampToValueAtTime(0.24, t + 0.06); gr.g.gain.setTargetAtTime(0, t + 0.5, 0.5);
       gr.s.playbackRate.setValueAtTime(1.2, t); gr.s.playbackRate.exponentialRampToValueAtTime(0.5, t + 2.2);
     }
     const sl = this._play(this.pink, { gain: 0, loop: true, when: t, dur: 2.6, filter: ['lowpass', 900, 0.7] });
@@ -1266,3 +1269,4 @@ export class AudioSystem {
 }
 
 export const Audio = new AudioSystem();
+if (typeof window !== 'undefined') window.__AUDIO = Audio;
