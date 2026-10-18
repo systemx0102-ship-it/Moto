@@ -304,7 +304,7 @@ export class Engine {
       cam.getWorldDirection(_fwd);
       const facing = _fwd.dot(L.sunDir);
       if (facing > 0.05) {
-        _v.copy(cam.position).add(L.sunDir).project(cam);
+        _v.setFromMatrixPosition(cam.matrixWorld).add(L.sunDir).project(cam);
         x = _v.x * 0.5 + 0.5; y = _v.y * 0.5 + 0.5;
         const off = Math.max(Math.abs(x - 0.5), Math.abs(y - 0.5)) - 0.5;
         vis = L.sunAmt * clamp(1 - off / 0.35, 0, 1) * clamp((facing - 0.05) / 0.25, 0, 1);

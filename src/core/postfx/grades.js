@@ -23,14 +23,14 @@ const TIME = {
     streak: 0.35, flare: 0.3, dirt: 0.55, rays: 0.4, rayTint: [1, 0.95, 0.85], thr: 1.7, rayThr: 0.45, sunLine: 0.8,
   },
   dawn: {
-    lift: [0.01, 0.004, 0.03], gamma: [0.98, 1, 1.02], gain: [1.04, 0.99, 0.95], shadow: [-0.006, 0, 0.03], high: [0.045, 0.016, -0.006],
-    sat: 1.12, vib: 0.2, contrast: 1.08,
+    lift: [0.006, 0.004, 0.02], gamma: [0.98, 1, 1.02], gain: [1.04, 0.995, 0.96], shadow: [-0.008, 0.002, 0.02], high: [0.04, 0.016, -0.006],
+    sat: 1.1, vib: 0.2, contrast: 1.08,
     streak: 0.8, streakTint: [0.62, 0.75, 1.0], flare: 0.4, dirt: 0.5, rays: 0.45, rayTint: [1, 0.85, 0.72], thr: 2.4, rayThr: 0.3, rayLen: 0.8, bloom: 1.05,
   },
   // golden hour: warm highlights, violet-blue shadows, the sun flares the lens
   sunset: {
-    lift: [0.014, 0, 0.03], gamma: [0.98, 1, 1.03], gain: [1.05, 0.99, 0.94], shadow: [-0.01, -0.005, 0.035], high: [0.035, 0.014, -0.02],
-    sat: 1.12, vib: 0.2, contrast: 1.1,
+    lift: [0.01, 0, 0.026], gamma: [0.99, 1, 1.02], gain: [1.04, 0.995, 0.96], shadow: [-0.01, -0.004, 0.03], high: [0.028, 0.012, -0.016],
+    sat: 1.08, vib: 0.2, contrast: 1.1,
     streak: 0.9, streakTint: [0.7, 0.8, 1.0], flare: 0.4, dirt: 0.5, rays: 0.35, rayTint: [1, 0.8, 0.55], thr: 2.6, rayThr: 0.6, rayLen: 0.8, desat: 0.35, bloom: 1.05,
   },
   dusk: {
@@ -42,7 +42,7 @@ const TIME = {
   night: {
     lift: [0, 0.008, 0.02], gamma: [1.02, 1, 0.97], gain: [1.02, 1, 0.98], shadow: [-0.012, 0.008, 0.03], high: [0.022, 0.008, -0.012],
     sat: 1.12, vib: 0.35, contrast: 1.12,
-    streak: 0.8, streakTint: [0.45, 0.7, 1.0], flare: 0.35, dirt: 0.35, rays: 0.15, rayTint: [0.6, 0.75, 1], thr: 2.2, rayThr: 0.35, rayLen: 0.5, desat: 0.55, sunLine: 0.4,
+    streak: 0.8, streakTint: [0.45, 0.7, 1.0], flare: 0.35, dirt: 0.35, rays: 0.15, rayTint: [0.6, 0.75, 1], thr: 1.9, cut: 0.6, rayThr: 0.35, rayLen: 0.5, desat: 0.55, sunLine: 0.4,
   },
 };
 
