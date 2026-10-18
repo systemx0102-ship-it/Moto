@@ -16,6 +16,10 @@ export class CameraController {
     this.fov = 62;
     this.roll = 0;
     this.initialized = false;
+    // spring offsets driven by fovPunch() / kick() / bounce()
+    this.fovOff = 0; this.fovVel = 0;
+    this.lag = 0; this.lagVel = 0;
+    this.bob = 0; this.bobVel = 0;
     this._v = new THREE.Vector3();
     this._up = new THREE.Vector3(0, 1, 0);
     this.tvSpots = [];
@@ -34,6 +38,22 @@ export class CameraController {
   next() { this.mode = (this.mode + 1) % 4; this.initialized = false; }
   set(mode) { this.mode = mode; this.initialized = false; }
   addShake(a) { this.shake = Math.min(1.5, this.shake + a); }
+  // FOV surge peaking at ~deg degrees (critically damped spring)
+  fovPunch(deg) { this.fovVel = Math.min(this.fovVel + deg * 8 * Math.E, 30 * 8 * Math.E); }
+  // chase camera falls back ~m metres and catches up again (boost feel)
+  kick(m) { this.lagVel = Math.min(this.lagVel + m * 7 * Math.E, 3 * 7 * Math.E); }
+  // vertical dip of ~m metres with a damped rebound (landings)
+  bounce(m) { this.bobVel = Math.max(this.bobVel - m * 11 * 1.55, -0.6 * 11 * 1.55); }
+
+  _springs(dt) {
+    // fixed sub-steps keep the springs stable at any frame time
+    for (let t = dt; t > 1e-5; t -= 1 / 120) {
+      const h = Math.min(t, 1 / 120);
+      this.fovVel += (-64 * this.fovOff - 16 * this.fovVel) * h; this.fovOff += this.fovVel * h;
+      this.lagVel += (-49 * this.lag - 14 * this.lagVel) * h; this.lag += this.lagVel * h;
+      this.bobVel += (-121 * this.bob - 7.7 * this.bobVel) * h; this.bob += this.bobVel * h;
+    }
+  }
 
   update(dt, bike, opts = {}) {
     const ph = bike.phys;
@@ -48,10 +68,11 @@ export class CameraController {
     const back = opts.lookBack ? -1 : 1;
     let roll = 0;
     let fovT = 60 + clamp(sp / 90, 0, 1) * 18 + (ph.nitroOn ? 7 : 0);
+    this._springs(dt);
 
     if (mode === 0 || mode === 1) {
       const far = mode === 1;
-      const dist = (far ? 7.6 : 4.6) + clamp(sp / 80, 0, 1) * (far ? 1.6 : 1.0);
+      const dist = (far ? 7.6 : 4.6) + clamp(sp / 80, 0, 1) * (far ? 1.6 : 1.0) + this.lag;
       const hgt = far ? 2.5 : 1.55;
       const tx = ph.x - fx * dist * back, tz = ph.z - fz * dist * back;
       const ty = ph.y + hgt + (ph.airborne ? 0.3 : 0);
@@ -118,11 +139,13 @@ export class CameraController {
     }
     const hiSpeed = clamp((sp - 50) / 40, 0, 1) * (mode < 2 ? 0.012 : 0.006) + (ph.offRoad ? 0.02 * clamp(sp / 20, 0, 1) : 0);
     if (hiSpeed > 0) { cam.position.y += (Math.random() - 0.5) * hiSpeed; }
+    // landing bounce (not on the fixed TV cameras)
+    if (mode !== 4 && this.bob !== 0) { cam.position.y += this.bob; this.look.y += this.bob * (mode < 2 ? 0.35 : 1); }
     this.roll = damp(this.roll, roll, 6, dt);
     cam.up.set(Math.sin(this.roll) * Math.cos(this.yaw) * -1, Math.cos(this.roll), Math.sin(this.roll) * Math.sin(this.yaw));
     cam.lookAt(this.look);
     this.fov = damp(this.fov, fovT, 3, dt);
-    cam.fov = this.fov;
+    cam.fov = mode === 4 ? this.fov : clamp(this.fov + this.fovOff, 20, 110);
     cam.updateProjectionMatrix();
   }
 }

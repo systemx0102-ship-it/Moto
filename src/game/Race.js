@@ -9,6 +9,7 @@ import { AIController } from './AIController.js';
 import { CameraController, CAM_NAMES } from './CameraController.js';
 import { Effects } from './Effects.js';
 import { BikeGlow } from './BikeGlow.js';
+import { SpeedFX } from './SpeedFX.js';
 import { Recorder, GhostTrack } from './Replay.js';
 import { HUD } from '../ui/HUD.js';
 import { Input } from '../core/Input.js';
@@ -144,6 +145,7 @@ export class Race {
 
     this.cam = new CameraController(this.game.engine.camera, this.track);
     this.cam.set(Save.settings.camera || 0);
+    this.speedFx = new SpeedFX(this.scene, Save.quality, this);
     this.recorder = new Recorder(this.bikes.length);
     onProgress(0.92, 'Afinando motores…');
     this.hud = new HUD(this.game.ui.layer, this);
@@ -262,6 +264,7 @@ export class Race {
     this.effects.update(dt, this.game.engine.camera, this.game.engine.renderer, this.scene.fog);
     this.glow.update(dt, this.game.engine.camera);
     this._postFx(dt);
+    this.speedFx.update(dt, this.game.engine.camera);
     this.hud.update(dt);
     // player dash
     this._dashT = (this._dashT || 0) - dt;
@@ -750,6 +753,7 @@ export class Race {
     if (this.playerVoice) this.playerVoice.stop();
     for (const [, v] of this.voices || []) v.stop();
     this.voices?.clear();
+    this.speedFx?.dispose();
     this.hud?.dispose();
     this.glow?.dispose();
     this.effects?.dispose();
