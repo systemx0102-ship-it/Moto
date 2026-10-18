@@ -234,7 +234,7 @@ export class GarageScene {
         g.add(e);
         const c = document.createElement('canvas'); c.width = 128; c.height = 128;
         const cg = c.getContext('2d');
-        cg.fillStyle = '#' + new THREE.Color(col).getHexString(); cg.font = '900 100px Orbitron, Arial'; cg.textAlign = 'center'; cg.textBaseline = 'middle';
+        cg.fillStyle = '#' + new THREE.Color(col).getHexString(); cg.font = '700 110px "Barlow Condensed", Arial'; cg.textAlign = 'center'; cg.textBaseline = 'middle';
         cg.fillText(String(i + 1), 64, 70);
         const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
         const num = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(0.8, hgt * 0.9), Math.min(0.8, hgt * 0.9)), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
@@ -247,7 +247,7 @@ export class GarageScene {
       const N = 600;
       const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
       const r = rng(11);
-      const pal = [0x00e5ff, 0xff2bd6, 0xffcc33, 0xffffff, 0x3dff8a].map((c) => new THREE.Color(c));
+      const pal = [0xd6b25e, 0xf3f4f6, 0xc3c8ce, 0xe2231a, 0xf3f4f6].map((c) => new THREE.Color(c));
       for (let i = 0; i < N; i++) {
         pos[i * 3] = r.range(-6, 6); pos[i * 3 + 1] = r.range(0, 9); pos[i * 3 + 2] = r.range(-4, 4);
         const c = pal[i % pal.length]; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;

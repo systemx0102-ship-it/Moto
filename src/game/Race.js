@@ -162,7 +162,7 @@ export class Race {
     this._placeIntroCamera(0);
     this._syncModels(0);
     engine2.renderer.compile(this.scene, engine2.camera);
-    onProgress(1, '¡Listo!');
+    onProgress(1, 'Listo');
   }
 
   _makeGhostModel(spec) {
@@ -198,13 +198,13 @@ export class Race {
       if (this.phaseT > 3.2 || (edges.confirm && this.phaseT > 0.4)) { this.phase = 'countdown'; this.phaseT = 0; this.lightsOn = 0; this.cam.initialized = false; }
     } else if (this.phase === 'countdown') {
       const n = Math.min(5, Math.floor(this.phaseT / 0.75) + 1);
-      if (n !== this.lightsOn && this.phaseT < 3.75) { this.lightsOn = n; this.track.setStartLights(n); Audio.beep(false); if (n >= 3) this.hud.countdown(6 - n); }
+      if (n !== this.lightsOn && this.phaseT < 3.75) { this.lightsOn = n; this.track.setStartLights(n); Audio.beep(false); this.hud.startLights(n); }
       if (!this.goAt) this.goAt = 3.75 + 0.3 + Math.random() * 0.8;
       if (this.phaseT >= this.goAt) {
         this.phase = 'race'; this.phaseT = 0; this.time = 0;
         this.track.setStartLights(0, true);
         setTimeout(() => this.track.setStartLights(0), 2500);
-        this.hud.countdown(0); Audio.beep(true);
+        this.hud.startLights(0); Audio.beep(true);
         Input.rumble(0.6, 0.6, 200);
       }
     }
@@ -406,8 +406,8 @@ export class Race {
     });
     const pos = this.order.indexOf(this.player);
     if (this._lastPos !== undefined && pos !== this._lastPos && this.phase === 'race' && this.time > 3 && this.mode !== 'trial' && this.mode !== 'free') {
-      if (pos < this._lastPos) this.hud.toast(`▲ P${pos + 1}`, '#3dff8a', 900);
-      else this.hud.toast(`▼ P${pos + 1}`, '#ff3b4e', 900);
+      if (pos < this._lastPos) this.hud.toast(`P${pos + 1}  ▲`, '#36c06e', 900);
+      else this.hud.toast(`P${pos + 1}  ▼`, '#e2231a', 900);
     }
     this._lastPos = pos;
   }
@@ -420,7 +420,7 @@ export class Race {
     if (!rec.lap || lt < rec.lap) {
       rec.lap = lt; rec.lapBike = this.player.spec.id;
       Save.data.records[def.id] = rec; Save.save();
-      sub = '¡NUEVO RÉCORD DE PISTA!';
+      sub = 'Nuevo récord del circuito';
     } else if (isBest && this.player.lapTimes.length > 1) sub = 'VUELTA RÁPIDA';
     this.hud.message(txt, sub, 2000);
     Audio.lap();
@@ -434,8 +434,8 @@ export class Race {
     if (b.isPlayer) {
       const place = this.finishOrder.length;
       this.phase = 'finished'; this.phaseT = 0;
-      if (this.mode === 'trial') this.hud.message('¡SESIÓN COMPLETA!', '', 3000);
-      else this.hud.message(place === 1 ? '¡VICTORIA!' : `${place}º PUESTO`, place <= 3 ? '¡PODIO!' : 'BANDERA A CUADROS', 4000);
+      if (this.mode === 'trial') this.hud.message('Sesión completada', '', 3000);
+      else this.hud.message(place === 1 ? 'Victoria' : `${place}º puesto`, place <= 3 ? 'Podio' : 'Bandera a cuadros', 4000);
       Audio.fanfare();
       Input.rumble(0.5, 0.8, 400);
       const st = Save.data.stats;
@@ -478,14 +478,14 @@ export class Race {
           case 'crash':
             if (near) this.effects.explosionDust(e.x, e.y, e.z, DUST[this.track.def.runoffMat] || DUST.gravel);
             if (b.isPlayer) {
-              this.hud.message('¡CAÍDA!', 'REAPARECIENDO…', 2200, 'hud-warn'); Audio.crash(); this.cam.addShake(1.5); Input.rumble(1, 1, 500);
+              this.hud.message('Caída', 'Volviendo a pista', 2200, 'hud-warn'); Audio.crash(); this.cam.addShake(1.5); Input.rumble(1, 1, 500);
               Save.data.stats.crashes++;
               this._damage = 1;
             } else if (near) Audio.impact(0.6);
             this.effects.skidBreak(b.id + 'r'); this.effects.skidBreak(b.id + 'f');
             break;
           case 'land':
-            if (b.isPlayer && e.impact > 3) { this.cam.addShake(clamp(e.impact / 12, 0.1, 0.9)); Audio.impact(clamp(e.impact / 16, 0.1, 0.7)); Input.rumble(0.7, 0.3, 120); if (e.air > 0.5) this.hud.toast(`¡SALTO! ${e.air.toFixed(1)} s`, '#00e5ff', 900); }
+            if (b.isPlayer && e.impact > 3) { this.cam.addShake(clamp(e.impact / 12, 0.1, 0.9)); Audio.impact(clamp(e.impact / 16, 0.1, 0.7)); Input.rumble(0.7, 0.3, 120); if (e.air > 0.5) this.hud.toast(`Salto  ${e.air.toFixed(1)} s`, '#ffffff', 900); }
             break;
           case 'shift':
             if (e.dir > 0) {
@@ -659,7 +659,7 @@ export class Race {
       Save.save();
       this.ghostData = arr;
       if (!this.ghostSpec || this.ghostSpec.id !== this.player.spec.id) { this.ghostSpec = this.player.spec; this._makeGhostModel(this.player.spec); }
-      this.hud.toast('NUEVO FANTASMA GUARDADO', '#40e0ff', 1600);
+      this.hud.toast('Fantasma guardado', '#ffffff', 1600);
     }
   }
 

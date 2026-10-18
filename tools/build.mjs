@@ -28,6 +28,12 @@ function buildCss() {
     fontFace('Rajdhani', '@fontsource/rajdhani/files/rajdhani-latin-600-normal.woff2', 600),
     fontFace('Rajdhani', '@fontsource/rajdhani/files/rajdhani-latin-700-normal.woff2', 700),
     fontFace('Rajdhani', '@fontsource/rajdhani/files/rajdhani-latin-ext-600-normal.woff2', 600),
+    fontFace('Barlow', '@fontsource/barlow/files/barlow-latin-400-normal.woff2', 400),
+    fontFace('Barlow', '@fontsource/barlow/files/barlow-latin-500-normal.woff2', 500),
+    fontFace('Barlow', '@fontsource/barlow/files/barlow-latin-600-normal.woff2', 600),
+    fontFace('Barlow Condensed', '@fontsource/barlow-condensed/files/barlow-condensed-latin-500-normal.woff2', 500),
+    fontFace('Barlow Condensed', '@fontsource/barlow-condensed/files/barlow-condensed-latin-600-normal.woff2', 600),
+    fontFace('Barlow Condensed', '@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff2', 700),
   ].join('\n');
   const css = fs.readFileSync(path.join(root, 'src/ui/ui.css'), 'utf8');
   fs.writeFileSync(path.join(dist, 'style.css'), fonts + '\n' + css);

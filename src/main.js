@@ -25,7 +25,11 @@ class Game {
     const msg = document.getElementById('boot-msg');
     const step = async (p, m) => { fill.style.width = `${p}%`; if (m) msg.textContent = m; await nextFrame(); };
     await step(5, 'Cargando tipografías…');
-    try { await Promise.race([document.fonts?.ready, sleep(1500)]); } catch (e) { /* ignore */ }
+    try {
+      const want = ['700 20px "Barlow Condensed"', '600 20px "Barlow Condensed"', '500 20px "Barlow Condensed"', '400 16px Barlow', '600 16px Barlow'];
+      await Promise.race([Promise.all(want.map((f) => document.fonts?.load(f))), sleep(1500)]);
+      await Promise.race([document.fonts?.ready, sleep(1500)]);
+    } catch (e) { /* ignore */ }
     await step(20, 'Fabricando neumáticos…');
     tireTexture(false); tireTexture(true);
     await step(35, 'Tejiendo fibra de carbono…');
@@ -37,7 +41,7 @@ class Game {
     await step(75, 'Calentando motores…');
     this.garage.activate();
     this.engine.renderer.compile(this.garage.scene, this.garage.camera);
-    await step(100, '¡Listo!');
+    await step(100, 'Listo');
     this.engine.onUpdate = (dt) => this.update(dt);
     this.engine.onError = (e) => { if (!this._errShown) { this._errShown = true; console.error(e); } };
     this.engine.start();

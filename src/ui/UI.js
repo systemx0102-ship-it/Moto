@@ -9,12 +9,34 @@ import { Audio } from '../core/Audio.js';
 import { Input } from '../core/Input.js';
 import { formatTime, clamp } from '../core/utils.js';
 
-const ICON = { race: '▶', champ: '♛', trial: '◷', free: '∞', garage: '⚙', settings: '☰', records: '★', back: '◀', play: '▶', retry: '↻', replay: '⏵', exit: '⏏', cam: '◉' };
+// Line icons (24px grid, stroked) for action buttons; main-menu entries are text only.
+const SVG = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
+const ICON = {
+  play: SVG('<path d="M8 5l11 7-11 7z"/>'),
+  back: SVG('<path d="M15 5l-7 7 7 7"/>'),
+  retry: SVG('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/>'),
+  replay: SVG('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M10 9l5 3-5 3z"/>'),
+  exit: SVG('<path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/>'),
+  garage: SVG('<circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-7h5l3 7M10 10l-1-3H7M15 10l2-3h2"/>'),
+  settings: SVG('<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>'),
+  cam: SVG('<rect x="3" y="7" width="18" height="12" rx="1"/><circle cx="12" cy="13" r="3"/><path d="M8 7l2-3h4l2 3"/>'),
+  champ: SVG('<path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M12 14v4M8 20h8M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>'),
+  clear: SVG('<path d="M6 6l12 12M18 6L6 18"/>'),
+};
+const MENU_DESC = {
+  race: 'Una carrera contra rivales controlados por la IA en el circuito que elijas.',
+  champ: 'Seis rondas, puntuación de Gran Premio. Gana el que más puntos sume.',
+  trial: 'Vuelta lanzada contra el reloj y contra tu propio fantasma.',
+  free: 'Rueda sin rivales ni límite de vueltas para aprender el trazado.',
+  garage: 'Trece motos, especificaciones completas y decoraciones.',
+  records: 'Mejores vueltas, carreras y estadísticas de piloto.',
+  settings: 'Gráficos, sonido, controles y ayudas de pilotaje.',
+};
 const TIME_LABEL = { dawn: 'AMANECER', day: 'DÍA', sunset: 'ATARDECER', dusk: 'ANOCHECER', night: 'NOCHE' };
 const WEATHER_LABEL = { clear: 'DESPEJADO', cloudy: 'NUBLADO', wet: 'MOJADO', rain: 'LLUVIA', storm: 'TORMENTA', fog: 'NIEBLA', snow: 'NIEVE' };
 const TIME_OPTS = [['auto', 'AUTO'], ['dawn', 'AMANECER'], ['day', 'DÍA'], ['sunset', 'ATARDECER'], ['dusk', 'ANOCHECER'], ['night', 'NOCHE']];
 const WEATHER_OPTS = [['auto', 'AUTO'], ['clear', 'DESPEJADO'], ['cloudy', 'NUBLADO'], ['rain', 'LLUVIA'], ['storm', 'TORMENTA'], ['fog', 'NIEBLA'], ['snow', 'NIEVE']];
-const DIFF = [['facil', 'FÁCIL'], ['normal', 'NORMAL'], ['mitico', 'MÍTICO']];
+const DIFF = [['facil', 'PRINCIPIANTE'], ['normal', 'PROFESIONAL'], ['mitico', 'LEYENDA']];
 const TIPS = [
   'Inclinar más no siempre es girar más: si te pasas del límite de agarre, la moto se abre.',
   'Frena recto y suelta el freno al inclinar. El neumático sólo tiene un 100% de agarre para repartir.',
@@ -28,18 +50,21 @@ const TIPS = [
   'En contrarreloj compites contra tu propio fantasma: tu mejor vuelta queda guardada.',
 ];
 
-function trackThumb(def, w = 300, hh = 200) {
+function trackThumb(def, w = 300, hh = 200, bare = false) {
   const c = canvas(w, hh);
   const g = c.getContext('2d');
   const W = c.width, H = c.height;
-  const pal = { gp: ['#12301e', '#1d4a2c'], coast: ['#3a1e2a', '#ff8a4a'], city: ['#0a0820', '#2a0a3a'], desert: ['#3a1a10', '#a0502a'], alpine: ['#1a2a40', '#a8c0e0'], forest: ['#0a1a10', '#203a20'] }[def.theme] || ['#111', '#333'];
+  if (!bare) {
+  // muted theme tint over graphite, fine survey grid
+  const tint = { gp: '#1c2a22', coast: '#2c2420', city: '#1a1c28', desert: '#2c2219', alpine: '#1f2630', forest: '#18221b' }[def.theme] || '#1c1d20';
   const grd = g.createLinearGradient(0, 0, W, H);
-  grd.addColorStop(0, pal[0]); grd.addColorStop(1, pal[1]);
+  grd.addColorStop(0, '#141518'); grd.addColorStop(1, tint);
   g.fillStyle = grd; g.fillRect(0, 0, W, H);
-  // texture lines
-  g.globalAlpha = 0.07; g.strokeStyle = '#fff';
-  for (let i = -H; i < W; i += 14) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + H, H); g.stroke(); }
-  g.globalAlpha = 1;
+  g.strokeStyle = 'rgba(255,255,255,0.045)'; g.lineWidth = 1;
+  const step = Math.round(W / 12);
+  for (let x = step; x < W; x += step) { g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); g.stroke(); }
+  for (let y = step; y < H; y += step) { g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); g.stroke(); }
+  }
   const cl = trackThumb.cache[def.id] || (trackThumb.cache[def.id] = buildCenterline(def, 6));
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (let i = 0; i < cl.N; i++) { minX = Math.min(minX, cl.x[i]); maxX = Math.max(maxX, cl.x[i]); minZ = Math.min(minZ, cl.z[i]); maxZ = Math.max(maxZ, cl.z[i]); }
@@ -50,11 +75,12 @@ function trackThumb(def, w = 300, hh = 200) {
   g.lineJoin = 'round'; g.lineCap = 'round';
   const path = new Path2D();
   for (let i = 0; i <= cl.N; i++) { const [x, y] = T(i % cl.N); if (i) path.lineTo(x, y); else path.moveTo(x, y); }
-  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = W * 0.035; g.stroke(path);
-  g.strokeStyle = '#ffffff'; g.lineWidth = W * 0.014; g.shadowColor = '#00e5ff'; g.shadowBlur = W * 0.04; g.stroke(path);
-  g.shadowBlur = 0;
-  const [sx, sy] = T(0);
-  g.fillStyle = '#00e5ff'; g.beginPath(); g.arc(sx, sy, W * 0.018, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = W * 0.028; g.stroke(path);
+  g.strokeStyle = '#f3f4f6'; g.lineWidth = Math.max(2, W * 0.009); g.stroke(path);
+  const [sx, sy] = T(0), [nx, ny] = T(3);
+  const a = Math.atan2(ny - sy, nx - sx) + Math.PI / 2;
+  g.strokeStyle = '#e2231a'; g.lineWidth = Math.max(3, W * 0.012);
+  g.beginPath(); g.moveTo(sx - Math.cos(a) * W * 0.03, sy - Math.sin(a) * W * 0.03); g.lineTo(sx + Math.cos(a) * W * 0.03, sy + Math.sin(a) * W * 0.03); g.stroke();
   c.__len = cl.L;
   return c;
 }
@@ -81,11 +107,12 @@ export class UI {
     this.nav = []; this.navI = 0;
     this.onBack = null;
     this.onLeftRight = null;
+    this._onFocus = null;
     return s;
   }
 
   btn(label, icon, onClick, cls = '') {
-    const b = h('button', { class: 'btn ' + cls }, h('span', { class: 'ico' }, icon || ''), h('span', {}, label));
+    const b = h('button', { class: 'btn ' + cls }, h('span', { class: 'ico', html: icon || '' }), h('span', {}, label));
     b.addEventListener('click', () => { Audio.init(); Audio.click(); onClick(); });
     b.addEventListener('mouseenter', () => { const i = this.nav.indexOf(b); if (i >= 0) this._focus(i, false); Audio.hover(); });
     return b;
@@ -96,6 +123,7 @@ export class UI {
     if (!this.nav.length) return;
     this.navI = (i + this.nav.length) % this.nav.length;
     this.nav.forEach((b, k) => b.classList.toggle('focus', k === this.navI));
+    if (this._onFocus) this._onFocus(this.nav[this.navI]);
     if (sound) Audio.hover();
   }
 
@@ -127,30 +155,38 @@ export class UI {
     g.garage.setMode('menu');
     const s = this._screen();
     const bike = BIKE_BY_ID[Save.data.garage.bike] || BIKES[0];
-    const items = [
-      this.btn('Carrera rápida', ICON.race, () => this.trackSelect('race'), 'primary'),
-      this.btn('Campeonato', ICON.champ, () => this.champHub()),
-      this.btn('Contrarreloj', ICON.trial, () => this.trackSelect('trial')),
-      this.btn('Paseo libre', ICON.free, () => this.trackSelect('free')),
-      this.btn('Garaje', ICON.garage, () => this.garage()),
-      this.btn('Récords', ICON.records, () => this.records()),
-      this.btn('Ajustes', ICON.settings, () => this.settings(() => this.mainMenu())),
+    const entries = [
+      ['race', 'Carrera rápida', () => this.trackSelect('race')],
+      ['champ', 'Campeonato', () => this.champHub()],
+      ['trial', 'Contrarreloj', () => this.trackSelect('trial')],
+      ['free', 'Paseo libre', () => this.trackSelect('free')],
+      ['garage', 'Garaje', () => this.garage()],
+      ['records', 'Récords', () => this.records()],
+      ['settings', 'Ajustes', () => this.settings(() => this.mainMenu())],
     ];
+    const desc = h('div', { class: 'menu-desc' });
+    const items = entries.map(([key, label, fn], i) => {
+      const b = this.btn(label, '', fn, i === 0 ? 'primary' : '');
+      b.dataset.key = key;
+      return b;
+    });
     const st = Save.data.stats;
+    const stat = (n, label) => h('div', { class: 'stat-n' }, h('b', {}, String(n)), h('span', {}, label));
     s.append(
+      h('div', { class: 'menu-scrim' }),
       h('div', { class: 'menu-left' },
-        h('div', { class: 'logo' }, h('div', { class: 'l1' }, 'MOTO'), h('div', { class: 'l2' }, 'MÍTICO'), h('div', { class: 'l3' }, 'ULTRA RACING 3D')),
-        ...items),
-      h('div', { class: 'stats-strip' },
-        h('span', { class: 'pill c1' }, `${st.races} carreras`), h('span', { class: 'pill gold' }, `${st.wins} victorias`), h('span', { class: 'pill c2' }, `${st.podiums} podios`)),
-      h('div', { class: 'menu-bike-tag' }, h('div', { class: 'k' }, bike.klass), h('div', { class: 'n' }, bike.name)),
+        h('div', { class: 'logo' }, h('div', { class: 'bar' }), h('div', { class: 'l1' }, 'Moto'), h('div', { class: 'l2' }, 'Mítico'), h('div', { class: 'l3' }, 'Simulación de motociclismo')),
+        ...items, desc),
+      h('div', { class: 'stats-strip' }, stat(st.races, 'Carreras'), stat(st.wins, 'Victorias'), stat(st.podiums, 'Podios')),
+      h('div', { class: 'menu-bike-tag' }, h('div', { class: 'k' }, bike.klass), h('div', { class: 'n' }, bike.name), h('div', { class: 's' }, `${bike.engine.label} · ${bike.engine.hp} CV · ${bike.mass} kg`)),
       h('div', { class: 'menu-foot' },
-        h('span', {}, h('span', { class: 'keycap' }, '↑'), ' ', h('span', { class: 'keycap' }, '↓'), ' navegar'),
-        h('span', {}, h('span', { class: 'keycap' }, 'ENTER'), ' aceptar'),
-        h('span', {}, h('span', { class: 'keycap' }, 'ESC'), ' volver'),
+        h('span', {}, h('span', { class: 'keycap' }, '↑'), ' ', h('span', { class: 'keycap' }, '↓'), '  Navegar'),
+        h('span', {}, h('span', { class: 'keycap' }, 'Enter'), '  Aceptar'),
+        h('span', {}, h('span', { class: 'keycap' }, 'Esc'), '  Volver'),
         h('span', { class: 'grow' }),
-        h('span', {}, `v1.0 · Motor 3D procedural · ${BIKES.length} motos · 6 circuitos`)),
+        h('span', {}, `Versión 1.0 · ${BIKES.length} motos · 6 circuitos`)),
     );
+    this._onFocus = (b) => { desc.textContent = MENU_DESC[b.dataset.key] || ''; };
     this._setNav(items);
     Audio.playMusic('menu');
   }
@@ -165,7 +201,7 @@ export class UI {
     const list = h('div', { class: 'garage-list glass' });
     const panel = h('div', { class: 'spec-panel glass' });
     const items = BIKES.map((b, i) => {
-      const it = h('div', { class: 'bike-item' }, h('div', { class: 'sw', style: { background: `linear-gradient(${b.liveries[0].base}, ${b.liveries[0].second})` } }),
+      const it = h('div', { class: 'bike-item' }, h('div', { class: 'sw', style: { background: b.liveries[0].base === '#0b0b0d' || b.liveries[0].base === '#111111' ? b.liveries[0].accent : b.liveries[0].base } }),
         h('div', {}, h('div', { class: 't' }, b.name), h('div', { class: 'c' }, b.klass)));
       it.addEventListener('click', () => { Audio.select(); select(i); });
       list.appendChild(it);
@@ -193,7 +229,7 @@ export class UI {
           h('div', {}, h('span', {}, 'Inclinación'), h('b', {}, `${b.maxLean}°`)),
           h('div', {}, h('span', {}, 'Cambio'), h('b', {}, b.engine.electric ? 'Directo' : `${b.engine.gears.length} vel.`)),
         ),
-        h('div', { class: 'kicker', style: { marginTop: '16px' } }, `Decoración · ${b.liveries[liv].name}`),
+        h('div', { class: 'kicker', style: { marginTop: '16px' } }, `Decoración  ·  ${b.liveries[liv].name}`),
         h('div', { class: 'liveries' }, ...b.liveries.map((L, k) => {
           const d = h('div', { class: 'livery' + (k === liv ? ' on' : ''), title: L.name }, h('i', { style: { background: `linear-gradient(135deg, ${L.base} 0 50%, ${L.second} 50% 80%, ${L.accent} 80%)` } }));
           d.addEventListener('click', () => { Audio.select(); liv = k; select(idx, true); });
@@ -214,7 +250,7 @@ export class UI {
     left.addEventListener('click', () => { Audio.select(); select(idx - 1); });
     right.addEventListener('click', () => { Audio.select(); select(idx + 1); });
     s.append(
-      h('div', { class: 'top-bar' }, h('h2', {}, 'GARAJE'), h('span', { class: 'pill c1' }, `${BIKES.length} MOTOS`), h('span', { class: 'grow' }), h('span', { class: 'dim' }, 'Arrastra para girar · rueda para zoom')),
+      h('div', { class: 'top-bar' }, h('h2', {}, 'Garaje'), h('span', { class: 'crumb' }, `${BIKES.length} motos`), h('span', { class: 'grow' }), h('span', { class: 'crumb' }, 'Arrastra para girar · rueda para acercar')),
       list, panel, left, right,
       h('div', { class: 'bottom-bar' }, back, choose),
     );
@@ -237,9 +273,9 @@ export class UI {
       const th = trackThumb(t);
       const rec = Save.data.records[t.id];
       const c = h('div', { class: 'track-card' }, th,
-        h('div', { class: 'badges' }, h('span', { class: 'pill' }, TIME_LABEL[t.time]), h('span', { class: 'pill c1' }, WEATHER_LABEL[t.weather])),
+        h('div', { class: 'badges' }, h('span', { class: 'pill' }, TIME_LABEL[t.time]), h('span', { class: 'pill' }, WEATHER_LABEL[t.weather])),
         h('div', { class: 'info' }, h('div', { class: 'nm' }, t.name), h('div', { class: 'meta' }, `${(th.__len / 1000).toFixed(2)} km · ${t.place}`),
-          h('div', { class: 'meta' }, rec && rec.lap ? `Récord: ${formatTime(rec.lap * 1000)}` : 'Sin récord')));
+          h('div', { class: 'meta' }, rec && rec.lap ? `Récord de vuelta  ${formatTime(rec.lap * 1000)}` : 'Sin tiempo registrado')));
       c.addEventListener('click', () => { Audio.select(); pick(i); });
       grid.appendChild(c);
       return c;
@@ -262,9 +298,9 @@ export class UI {
       const bike = BIKE_BY_ID[Save.data.garage.bike] || BIKES[0];
       clear(opts);
       opts.append(
-        h('div', { class: 'kicker' }, mode === 'race' ? 'CARRERA RÁPIDA' : mode === 'trial' ? 'CONTRARRELOJ' : 'PASEO LIBRE'),
-        h('div', { class: 'bn', style: { fontFamily: 'var(--font-h)', fontWeight: 900, fontSize: '24px', margin: '6px 0 4px' } }, t.name),
-        h('div', { class: 'dim', style: { fontSize: '15px', marginBottom: '10px' } }, t.blurb),
+        h('div', { class: 'kicker acc' }, mode === 'race' ? 'Carrera rápida' : mode === 'trial' ? 'Contrarreloj' : 'Paseo libre'),
+        h('div', { class: 'bn' }, t.name),
+        h('div', { class: 'dim', style: { fontSize: '14px', lineHeight: '1.45', marginBottom: '10px' } }, t.blurb),
       );
       if (mode !== 'free') opts.append(stepper('Vueltas', () => S.laps, (d) => { S.laps = clamp(S.laps + d, 1, 10); Save.save(); }, (v) => String(v)));
       if (mode === 'race') {
@@ -274,19 +310,19 @@ export class UI {
       const cyc = (key, list, d) => { const k = list.findIndex((x) => x[0] === S[key]); S[key] = list[(Math.max(0, k) + d + list.length) % list.length][0]; Save.save(); };
       opts.append(stepper('Hora', () => S.timeSel, (d) => cyc('timeSel', TIME_OPTS, d), (v) => v === 'auto' ? `AUTO · ${TIME_LABEL[t.time]}` : TIME_LABEL[v]));
       opts.append(stepper('Clima', () => S.weatherSel, (d) => cyc('weatherSel', WEATHER_OPTS, d), (v) => v === 'auto' ? `AUTO · ${WEATHER_LABEL[t.weather]}` : WEATHER_LABEL[v]));
-      const bikeRow = h('div', { class: 'opt' }, h('span', { class: 'lab' }, 'Moto'), h('span', { style: { fontFamily: 'var(--font-h)', fontWeight: 700 } }, bike.short));
+      const bikeRow = h('div', { class: 'opt' }, h('span', { class: 'lab' }, 'Moto'), h('span', { class: 'val' }, bike.name));
       opts.append(bikeRow);
       const ghost = Save.data.ghosts[t.id];
-      if (mode === 'trial') opts.append(h('div', { class: 'opt' }, h('span', { class: 'lab' }, 'Fantasma'), h('span', {}, ghost ? `${formatTime(ghost.lap * 1000)} · ${(BIKE_BY_ID[ghost.bike] || bike).short}` : 'Ninguno')));
+      if (mode === 'trial') opts.append(h('div', { class: 'opt' }, h('span', { class: 'lab' }, 'Fantasma'), h('span', { class: 'val' }, ghost ? `${formatTime(ghost.lap * 1000)} · ${(BIKE_BY_ID[ghost.bike] || bike).short}` : 'Ninguno')));
     };
-    const go = this.btn('¡A correr!', ICON.play, () => {
+    const go = this.btn('Salir a pista', ICON.play, () => {
       const t = TRACKS[sel];
       g.startRace({ mode, trackDef: t, bikeId: Save.data.garage.bike, livery: Save.data.garage.livery[Save.data.garage.bike] ?? 0, laps: mode === 'free' ? 9999 : S.laps, rivals: mode === 'race' ? S.rivals : 0, difficulty: S.difficulty, time: S.timeSel, weather: S.weatherSel });
     }, 'primary');
     const bikeBtn = this.btn('Cambiar moto', ICON.garage, () => this.garage(() => this.trackSelect(mode)), 'small');
     const back = this.btn('Volver', ICON.back, () => this.mainMenu(), 'small');
     s.append(
-      h('div', { class: 'top-bar' }, h('h2', {}, 'ELIGE CIRCUITO'), h('span', { class: 'pill c1' }, `${TRACKS.length} CIRCUITOS`)),
+      h('div', { class: 'top-bar' }, h('h2', {}, 'Circuito'), h('span', { class: 'crumb' }, `${mode === 'race' ? 'Carrera rápida' : mode === 'trial' ? 'Contrarreloj' : 'Paseo libre'} · ${TRACKS.length} circuitos`)),
       grid, opts,
       h('div', { class: 'bottom-bar' }, back, bikeBtn, go),
     );
@@ -303,14 +339,13 @@ export class UI {
     const s = this._screen('loading');
     const fill = h('i', {});
     const msg = h('div', { class: 'boot-msg' }, 'Cargando…');
-    const mini = trackThumb(def, 460, 460);
+    const mini = trackThumb(def, 460, 460, true);
     mini.className = 'mini';
     s.append(mini,
-      h('div', { class: 'kicker' }, `${TIME_LABEL[def.time]} · ${WEATHER_LABEL[def.weather]}`),
+      h('div', { class: 'kicker acc' }, `${TIME_LABEL[def.time]}  ·  ${WEATHER_LABEL[def.weather]}`),
       h('div', { class: 'tn' }, def.name), h('div', { class: 'tp' }, def.place),
-      h('div', { class: 'tip' }, '💡 ' + TIPS[Math.floor(Math.random() * TIPS.length)]),
+      h('div', { class: 'tip' }, h('b', {}, 'Consejo'), TIPS[Math.floor(Math.random() * TIPS.length)]),
       h('div', { class: 'boot-bar' }, fill), msg);
-    s.style.background = 'radial-gradient(ellipse at 70% 30%, #10203c, #05060a 70%)';
     return (p, m) => { fill.style.width = `${Math.round(p * 100)}%`; if (m) msg.textContent = m; };
   }
 
@@ -325,15 +360,15 @@ export class UI {
       this.btn('Ajustes', ICON.settings, () => { this.closeModal(); this.settings(() => { this.hideScreens(); this.pauseMenu(race); }, true); }),
       this.btn('Salir al menú', ICON.exit, () => { this.closeModal(); this.game.exitRace(); }),
     ];
-    const box = h('div', { class: 'modal glass' }, h('h2', {}, 'PAUSA'), h('div', { class: 'dim', style: { marginBottom: '14px' } }, `${race.track.def.name} · ${formatTime(race.time * 1000)}`),
+    const box = h('div', { class: 'modal glass' }, h('h2', {}, 'Pausa'), h('div', { class: 'kicker', style: { marginBottom: '16px' } }, `${race.track.def.name}  ·  ${formatTime(race.time * 1000)}`),
       h('div', { class: 'btns' }, ...items),
-      h('div', { class: 'dim', style: { marginTop: '16px', fontSize: '13px' } }, this._controlsHint()));
+      h('div', { class: 'dim', style: { marginTop: '18px', fontSize: '13px', lineHeight: '1.5', maxWidth: '420px' } }, this._controlsHint()));
     this._modal(box, () => race.togglePause());
     this._setNav(items);
   }
 
   _controlsHint() {
-    return h('div', {}, 'W/↑ gas · S/↓ freno · A/D inclinar · ESPACIO freno trasero · SHIFT nitro · X caballito · C cámara · R volver a pista');
+    return h('div', {}, 'W/↑ gas  ·  S/↓ freno  ·  A/D inclinar  ·  Espacio freno trasero  ·  Shift nitro  ·  X caballito  ·  C cámara  ·  R volver a pista');
   }
 
   // ---------------------------------------------------------------- results
@@ -341,14 +376,17 @@ export class UI {
     const s = this._screen('results');
     const me = results.find((r) => r.player);
     const placeCls = me.pos <= 3 ? `p${me.pos}` : '';
-    const table = h('table', { class: 'res-table' }, ...results.map((r) =>
-      h('tr', { class: r.player ? 'me' : '' },
-        h('td', { class: `pos p${r.pos}` }, String(r.pos)),
-        h('td', {}, h('span', { style: { display: 'inline-block', width: '8px', height: '16px', background: r.color, borderRadius: '2px', marginRight: '8px', verticalAlign: 'middle' } }), r.name, r.player ? '  (TÚ)' : ''),
-        h('td', { class: 't' }, r.pos === 1 ? formatTime(r.time * 1000) : `+${(r.time - results[0].time).toFixed(3)}`),
-        h('td', { class: 't' }, r.best ? formatTime(r.best * 1000) : '—'),
-        race.mode !== 'trial' ? h('td', { class: 'pts' }, `+${r.points}`) : null,
-      )));
+    const showPts = race.mode !== 'trial';
+    const table = h('table', { class: 'res-table' },
+      h('tr', {}, h('th', {}, 'Pos'), h('th', {}, 'Moto'), h('th', { class: 't' }, 'Tiempo'), h('th', { class: 't' }, 'Mejor vuelta'), showPts ? h('th', { class: 't' }, 'Pts') : null),
+      ...results.map((r) =>
+        h('tr', { class: r.player ? 'me' : '' },
+          h('td', { class: `pos p${r.pos}` }, String(r.pos)),
+          h('td', { class: 'nm' }, h('span', { class: 'sw', style: { background: r.color } }), r.name, r.player ? h('span', { class: 'you' }, 'Tú') : null),
+          h('td', { class: 't' }, r.pos === 1 ? formatTime(r.time * 1000) : `+${(r.time - results[0].time).toFixed(3)}`),
+          h('td', { class: 't' }, r.best ? formatTime(r.best * 1000) : '—'),
+          showPts ? h('td', { class: 'pts' }, String(r.points)) : null,
+        )));
     const items = [];
     if (champInfo && champInfo.next) items.push(this.btn('Siguiente ronda', ICON.play, () => this.game.champNext(), 'primary'));
     else if (champInfo && champInfo.done) items.push(this.btn('Clasificación final', ICON.champ, () => this.game.champFinal(), 'primary'));
@@ -357,14 +395,18 @@ export class UI {
     items.push(this.btn('Ver repetición', ICON.replay, () => this.game.watchReplay()));
     if (champInfo) items.push(this.btn('Salir', ICON.exit, () => this.game.exitRace()));
     const best = Math.min(...results.filter((r) => r.best).map((r) => r.best));
+    const fact = (k, v) => h('div', {}, h('span', {}, k), h('b', {}, v));
     s.append(h('div', { class: 'results' }, h('div', { class: 'res-panel glass' },
-      h('div', { class: 'kicker' }, race.mode === 'trial' ? 'CONTRARRELOJ' : race.mode === 'champ' ? `CAMPEONATO · RONDA ${champInfo?.round ?? ''}` : 'RESULTADO FINAL'),
-      h('div', { class: 'row' }, h('div', { class: 'big-place ' + placeCls }, race.mode === 'trial' ? formatTime((me.best || 0) * 1000) : `${me.pos}º`),
-        h('div', { style: { marginLeft: '16px' } }, h('div', { style: { fontFamily: 'var(--font-h)', fontSize: '20px', fontWeight: 900 } }, race.track.def.name),
-          h('div', { class: 'dim' }, `Tu mejor vuelta: ${formatTime((me.best || 0) * 1000)}`), h('div', { class: 'dim' }, `Vuelta rápida: ${isFinite(best) ? formatTime(best * 1000) : '—'}`),
-          h('div', { class: 'dim' }, `Vel. punta: ${Math.round(race.player.phys.topSpeedSeen * 3.6)} km/h`))),
+      h('div', { class: 'kicker acc' }, race.mode === 'trial' ? 'Contrarreloj' : race.mode === 'champ' ? `Campeonato · Ronda ${champInfo?.round ?? ''}` : 'Clasificación final'),
+      h('div', { class: 'res-head' },
+        h('div', { class: 'big-place ' + placeCls + (race.mode === 'trial' ? ' word' : '') }, race.mode === 'trial' ? formatTime((me.best || 0) * 1000) : `${me.pos}º`),
+        h('div', {}, h('div', { class: 'tn' }, race.track.def.name),
+          h('div', { class: 'facts' },
+            fact('Tu mejor vuelta', formatTime((me.best || 0) * 1000)),
+            fact('Vuelta rápida', isFinite(best) ? formatTime(best * 1000) : '—'),
+            fact('Velocidad punta', `${Math.round(race.player.phys.topSpeedSeen * 3.6)} km/h`)))),
       race.mode === 'trial' ? null : table,
-      h('div', { class: 'btns', style: { display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '18px' } }, ...items),
+      h('div', { class: 'btns', style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '18px' } }, ...items),
     )));
     this._setNav(items);
     this.onBack = null;
@@ -374,7 +416,7 @@ export class UI {
     const s = this._screen();
     const stop = this.btn('Salir de la repetición', ICON.back, () => this.game.endReplay(), 'small');
     const cam = this.btn('Cambiar cámara', ICON.cam, () => this.game.race.cam.next(), 'small');
-    s.append(h('div', { class: 'replay-badge' }, '● REPETICIÓN'), h('div', { class: 'bottom-bar' }, cam, stop));
+    s.append(h('div', { class: 'replay-badge' }, 'REPETICIÓN'), h('div', { class: 'bottom-bar' }, cam, stop));
     this._setNav([stop, cam]);
     this.onBack = () => this.game.endReplay();
   }
@@ -388,7 +430,7 @@ export class UI {
     const box = h('div', { class: 'spec-panel glass', style: { width: 'min(560px, 92vw)', left: 'auto' } });
     const items = [];
     if (!c || c.done) {
-      box.append(h('div', { class: 'kicker' }, 'CAMPEONATO MÍTICO'), h('div', { class: 'bn' }, '6 RONDAS'),
+      box.append(h('div', { class: 'kicker acc' }, 'Campeonato'), h('div', { class: 'bn' }, `${TRACKS.length} rondas`),
         h('div', { class: 'blurb' }, 'Recorre los seis circuitos contra los 11 rivales. Puntos estilo Gran Premio: 25-20-16-13-11… El que más sume se corona campeón.'),
         h('div', { class: 'rounds' }, ...TRACKS.map((t, i) => h('span', { class: 'round' }, `${i + 1}. ${t.name}`))));
       const diffSel = h('div', { class: 'opt' });
@@ -402,7 +444,7 @@ export class UI {
       items.push(this.btn('Empezar campeonato', ICON.play, () => g.champStart(), 'primary'));
       items.push(this.btn('Cambiar moto', ICON.garage, () => this.garage(() => this.champHub()), 'small'));
     } else {
-      box.append(h('div', { class: 'kicker' }, 'CAMPEONATO EN CURSO'), h('div', { class: 'bn' }, `RONDA ${c.round + 1} / ${TRACKS.length}`),
+      box.append(h('div', { class: 'kicker acc' }, 'Campeonato en curso'), h('div', { class: 'bn' }, `Ronda ${c.round + 1} de ${TRACKS.length}`),
         h('div', { class: 'rounds' }, ...TRACKS.map((t, i) => h('span', { class: 'round ' + (i < c.round ? 'done' : i === c.round ? 'cur' : '') }, `${i + 1}. ${t.name}`))),
         this._standingsTable(c));
       items.push(this.btn(`Correr: ${TRACKS[c.round].name}`, ICON.play, () => g.champRace(), 'primary'));
@@ -411,7 +453,7 @@ export class UI {
     const back = this.btn('Volver', ICON.back, () => this.mainMenu(), 'small');
     items.push(back);
     box.append(h('div', { class: 'btns', style: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '18px' } }, ...items));
-    s.append(h('div', { class: 'top-bar' }, h('h2', {}, 'CAMPEONATO')), box);
+    s.append(h('div', { class: 'top-bar' }, h('h2', {}, 'Campeonato')), box);
     this._setNav(items);
     this.onBack = () => this.mainMenu();
   }
@@ -420,7 +462,7 @@ export class UI {
     const rows = Object.entries(c.points).sort((a, b) => b[1] - a[1]);
     return h('table', { class: 'champ-table' }, ...rows.map(([id, pts], i) => {
       const b = BIKE_BY_ID[id];
-      return h('tr', { class: id === c.bike ? 'me' : '' }, h('td', { style: { fontFamily: 'var(--font-h)', width: '30px' } }, String(i + 1)), h('td', {}, b ? b.name : id, id === c.bike ? ' (TÚ)' : ''), h('td', { style: { textAlign: 'right', fontFamily: 'var(--font-h)', color: 'var(--c1)' } }, String(pts)));
+      return h('tr', { class: id === c.bike ? 'me' : '' }, h('td', { style: { width: '34px', fontWeight: 700 } }, String(i + 1)), h('td', {}, b ? b.name : id), h('td', { style: { textAlign: 'right', fontWeight: 700 } }, `${pts} pts`));
     }));
   }
 
@@ -430,8 +472,8 @@ export class UI {
     const pos = rows.findIndex(([id]) => id === c.bike) + 1;
     const items = [this.btn('Volver al menú', ICON.back, () => this.game.exitRace(), 'primary')];
     s.append(h('div', { class: 'results' }, h('div', { class: 'res-panel glass' },
-      h('div', { class: 'kicker' }, 'CAMPEONATO FINALIZADO'),
-      h('div', { class: 'big-place ' + (pos <= 3 ? `p${pos}` : '') }, pos === 1 ? '¡CAMPEÓN!' : `${pos}º FINAL`),
+      h('div', { class: 'kicker acc' }, 'Campeonato finalizado'),
+      h('div', { class: 'big-place word ' + (pos <= 3 ? `p${pos}` : '') }, pos === 1 ? 'Campeón' : `${pos}º en la general`),
       this._standingsTable(c),
       h('div', { class: 'btns', style: { marginTop: '18px' } }, ...items))));
     this._setNav(items);
@@ -443,16 +485,16 @@ export class UI {
     const rows = TRACKS.map((t) => {
       const r = Save.data.records[t.id] || {};
       const gh = Save.data.ghosts[t.id];
-      return h('tr', {}, h('td', { style: { fontFamily: 'var(--font-h)' } }, t.name),
+      return h('tr', {}, h('td', { class: 'nm' }, t.name),
         h('td', { class: 't' }, r.lap ? formatTime(r.lap * 1000) : '—'), h('td', {}, r.lapBike ? (BIKE_BY_ID[r.lapBike]?.short || '') : ''),
-        h('td', { class: 't' }, r.race ? formatTime(r.race * 1000) : '—'), h('td', {}, gh ? '👻' : ''));
+        h('td', { class: 't' }, r.race ? formatTime(r.race * 1000) : '—'), h('td', { class: 't' }, gh ? 'Guardado' : '—'));
     });
     const st = Save.data.stats;
     const back = this.btn('Volver', ICON.back, () => this.mainMenu(), 'small');
-    const reset = this.btn('Borrar récords', '✕', () => { Save.data.records = {}; Save.data.ghosts = {}; Save.save(); this.records(); }, 'small');
-    s.append(h('div', { class: 'top-bar' }, h('h2', {}, 'RÉCORDS')),
+    const reset = this.btn('Borrar récords', ICON.clear, () => { Save.data.records = {}; Save.data.ghosts = {}; Save.save(); this.records(); }, 'small');
+    s.append(h('div', { class: 'top-bar' }, h('h2', {}, 'Récords')),
       h('div', { class: 'spec-panel glass', style: { left: '18px', right: 'auto', width: 'min(720px, 94vw)' } },
-        h('table', { class: 'res-table' }, h('tr', {}, h('td', { class: 'dim' }, 'CIRCUITO'), h('td', { class: 'dim t' }, 'VUELTA'), h('td', { class: 'dim' }, 'MOTO'), h('td', { class: 'dim t' }, 'CARRERA'), h('td', {})), ...rows),
+        h('table', { class: 'res-table' }, h('tr', {}, h('th', {}, 'Circuito'), h('th', { class: 't' }, 'Vuelta'), h('th', {}, 'Moto'), h('th', { class: 't' }, 'Carrera'), h('th', { class: 't' }, 'Fantasma')), ...rows),
         h('div', { class: 'specs-grid', style: { gridTemplateColumns: 'repeat(3, 1fr)', marginTop: '20px' } },
           h('div', {}, h('span', {}, 'Carreras'), h('b', {}, String(st.races))), h('div', {}, h('span', {}, 'Victorias'), h('b', {}, String(st.wins))),
           h('div', {}, h('span', {}, 'Podios'), h('b', {}, String(st.podiums))), h('div', {}, h('span', {}, 'Caídas'), h('b', {}, String(st.crashes))),
@@ -481,7 +523,7 @@ export class UI {
     };
     const render = () => {
       clear(tabs);
-      for (const [id, name] of [['graficos', 'GRÁFICOS'], ['sonido', 'SONIDO'], ['juego', 'JUEGO'], ['controles', 'CONTROLES']]) {
+      for (const [id, name] of [['graficos', 'Gráficos'], ['sonido', 'Sonido'], ['juego', 'Juego'], ['controles', 'Controles']]) {
         const t = h('div', { class: 'tab' + (tab === id ? ' on' : '') }, name);
         t.addEventListener('click', () => { tab = id; Audio.click(); render(); });
         tabs.appendChild(t);
@@ -509,21 +551,21 @@ export class UI {
       } else {
         const ctl = [['Acelerar', 'W / ↑', 'RT'], ['Frenar', 'S / ↓', 'LT'], ['Inclinar', 'A D / ← →', 'Stick izq.'], ['Freno trasero / derrape', 'ESPACIO', 'B'], ['Nitro', 'SHIFT / N', 'A'],
           ['Caballito', 'X', 'X'], ['Subir / bajar marcha', 'E / Q', 'RB / LB'], ['Cámara', 'C', 'Y'], ['Mirar atrás', 'B', 'L3'], ['Volver a pista', 'R', 'SELECT'], ['Pausa', 'ESC / P', 'START']];
-        body.append(h('table', { class: 'controls-table' }, h('tr', {}, h('td', { class: 'dim' }, 'ACCIÓN'), h('td', { class: 'dim' }, 'TECLADO'), h('td', { class: 'dim' }, 'MANDO')),
+        body.append(h('table', { class: 'res-table controls-table' }, h('tr', {}, h('th', {}, 'Acción'), h('th', {}, 'Teclado'), h('th', {}, 'Mando')),
           ...ctl.map(([a, k, p]) => h('tr', {}, h('td', {}, a), h('td', {}, h('span', { class: 'keycap' }, k)), h('td', {}, h('span', { class: 'keycap' }, p))))));
       }
     };
     render();
     const back = this.btn('Volver', ICON.back, () => onBack(), 'small');
-    const reset = this.btn('Restablecer todo', '✕', () => { if (confirm('¿Borrar ajustes, récords y progreso?')) { Save.reset(); this.game.applyQuality(); this.settings(onBack, inRace); } }, 'small');
-    s.append(h('div', { class: 'modal-wrap' }, h('div', { class: 'modal glass', style: { width: 'min(640px, 94vw)' } }, h('h2', {}, 'AJUSTES'), tabs, body,
+    const reset = this.btn('Restablecer todo', ICON.clear, () => { if (confirm('¿Borrar ajustes, récords y progreso?')) { Save.reset(); this.game.applyQuality(); this.settings(onBack, inRace); } }, 'small');
+    s.append(h('div', { class: 'modal-wrap' }, h('div', { class: 'modal glass', style: { width: 'min(640px, 94vw)' } }, h('h2', {}, 'Ajustes'), tabs, body,
       h('div', { class: 'row', style: { marginTop: '20px', justifyContent: 'flex-end' } }, inRace ? null : reset, back))));
     this._setNav([back]);
     this.onBack = onBack;
   }
 
   error(e) {
-    const box = h('div', { class: 'error-box glass' }, h('h2', {}, 'Algo salió mal'), h('div', { class: 'dim' }, String(e && e.message || e)),
+    const box = h('div', { class: 'error-box glass' }, h('h2', { style: { fontFamily: 'var(--font-h)', textTransform: 'uppercase', letterSpacing: '.08em', margin: '0 0 8px' } }, 'Se ha producido un error'), h('div', { class: 'dim' }, String(e && e.message || e)),
       h('div', { style: { marginTop: '14px' } }, h('button', { class: 'btn small', onclick: () => location.reload() }, h('span', {}, 'Recargar'))));
     this.root.appendChild(box);
   }

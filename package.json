@@ -14,8 +14,10 @@
     "three": "0.170.0"
   },
   "devDependencies": {
-    "esbuild": "0.24.0",
+    "@fontsource/barlow": "^5.1.0",
+    "@fontsource/barlow-condensed": "^5.1.0",
     "@fontsource/orbitron": "5.1.0",
-    "@fontsource/rajdhani": "5.1.0"
+    "@fontsource/rajdhani": "5.1.0",
+    "esbuild": "0.24.0"
   }
 }

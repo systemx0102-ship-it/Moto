@@ -14,19 +14,21 @@ export class HUD {
     root.appendChild(this.root);
     this.el = {};
     const E = this.el;
-    E.pos = h('div', { class: 'hud-pos' }, h('span', { class: 'p' }, '1'), h('span', { class: 'of' }, '/8'));
-    E.laps = h('div', { class: 'hud-laps' },
-      h('div', { class: 'lap' }, 'VUELTA 1/3'),
-      h('div', { class: 'times' }));
+    E.posV = h('div', { class: 'v p' }, '1');
+    E.lapV = h('div', { class: 'v' }, '1');
+    E.posBlk = h('div', { class: 'blk' }, h('div', { class: 'k' }, 'POS'), E.posV);
+    E.pos = h('div', { class: 'hud-pos hud-panel' }, E.posBlk, h('div', { class: 'blk' }, h('div', { class: 'k' }, 'VUELTA'), E.lapV));
+    E.laps = h('div', { class: 'hud-laps hud-panel' }, h('div', { class: 'times' }));
     E.tower = h('div', { class: 'hud-tower' });
-    E.mapC = canvas(230, 230, 'hud-map');
-    E.gaugeC = canvas(290, 290, 'hud-gauge');
-    E.leanC = canvas(220, 130, 'hud-lean');
+    E.mapC = canvas(210, 210, 'hud-map');
+    E.gaugeC = canvas(340, 150, 'hud-gauge');
+    E.leanC = canvas(200, 110, 'hud-lean');
+    E.lights = h('div', { class: 'hud-lights off' }, ...Array.from({ length: 5 }, () => h('i', {})));
     E.center = h('div', { class: 'hud-center' });
     E.cam = h('div', { class: 'hud-cam' }, '');
     E.fps = h('div', { class: 'hud-fps' }, '');
     E.ghost = h('div', { class: 'hud-ghost' }, '');
-    this.root.append(E.pos, E.laps, E.tower, E.mapC, E.gaugeC, E.leanC, E.center, E.cam, E.fps, E.ghost);
+    this.root.append(E.pos, E.laps, E.tower, E.mapC, E.gaugeC, E.leanC, E.lights, E.center, E.cam, E.fps, E.ghost);
     this.rows = new Map();
     this._msgT = 0; this._toastT = 0;
     this.maxLean = 0;
@@ -57,12 +59,13 @@ export class HUD {
       if (i === 0) path.moveTo(mx, my); else path.lineTo(mx, my);
     }
     path.closePath();
-    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = S * 0.06; g.stroke(path);
-    g.strokeStyle = 'rgba(200,225,255,0.85)'; g.lineWidth = S * 0.022; g.stroke(path);
-    g.strokeStyle = 'rgba(0,229,255,0.9)'; g.lineWidth = S * 0.008; g.stroke(path);
-    // start line
-    const p0 = this.mapT(x[0], z[0]);
-    g.fillStyle = '#fff'; g.beginPath(); g.arc(p0[0], p0[1], S * 0.02, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(10,11,13,0.6)'; g.lineWidth = S * 0.05; g.stroke(path);
+    g.strokeStyle = 'rgba(243,244,246,0.92)'; g.lineWidth = S * 0.016; g.stroke(path);
+    // start / finish line across the track
+    const p0 = this.mapT(x[0], z[0]), p1 = this.mapT(x[4 % N], z[4 % N]);
+    const a = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) + Math.PI / 2;
+    g.strokeStyle = '#e2231a'; g.lineWidth = S * 0.018;
+    g.beginPath(); g.moveTo(p0[0] - Math.cos(a) * S * 0.035, p0[1] - Math.sin(a) * S * 0.035); g.lineTo(p0[0] + Math.cos(a) * S * 0.035, p0[1] + Math.sin(a) * S * 0.035); g.stroke();
     this.mapBase = off;
   }
 
@@ -75,8 +78,8 @@ export class HUD {
       if (b === me) continue;
       const [mx, my] = this.mapT(b.phys.x, b.phys.z);
       g.fillStyle = b.color;
-      g.strokeStyle = '#000'; g.lineWidth = S * 0.008;
-      g.beginPath(); g.arc(mx, my, S * 0.024, 0, TAU); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(10,11,13,0.9)'; g.lineWidth = S * 0.01;
+      g.beginPath(); g.arc(mx, my, S * 0.022, 0, TAU); g.fill(); g.stroke();
     }
     if (this.race.ghostPos) {
       const [mx, my] = this.mapT(this.race.ghostPos.x, this.race.ghostPos.z);
@@ -87,114 +90,108 @@ export class HUD {
       const [mx, my] = this.mapT(me.phys.x, me.phys.z);
       const a = me.phys.vh;
       g.save(); g.translate(mx, my); g.rotate(-a);
-      g.fillStyle = '#00e5ff'; g.strokeStyle = '#fff'; g.lineWidth = S * 0.01;
-      g.shadowColor = '#00e5ff'; g.shadowBlur = S * 0.05;
-      g.beginPath(); g.moveTo(0, -S * 0.045); g.lineTo(S * 0.032, S * 0.032); g.lineTo(-S * 0.032, S * 0.032); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#ffffff'; g.strokeStyle = '#e2231a'; g.lineWidth = S * 0.012;
+      g.beginPath(); g.moveTo(0, -S * 0.046); g.lineTo(S * 0.032, S * 0.032); g.lineTo(0, S * 0.018); g.lineTo(-S * 0.032, S * 0.032); g.closePath(); g.fill(); g.stroke();
       g.restore();
     }
   }
 
-  // ------------------------------------------------------------ gauge
+  // ------------------------------------------------------------ dash
+  // Digital cluster in the style of a factory race dash: segmented rev bar with
+  // shift light, large speed readout, gear window and boost bar.
   _drawGauge(ph, spec) {
     const c = this.el.gaugeC, g = c.getContext('2d');
-    const S = c.width, C = S / 2, R = S * 0.42;
-    g.clearRect(0, 0, S, S);
-    const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
+    const W = c.width, H = c.height, k = W / 340;
+    const F = (w, px) => `${w} ${Math.round(px * k)}px "Barlow Condensed", "Arial Narrow", Arial, sans-serif`;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(10,11,13,0.74)'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e2231a'; g.fillRect(0, 0, 3 * k, H);
+    const electric = spec.engine.electric;
     const redline = ph.redline;
     const rpmF = clamp(ph.rpm / redline, 0, 1);
-    // backplate
-    const bg = g.createRadialGradient(C, C, R * 0.2, C, C, R * 1.15);
-    bg.addColorStop(0, 'rgba(10,16,30,0.85)'); bg.addColorStop(1, 'rgba(5,8,16,0.35)');
-    g.fillStyle = bg; g.beginPath(); g.arc(C, C, R * 1.12, 0, TAU); g.fill();
-    // ticks
-    const maxK = Math.ceil(redline / 1000);
-    for (let k = 0; k <= maxK; k++) {
-      const f = (k * 1000) / redline;
-      if (f > 1.0001) break;
-      const a = a0 + (a1 - a0) * f;
-      const red = f > 0.85;
-      g.strokeStyle = red ? '#ff3b4e' : 'rgba(220,235,255,0.85)';
-      g.lineWidth = S * 0.012;
-      g.beginPath(); g.moveTo(C + Math.cos(a) * R * 0.86, C + Math.sin(a) * R * 0.86); g.lineTo(C + Math.cos(a) * R * 0.98, C + Math.sin(a) * R * 0.98); g.stroke();
-      if (!spec.engine.electric && (maxK <= 10 || k % 2 === 0)) {
-        g.fillStyle = red ? '#ff6a78' : 'rgba(200,220,240,0.8)';
-        g.font = `700 ${S * 0.05}px Orbitron, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(String(k), C + Math.cos(a) * R * 0.74, C + Math.sin(a) * R * 0.74);
+    // rev bar
+    const x0 = 16 * k, x1 = W - 14 * k, y0 = 14 * k, bh = 13 * k, N = 36;
+    const sw = (x1 - x0) / N;
+    const shift = !electric && rpmF > 0.94;
+    const blink = shift && (performance.now() % 160) < 80;
+    for (let i = 0; i < N; i++) {
+      const f = (i + 1) / N;
+      const on = f <= rpmF + 1e-6;
+      let col = 'rgba(255,255,255,0.1)';
+      if (on) col = blink ? '#ffffff' : f > 0.9 ? '#e2231a' : f > 0.76 ? '#f0a020' : '#f3f4f6';
+      g.fillStyle = col;
+      g.fillRect(x0 + i * sw + 1 * k, y0, sw - 2 * k, bh);
+    }
+    // rpm scale under the bar
+    if (!electric) {
+      g.fillStyle = 'rgba(154,161,169,0.9)'; g.font = F(600, 11); g.textAlign = 'center'; g.textBaseline = 'top';
+      const maxK = Math.floor(redline / 1000);
+      const stepK = maxK > 12 ? 2 : 1;
+      for (let kk = 0; kk <= maxK; kk += stepK) {
+        const f = (kk * 1000) / redline;
+        g.fillText(String(kk), x0 + (x1 - x0) * f, y0 + bh + 4 * k);
       }
     }
-    // red zone arc
-    g.strokeStyle = 'rgba(255,59,78,0.5)'; g.lineWidth = S * 0.03;
-    g.beginPath(); g.arc(C, C, R * 0.92, a0 + (a1 - a0) * 0.85, a1); g.stroke();
-    // rpm arc
-    const grd = g.createLinearGradient(0, S, S, 0);
-    grd.addColorStop(0, '#00e5ff'); grd.addColorStop(0.6, '#8a6cff'); grd.addColorStop(1, '#ff2bd6');
-    g.strokeStyle = grd; g.lineWidth = S * 0.05; g.lineCap = 'round';
-    g.shadowColor = rpmF > 0.9 ? '#ff3b4e' : '#00e5ff'; g.shadowBlur = S * 0.05;
-    g.beginPath(); g.arc(C, C, R * 1.04, a0, a0 + (a1 - a0) * rpmF); g.stroke();
-    g.shadowBlur = 0;
-    // nitro ring (inner)
-    g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = S * 0.022;
-    g.beginPath(); g.arc(C, C, R * 0.56, a0, a1); g.stroke();
-    g.strokeStyle = ph.nitroOn ? '#ffffff' : '#ff2bd6'; g.shadowColor = '#ff2bd6'; g.shadowBlur = ph.nitroOn ? S * 0.06 : S * 0.02;
-    g.beginPath(); g.arc(C, C, R * 0.56, a0, a0 + (a1 - a0) * clamp(ph.nitro, 0, 1)); g.stroke();
-    g.shadowBlur = 0;
-    // needle
-    const an = a0 + (a1 - a0) * rpmF;
-    g.strokeStyle = '#ffffff'; g.lineWidth = S * 0.012;
-    g.shadowColor = '#ffffff'; g.shadowBlur = S * 0.03;
-    g.beginPath(); g.moveTo(C + Math.cos(an) * R * 0.62, C + Math.sin(an) * R * 0.62); g.lineTo(C + Math.cos(an) * R * 1.0, C + Math.sin(an) * R * 1.0); g.stroke();
-    g.shadowBlur = 0;
     // speed
     const mph = Save.settings.units === 'mph';
     const spd = Math.round(ph.v * (mph ? 2.23694 : 3.6));
-    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    g.font = `900 ${S * 0.2}px Orbitron, sans-serif`;
-    g.fillText(String(spd), C, C + S * 0.06);
-    g.fillStyle = 'rgba(160,190,220,0.9)';
-    g.font = `700 ${S * 0.045}px Orbitron, sans-serif`;
-    g.fillText(mph ? 'MPH' : 'KM/H', C, C + S * 0.13);
-    // gear
-    const gear = spec.engine.electric ? 'D' : String(ph.gear);
-    const shiftLight = !spec.engine.electric && rpmF > 0.93;
-    g.fillStyle = shiftLight ? '#ff3b4e' : 'rgba(0,229,255,0.16)';
-    const gx = C, gy = C + S * 0.27, gw = S * 0.14, gh = S * 0.14;
-    g.beginPath(); g.roundRect ? g.roundRect(gx - gw / 2, gy - gh / 2, gw, gh, S * 0.02) : g.rect(gx - gw / 2, gy - gh / 2, gw, gh); g.fill();
-    g.fillStyle = shiftLight ? '#fff' : '#00e5ff';
-    g.font = `900 ${S * 0.1}px Orbitron, sans-serif`; g.textBaseline = 'middle';
-    g.fillText(gear, gx, gy + S * 0.005);
-    g.fillStyle = 'rgba(160,190,220,0.8)';
-    g.font = `700 ${S * 0.035}px Orbitron, sans-serif`;
-    g.fillText(spec.engine.electric ? 'MOTOR' : 'x1000 RPM', C, C - S * 0.09);
-    if (ph.nitroOn) { g.fillStyle = '#ff2bd6'; g.font = `900 ${S * 0.05}px Orbitron, sans-serif`; g.fillText('NITRO', C, C - S * 0.16); }
+    g.fillStyle = '#ffffff'; g.textAlign = 'right'; g.textBaseline = 'alphabetic';
+    g.font = F(700, 70);
+    g.fillText(String(spd), W - 96 * k, H - 30 * k);
+    g.fillStyle = 'rgba(154,161,169,1)'; g.font = F(600, 14);
+    g.textAlign = 'left';
+    g.fillText(mph ? 'MPH' : 'KM/H', W - 90 * k, H - 32 * k);
+    // gear window
+    const gx = W - 62 * k, gy = 44 * k, gw = 48 * k, gh = 58 * k;
+    g.strokeStyle = shift ? '#e2231a' : 'rgba(255,255,255,0.35)'; g.lineWidth = 1.5 * k;
+    g.strokeRect(gx, gy, gw, gh);
+    if (shift) { g.fillStyle = 'rgba(226,35,26,0.85)'; g.fillRect(gx, gy, gw, gh); }
+    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = F(700, 46);
+    g.fillText(electric ? 'D' : (ph.gear <= 0 ? 'N' : String(ph.gear)), gx + gw / 2, gy + gh / 2 + 2 * k);
+    g.fillStyle = 'rgba(154,161,169,1)'; g.font = F(600, 10); g.textBaseline = 'top';
+    g.fillText(electric ? 'MOTOR' : 'MARCHA', gx + gw / 2, gy + gh + 4 * k);
+    // boost bar
+    const by = H - 18 * k, bx0 = 70 * k, bx1 = W - 14 * k;
+    g.fillStyle = ph.nitroOn ? '#ffffff' : 'rgba(154,161,169,1)'; g.font = F(600, 12); g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText('NITRO', 16 * k, by + 1.5 * k);
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(bx0, by, bx1 - bx0, 4 * k);
+    g.fillStyle = ph.nitroOn ? '#e2231a' : '#f3f4f6';
+    g.fillRect(bx0, by, (bx1 - bx0) * clamp(ph.nitro, 0, 1), 4 * k);
   }
 
   _drawLean(ph) {
     const c = this.el.leanC, g = c.getContext('2d');
-    const W = c.width, H = c.height;
+    const W = c.width, H = c.height, k = W / 200;
+    const F = (w, px) => `${w} ${Math.round(px * k)}px "Barlow Condensed", "Arial Narrow", Arial, sans-serif`;
     g.clearRect(0, 0, W, H);
     const deg = Math.abs(ph.lean) * 57.3;
     if (!ph.crashed) this.maxLean = Math.max(this.maxLean * 0.9995, deg);
-    const C = W / 2, R = H * 0.82, cy = H * 0.95;
-    g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = H * 0.05;
-    g.beginPath(); g.arc(C, cy, R, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
-    // grip-limit zone
+    g.fillStyle = 'rgba(10,11,13,0.6)'; g.fillRect(0, 0, W, H);
+    const C = W * 0.36, cy = H - 14 * k, R = H * 0.66;
+    // scale arc with the grip limit marked
+    g.lineWidth = 2 * k; g.strokeStyle = 'rgba(255,255,255,0.22)';
+    g.beginPath(); g.arc(C, cy, R, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
     const lim = ph.maxLean;
-    g.strokeStyle = 'rgba(255,59,78,0.45)';
-    for (const s of [-1, 1]) {
-      const a = -Math.PI / 2 + s * lim * 1.2;
-      g.beginPath(); g.arc(C, cy, R, Math.min(a, -Math.PI / 2 + s * Math.PI * 0.42), Math.max(a, -Math.PI / 2 + s * Math.PI * 0.42)); g.stroke();
+    g.strokeStyle = 'rgba(226,35,26,0.8)';
+    for (const sd of [-1, 1]) {
+      const a = -Math.PI / 2 + sd * lim * 1.2;
+      const b = -Math.PI / 2 + sd * Math.PI * 0.45;
+      g.beginPath(); g.arc(C, cy, R, Math.min(a, b), Math.max(a, b)); g.stroke();
     }
-    // bike line
+    // bike axis
     const a = -Math.PI / 2 + ph.lean * 1.2;
-    const col = deg > lim * 57.3 * 0.92 ? '#ff3b4e' : '#00e5ff';
-    g.strokeStyle = col; g.lineWidth = H * 0.05; g.lineCap = 'round';
-    g.shadowColor = col; g.shadowBlur = H * 0.12;
-    g.beginPath(); g.moveTo(C, cy); g.lineTo(C + Math.cos(a) * R * 0.92, cy + Math.sin(a) * R * 0.92); g.stroke();
-    g.shadowBlur = 0;
-    g.fillStyle = '#fff'; g.font = `900 ${H * 0.26}px Orbitron, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    g.fillText(`${Math.round(deg)}°`, C, cy - R * 0.28);
-    g.fillStyle = 'rgba(160,190,220,0.8)'; g.font = `700 ${H * 0.1}px Orbitron, sans-serif`;
-    g.fillText(`INCLINACIÓN · MÁX ${Math.round(this.maxLean)}°`, C, H * 0.16);
+    g.strokeStyle = deg > lim * 57.3 * 0.92 ? '#e2231a' : '#ffffff'; g.lineWidth = 3 * k; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(C, cy); g.lineTo(C + Math.cos(a) * R * 0.95, cy + Math.sin(a) * R * 0.95); g.stroke();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(C, cy, 3 * k, 0, TAU); g.fill();
+    // readouts
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.fillStyle = 'rgba(154,161,169,1)'; g.font = F(600, 11);
+    g.fillText('INCLINACIÓN', W * 0.66, 24 * k);
+    g.fillStyle = '#ffffff'; g.font = F(700, 34);
+    g.fillText(`${Math.round(deg)}°`, W * 0.66, 58 * k);
+    g.fillStyle = 'rgba(154,161,169,1)'; g.font = F(600, 12);
+    g.fillText(`MÁX ${Math.round(this.maxLean)}°`, W * 0.66, 80 * k);
   }
 
   // ------------------------------------------------------------ tower
@@ -233,15 +230,18 @@ export class HUD {
     if (sub) c.appendChild(h('div', { class: 'hud-sub' }, sub));
     this._msgT = ms / 1000;
   }
-  countdown(n) {
-    const c = this.el.center;
-    c.innerHTML = '';
-    c.appendChild(h('div', { class: 'hud-count' + (n === 0 ? ' go' : '') }, n === 0 ? '¡YA!' : String(n)));
-    this._msgT = 1.0;
+  // Start gantry: n red lights on (1..5); 0 = lights out, the race is on.
+  startLights(n) {
+    const L = this.el.lights;
+    clearTimeout(this._lightsT);
+    L.classList.remove('off');
+    [...L.children].forEach((el, i) => el.classList.toggle('on', i < n));
+    if (n === 0) this._lightsT = setTimeout(() => L.classList.add('off'), 1100);
   }
+  countdown(n) { if (n === 0) this.startLights(0); }
   toast(text, color = '#fff', ms = 1500) {
     if (this._toastEl) this._toastEl.remove();
-    this._toastEl = h('div', { class: 'hud-toast', style: { color } }, text);
+    this._toastEl = h('div', { class: 'hud-toast', style: { borderLeftColor: color } }, text);
     this.root.appendChild(this._toastEl);
     this._toastT = ms / 1000;
   }
@@ -262,13 +262,16 @@ export class HUD {
     // position
     const n = race.order.length;
     const pos = race.order.indexOf(me) + 1;
-    E.pos.children[0].textContent = race.mode === 'trial' || race.mode === 'free' ? '—' : String(pos);
-    E.pos.children[1].textContent = race.mode === 'trial' || race.mode === 'free' ? '' : `/${n}`;
+    const solo = race.mode === 'trial' || race.mode === 'free';
+    E.posBlk.style.display = solo ? 'none' : '';
+    const posTxt = `${pos}<small>/${n}</small>`;
+    if (!solo && E._posTxt !== posTxt) { E.posV.innerHTML = posTxt; E._posTxt = posTxt; }
     E.pos.classList.toggle('first', pos === 1 && n > 1);
     // laps & times
     const lapNow = clamp(ph.lap + 1, 1, race.laps);
-    E.laps.children[0].textContent = race.mode === 'free' ? `VUELTA ${ph.lap + 1}` : `VUELTA ${lapNow}/${race.laps}`;
-    const t = E.laps.children[1];
+    const lapTxt = race.mode === 'free' ? `${Math.max(1, ph.lap + 1)}` : `${lapNow}<small>/${race.laps}</small>`;
+    if (E._lapTxt !== lapTxt) { E.lapV.innerHTML = lapTxt; E._lapTxt = lapTxt; }
+    const t = E.laps.children[0];
     const curLap = race.time - (me.lapStart ?? 0);
     const best = me.bestLap;
     t.innerHTML = `<b>TOTAL</b>${formatTime(race.time * 1000)}<br><b>VUELTA</b>${formatTime(Math.max(0, curLap) * 1000)}<br><b>MEJOR</b>${formatTime(best ? best * 1000 : 0)}`;
@@ -281,7 +284,7 @@ export class HUD {
     // ghost delta
     if (race.ghostDelta !== undefined && race.ghostDelta !== null) {
       const d = race.ghostDelta;
-      E.ghost.textContent = `FANTASMA ${d <= 0 ? '−' : '+'}${Math.abs(d).toFixed(2)} s`;
+      E.ghost.textContent = `FANTASMA  ${d <= 0 ? '−' : '+'}${Math.abs(d).toFixed(2)}`;
       E.ghost.className = 'hud-ghost ' + (d <= 0 ? 'ahead' : 'behind');
     } else E.ghost.textContent = '';
     if (this._msgT > 0) { this._msgT -= dt; if (this._msgT <= 0) this.el.center.innerHTML = ''; }
