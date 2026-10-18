@@ -228,14 +228,14 @@ export class Track {
     const th = this.theme;
     const roadTex = roadTextures({
       seed: this.def.id.length * 7, size: quality.density > 0.8 ? 512 : 256,
-      base: th.road.base, edge: th.road.edge, centerDash: th.road.centerDash, centerColor: th.road.centerColor,
+      base: th.road.base.map((v) => Math.round(v * 1.36)), edge: th.road.edge, centerDash: th.road.centerDash, centerColor: th.road.centerColor,
       wet: this.wet, rubber: th.road.rubber, patches: th.road.patches,
     });
     const repeats = Math.max(1, Math.round(this.L / (this.W * 2)));
     this.roadMat = new THREE.MeshStandardMaterial({
       map: roadTex.map, normalMap: roadTex.normalMap, roughnessMap: roadTex.roughnessMap,
       roughness: this.wet ? 0.85 : 1.0, metalness: this.wet ? 0.08 : 0.0, normalScale: new THREE.Vector2(this.wet ? 0.18 : 0.6, this.wet ? 0.18 : 0.6),
-      envMapIntensity: this.wet ? 1.15 : 0.6, color: this.wet ? 0x9ea2aa : 0xffffff,
+      envMapIntensity: this.wet ? 1.15 : 0.42, color: this.wet ? 0x9ea2aa : 0xffeedd,
     });
     const road = this.ribbon([-this.halfW, this.halfW], 8, (i, d) => 0, (i, u) => [u, (i / this.N) * repeats]);
     const roadMesh = new THREE.Mesh(road, this.roadMat);
@@ -246,17 +246,32 @@ export class Track {
     // runoff (both sides) with world-space UVs; optional asphalt apron
     const rg = groundTextures(th.runoffGround || 'grass', 11);
     const runMat = new THREE.MeshStandardMaterial({ map: rg.map, normalMap: rg.normalMap, roughnessMap: rg.roughnessMap, color: 0xffffff });
+    if (th.mow) {
+      // mown verges: bands across the track that flip brightness with view direction
+      runMat.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aMow; varying vec3 vMow; varying vec3 vWP2;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMow = aMow; vWP2 = (modelMatrix * vec4(position, 1.0)).xyz;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vMow; varying vec3 vWP2;')
+          .replace('#include <map_fragment>', `#include <map_fragment>
+            float sg = mod(floor(vMow.x / 7.0), 2.0) * 2.0 - 1.0;
+            vec2 vd = normalize(vWP2.xz - cameraPosition.xz + vec2(1e-3));
+            diffuseColor.rgb *= 1.0 + sg * (0.05 + 0.09 * abs(dot(vd, normalize(vMow.yz + vec2(1e-4)))));`);
+      };
+      runMat.customProgramCacheKey = () => 'mowRunoff';
+    }
     const apron = th.apron || 0;
     for (const side of [-1, 1]) {
       const a = side * (this.halfW + apron), b = side * (this.barrierD + 2.5);
       const geo = this.ribbon(side < 0 ? [b, a] : [a, b], 4, () => -0.012, null, null, true);
+      if (th.mow) this._mowAttr(geo, 4);
       const m = new THREE.Mesh(geo, runMat);
       m.receiveShadow = true;
       group.add(m);
     }
     if (apron) {
       const at = groundTextures('asphaltDark', 21);
-      const apMat = new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, roughness: 0.9, color: 0xb0b4b8 });
+      const apMat = new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, roughness: 0.9 });
+      apMat.color.setRGB(1.75, 1.72, 1.7);
       for (const side of [-1, 1]) {
         const a = side * this.halfW, b = side * (this.halfW + apron);
         const m = new THREE.Mesh(this.ribbon(side < 0 ? [b, a] : [a, b], 2, () => -0.004, null, null, true), apMat);
@@ -297,6 +312,18 @@ export class Track {
     group.add(this._buildStart());
     this.group = group;
     return group;
+  }
+
+  // per-vertex [distance along track, tangent x, tangent z] for the mowing-stripe shader
+  _mowAttr(geo, cols) {
+    const { tx, tz } = this.c;
+    const n = geo.attributes.position.count, rows = n / (cols + 1);
+    const a = new Float32Array(n * 3);
+    for (let r = 0; r < rows; r++) {
+      const i = r % this.N;
+      for (let c = 0; c <= cols; c++) { const k = (r * (cols + 1) + c) * 3; a[k] = r * this.ds; a[k + 1] = tx[i]; a[k + 2] = tz[i]; }
+    }
+    geo.setAttribute('aMow', new THREE.BufferAttribute(a, 3));
   }
 
   _computeGravel() {

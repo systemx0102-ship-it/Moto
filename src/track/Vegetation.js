@@ -9,8 +9,22 @@ import { leafClusterTexture, firFrondTexture, pineTuftTexture, palmFrondTexture,
 export const WIND = { time: { value: 0 }, strength: { value: 1 } };
 
 // Inject wind sway into a material (works with instancing).
+// Foliage cards carry authored (up / spherical) normals: keep them on back faces instead of
+// letting DoubleSide flip them (which turned half of every bush black), and add a little
+// sun translucency so leaves glow when back-lit.
+export function foliageFragment(sh, transl = 0.3) {
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
+    .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+      #if NUM_DIR_LIGHTS > 0
+        float tl = pow(max(0.0, dot(normalize(-vViewPosition), directionalLights[0].direction)), 3.0);
+        reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * tl * ${transl.toFixed(2)};
+      #endif`);
+}
+
 export function addWind(mat, amp = 0.25, freq = 1.3, stiff = 1.0) {
   mat.onBeforeCompile = (sh) => {
+    foliageFragment(sh);
     sh.uniforms.uWindTime = WIND.time;
     sh.uniforms.uWindStr = WIND.strength;
     sh.vertexShader = sh.vertexShader
@@ -431,7 +445,9 @@ export class Vegetation {
       }
     }
     if (impostor && farItems.length) {
-      const mat = new THREE.MeshStandardMaterial({ map: impostor.tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9, alphaToCoverage: this.a2c });
+      const mat = new THREE.MeshStandardMaterial({ map: impostor.tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9, alphaToCoverage: this.a2c, color: 0xa4ae9c });
+      mat.onBeforeCompile = (sh) => foliageFragment(sh, 0.15);
+      mat.customProgramCacheKey = () => 'impostor';
       this._instanced(impostorGeo(impostor.w, impostor.h), mat, farItems, sp.scale, { shadow: false, tint: 0.18, sink: 0 });
     }
   }

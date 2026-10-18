@@ -11,11 +11,12 @@ export function splatMaterial(theme) {
     sh.uniforms.tRock = { value: rk.map };
     sh.uniforms.tDirt = { value: dt.map };
     sh.uniforms.uDirtAmt = { value: theme.dirtAmt ?? 0.5 };
+    sh.uniforms.uMow = { value: theme.mow ? 1 : 0 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWN; varying vec3 vWP;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWN = normalize(mat3(modelMatrix) * normal); vWP = (modelMatrix * vec4(position, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tRock; uniform sampler2D tDirt; uniform float uDirtAmt; varying vec3 vWN; varying vec3 vWP;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tRock; uniform sampler2D tDirt; uniform float uDirtAmt; uniform float uMow; varying vec3 vWN; varying vec3 vWP;')
       .replace('#include <map_fragment>', `
         #ifdef USE_MAP
           vec4 gA = texture2D(map, vMapUv);
@@ -31,10 +32,19 @@ export function splatMaterial(theme) {
           float wDirt = smoothstep(0.52, 0.7, macro) * (1.0 - wRock) * uDirtAmt;
           vec4 c = mix(ground, dirtC, wDirt);
           c = mix(c, rockC, wRock);
+          if (uMow > 0.5) {
+            // mown lawn: alternating bands whose brightness flips with the viewing direction
+            vec2 md = vec2(0.8, 0.6);
+            float sg = mod(floor(dot(vWP.xz, md) / 9.0), 2.0) * 2.0 - 1.0;
+            vec2 vd = normalize(vWP.xz - cameraPosition.xz + vec2(1e-3));
+            float fade = 1.0 - smoothstep(220.0, 650.0, length(vWP.xz - cameraPosition.xz));
+            float sh = 1.0 + sg * (0.06 + 0.08 * abs(dot(vd, md)));
+            c.rgb *= mix(1.0, sh, (1.0 - wRock) * (1.0 - wDirt) * fade);
+          }
           diffuseColor *= c;
         #endif`);
   };
-  mat.customProgramCacheKey = () => 'splat';
+  mat.customProgramCacheKey = () => 'splat' + (theme.mow ? 'm' : '');
   return mat;
 }
 

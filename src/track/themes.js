@@ -1,9 +1,9 @@
 // Visual / environmental configuration per track theme.
 export const THEMES = {
   gp: {
-    rockGround: 'stone', dirtGround: 'dirt', dirtAmt: 0.5, apron: 2.5, gravelTraps: true,
+    rockGround: 'stone', dirtGround: 'dirt', dirtAmt: 0.5, apron: 2.5, gravelTraps: true, mow: true,
     ground: 'grass', runoffGround: 'grass', barrier: 'tirewall', fence: true, grandstands: true,
-    road: { base: [58, 60, 64], edge: '#f4f4f4', centerDash: false, rubber: true, edgeRed: false },
+    road: { base: [66, 64, 62], edge: '#f4f4f4', centerDash: false, rubber: true, edgeRed: false },
     terrain: { amp: 18, scale: 420, base: -2, ridged: false, color: 0x7a9a50, rockColor: 0x8a8070 },
     far: { height: 140, color: 0x6a7a68, snow: false },
     trees: { pine: 0.25, broad: 0.75, palm: 0, density: 1.0 }, rocks: 0.2,
@@ -39,7 +39,7 @@ export const THEMES = {
   alpine: {
     rockGround: 'stone', dirtGround: 'gravel', dirtAmt: 0.25,
     ground: 'snow', runoffGround: 'snow', barrier: 'armco', fence: false,
-    road: { base: [54, 56, 60], edge: '#f4f4f4', centerDash: true, centerColor: '#f4f4f4', rubber: false },
+    road: { base: [60, 60, 60], edge: '#f4f4f4', centerDash: true, centerColor: '#f4f4f4', rubber: false },
     terrain: { amp: 120, scale: 520, base: 0, ridged: true, color: 0xe8eef6, rockColor: 0x6a6e78, followTrack: true },
     far: { height: 700, color: 0xc8d4e4, snow: true },
     trees: { pine: 1, broad: 0, palm: 0, density: 1.2, snowy: true }, rocks: 0.6,
@@ -70,7 +70,7 @@ export const WEATHER = {
 // Time of day presets
 export const TIMES = {
   dawn: { sky: { zenith: 0x34407a, horizon: 0xf2b8a0, ground: 0x4a3a40, glow: 1.4, hglow: 1.6, k: 1.6 }, sunElev: 7, sunAzim: 95, turbidity: 6, rayleigh: 3.2, mie: 0.008, exposure: 0.55, bloom: [0.28, 0.5, 2.0], sun: 2.2, sunColor: 0xffb98a, hemi: 0.6, hemiSky: 0xd8b8d8, hemiGround: 0x403848, fog: [0xc8a8b8, 0.0008], env: 0.75 },
-  day: { sky: { zenith: 0x1d5ccc, horizon: 0xb4d2f0, ground: 0x6a7480, glow: 0.8, hglow: 0.3, k: 2.3 }, sunElev: 48, sunAzim: 135, turbidity: 2.2, rayleigh: 3.0, mie: 0.0035, exposure: 0.46, bloom: [0.16, 0.35, 3.2], sun: 3.2, sunColor: 0xfff4e6, hemi: 0.9, hemiSky: 0xbcd4ff, hemiGround: 0x6a5a40, fog: [0xb8c8dc, 0.00045], env: 0.9 },
+  day: { sky: { zenith: 0x1d5ccc, horizon: 0xb4d2f0, ground: 0x6a7480, glow: 0.8, hglow: 0.3, k: 2.3 }, sunElev: 48, sunAzim: 135, turbidity: 2.2, rayleigh: 3.0, mie: 0.0035, exposure: 0.48, bloom: [0.16, 0.35, 3.2], sun: 3.8, sunColor: 0xfff1e0, hemi: 0.5, hemiSky: 0xc8d8f0, hemiGround: 0x6a5a40, fog: [0xb8c8dc, 0.00045], env: 0.7 },
   sunset: { sky: { zenith: 0x23306e, horizon: 0xff9850, ground: 0x3a2a30, glow: 1.6, hglow: 2.4, k: 1.7 }, sunElev: 4, sunAzim: 250, turbidity: 9, rayleigh: 2.6, mie: 0.012, exposure: 0.6, bloom: [0.28, 0.5, 2.0], sun: 2.6, sunColor: 0xffa060, hemi: 0.55, hemiSky: 0xffb890, hemiGround: 0x403040, fog: [0xd89a78, 0.0008], env: 0.8 },
   dusk: { sky: { zenith: 0x141c34, horizon: 0x5a6680, ground: 0x1a1c22, glow: 0.6, hglow: 0.8, k: 1.1 }, sunElev: 6, sunAzim: 200, turbidity: 14, rayleigh: 0.8, mie: 0.02, exposure: 0.68, bloom: [0.45, 0.5, 0.85], sun: 1.1, sunColor: 0xa8b4d0, hemi: 1.1, hemiSky: 0x5a6a88, hemiGround: 0x1a2018, fog: [0x3a4450, 0.0026], env: 0.45, overcast: true },
   night: { sunElev: -20, sunAzim: 60, exposure: 0.85, bloom: [0.5, 0.45, 0.8], sun: 0.35, sunColor: 0x8ab0ff, hemi: 0.35, hemiSky: 0x2a3a6a, hemiGround: 0x0a0a12, fog: [0x0a0c18, 0.0016], env: 0.35, night: true },
