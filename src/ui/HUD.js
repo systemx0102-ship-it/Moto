@@ -6,6 +6,8 @@ import { clamp, formatTime, formatGap } from '../core/utils.js';
 import { Save } from '../core/Settings.js';
 import { Input } from '../core/Input.js';
 import { GUIDE_CSS } from '../game/RacingLine.js';
+import { TYPE_NAME } from '../rpg/data.js';
+import { RICON } from '../rpg/ui/common.js';
 
 const TAU = Math.PI * 2;
 
@@ -51,6 +53,7 @@ export class HUD {
     this._msgT = 0; this._toastT = 0;
     this.maxLean = 0;
     this._buildMap();
+    if (race.rpgTrack) this._rpgBuild();
     if (Save.settings.touch) this._touch(root);
   }
 
@@ -94,13 +97,16 @@ export class HUD {
     g.clearRect(0, 0, S, S);
     g.drawImage(this.mapBase, 0, 0);
     if (me && this.race.racingLine && !me.phys.crashed) this._drawRoute(g, S, me.phys, this.race.racingLine);
+    let tag = null;
     for (const b of bikes) {
-      if (b === me) continue;
+      if (b === me || b.out) continue;
       const [mx, my] = this.mapT(b.phys.x, b.phys.z);
       g.fillStyle = b.color;
       g.strokeStyle = 'rgba(10,11,13,0.9)'; g.lineWidth = S * 0.01;
       g.beginPath(); g.arc(mx, my, S * 0.022, 0, TAU); g.fill(); g.stroke();
+      if (b.isBoss || (this.race.rpgTrack && this.race.rpgTrack.rival === b)) tag = [b, mx, my];
     }
+    if (tag) this._mapTag(g, S, ...tag);
     if (this.race.ghostPos) {
       const [mx, my] = this.mapT(this.race.ghostPos.x, this.race.ghostPos.z);
       g.fillStyle = 'rgba(64,224,255,0.6)';
@@ -114,6 +120,20 @@ export class HUD {
       g.beginPath(); g.moveTo(0, -S * 0.046); g.lineTo(S * 0.032, S * 0.032); g.lineTo(0, S * 0.018); g.lineTo(-S * 0.032, S * 0.032); g.closePath(); g.fill(); g.stroke();
       g.restore();
     }
+  }
+
+  // Modo Leyenda: ringed dot and name plate for the boss (or the duel rival)
+  _mapTag(g, S, b, mx, my) {
+    g.strokeStyle = '#e2231a'; g.lineWidth = S * 0.009;
+    g.beginPath(); g.arc(mx, my, S * 0.038, 0, TAU); g.stroke();
+    const fs = Math.round(S * 0.044), txt = (b.label || b.spec.short).toUpperCase();
+    g.font = `700 ${fs}px "Barlow Condensed", "Arial Narrow", Arial, sans-serif`;
+    const w = g.measureText(txt).width, pad = S * 0.016;
+    const x = clamp(mx - w / 2, pad, S - w - pad), y = my - S * 0.058 < fs + pad ? my + S * 0.058 + fs : my - S * 0.058;
+    g.fillStyle = 'rgba(10,11,13,0.82)'; g.fillRect(x - pad, y - fs * 0.92, w + pad * 2, fs * 1.18);
+    g.fillStyle = '#e2231a'; g.fillRect(x - pad, y - fs * 0.92, S * 0.008, fs * 1.18);
+    g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.fillText(txt, x, y);
   }
 
   // Next ~400 m of the route as a thick line coloured like the painted chevrons
@@ -314,8 +334,8 @@ export class HUD {
     order.forEach((b, i) => {
       let r = this.rows.get(b);
       if (!r) {
-        r = h('div', { class: 'tw-row' + (b === me ? ' me' : '') },
-          h('span', { class: 'n' }), h('span', { class: 'c', style: { background: b.color } }), h('span', { class: 'nm' }, b.spec.short), h('span', { class: 'g' }));
+        r = h('div', { class: 'tw-row' + (b === me ? ' me' : '') + (b.isBoss ? ' boss' : '') },
+          h('span', { class: 'n' }), h('span', { class: 'c', style: { background: b.color } }), h('span', { class: 'nm' }, b.label || b.spec.short), h('span', { class: 'g' }));
         tw.appendChild(r);
         this.rows.set(b, r);
         r.style.position = 'absolute'; r.style.left = '0'; r.style.right = '0';
@@ -323,14 +343,15 @@ export class HUD {
       r.style.transform = `translateY(${i * 26}px)`;
       r.children[0].textContent = String(i + 1);
       let gap = '';
-      if (b.finished) gap = i === 0 ? formatTime(b.finishTime) : formatGap(b.finishTime - leader.finishTime);
+      if (b.out) gap = 'ELIM';
+      else if (b.finished) gap = i === 0 ? formatTime(b.finishTime) : formatGap(b.finishTime - leader.finishTime);
       else if (i > 0) {
         const d = leader.phys.dist - b.phys.dist;
         const v = Math.max(20, b.phys.v);
         gap = d > this.race.track.L ? `+${Math.floor(d / this.race.track.L)}V` : `+${(d / v).toFixed(1)}`;
       } else gap = 'LÍDER';
       r.children[3].textContent = gap;
-      r.classList.toggle('out', !!b.phys.crashed);
+      r.classList.toggle('out', !!b.phys.crashed || !!b.out);
     });
     tw.style.height = `${order.length * 26}px`;
   }
@@ -373,7 +394,7 @@ export class HUD {
     const ph = me.phys;
     const E = this.el;
     // position
-    const n = race.order.length;
+    const n = me.out || !race.active ? race.order.length : race.active.length;
     const pos = race.order.indexOf(me) + 1;
     const solo = race.mode === 'trial' || race.mode === 'free';
     E.posBlk.style.display = solo ? 'none' : '';
@@ -402,8 +423,86 @@ export class HUD {
       E.ghost.textContent = `FANTASMA  ${d <= 0 ? '−' : '+'}${Math.abs(d).toFixed(2)}`;
       E.ghost.className = 'hud-ghost ' + (d <= 0 ? 'ahead' : 'behind');
     } else E.ghost.textContent = '';
+    if (race.rpgTrack) this._rpgUpdate(dt);
     if (this._msgT > 0) { this._msgT -= dt; if (this._msgT <= 0) this.el.center.innerHTML = ''; }
     if (this._toastT > 0) { this._toastT -= dt; if (this._toastT <= 0 && this._toastEl) { this._toastEl.remove(); this._toastEl = null; } }
+  }
+
+  // ------------------------------------------------------------ Modo Leyenda
+  // Objectives panel (left, under the timing tower), rival / boss / elimination plate
+  // (top centre) and the XP feed (right, above the dash). Styles: src/rpg/race.css.
+  _rpgBuild() {
+    const E = this.el, rt = this.race.rpgTrack;
+    this.root.classList.add('rpg-hud');
+    E.rObj = h('div', { class: 'rpg-obj' }, h('div', { class: 'hd' }, h('span', {}, 'Objetivos'), h('span', { class: 'ty' }, TYPE_NAME[rt.type])));
+    this._rRows = rt.objectives().map(() => {
+      const r = { mk: h('span', { class: 'mk', html: RICON.star }), tx: h('span', { class: 'tx' }), vl: h('span', { class: 'vl' }), fill: h('i', {}), key: '' };
+      r.bar = h('span', { class: 'br' }, r.fill);
+      r.el = h('div', { class: 'ob' }, r.mk, r.tx, r.vl, r.bar);
+      E.rObj.appendChild(r.el);
+      return r;
+    });
+    E.rPk = h('div', { class: 'k' }); E.rPn = h('div', { class: 'n' });
+    E.rPl = h('div', { class: 'k' }); E.rPv = h('div', { class: 'v' });
+    E.rPlate = h('div', { class: 'rpg-plate' }, h('span', { class: 'ic', html: RICON.boss }), h('div', { class: 'who' }, E.rPk, E.rPn), h('div', { class: 'gap' }, E.rPl, E.rPv));
+    E.rFeed = h('div', { class: 'rpg-feed' });
+    this.root.append(E.rObj, E.rPlate, E.rFeed);
+    this._rFeed = [];
+    this._rPlaceT = 0;
+  }
+
+  _rpgUpdate(dt) {
+    const race = this.race, rt = race.rpgTrack, E = this.el;
+    // objectives: touch the DOM only when a row changes
+    rt.objectives().forEach((o, i) => {
+      const r = this._rRows[i];
+      const key = `${o.state}|${o.on}|${o.text}|${o.value}|${o.frac === null ? '' : o.frac.toFixed(3)}`;
+      if (key === r.key) return;
+      r.key = key;
+      r.el.className = `ob ${o.state}${o.on && o.state === 'pending' ? ' on' : ''}${o.frac !== null ? ' has-bar' : ''}`;
+      r.tx.textContent = o.text;
+      r.vl.textContent = o.value;
+      if (o.frac !== null) r.fill.style.transform = `scaleX(${o.frac.toFixed(3)})`;
+    });
+    // plate: from the green light on
+    const pl = race.phase === 'race' || race.phase === 'finished' ? rt.plate() : null;
+    const pkey = pl ? `${pl.cls}|${pl.kicker}|${pl.name}|${pl.label}|${pl.value}` : '';
+    if (pkey !== this._rPkey) {
+      this._rPkey = pkey;
+      E.rPlate.className = 'rpg-plate' + (pl ? ` on ${pl.cls}` : '');
+      if (pl) { E.rPk.textContent = pl.kicker; E.rPn.textContent = pl.name; E.rPl.textContent = pl.label; E.rPv.textContent = pl.value; }
+    }
+    // feed
+    while (rt.feed.length) this._rpgFeedAdd(rt.feed.shift());
+    for (const f of this._rFeed) {
+      f.t -= dt;
+      if (f.t <= 0.35 && !f.gone) { f.gone = true; f.el.classList.add('gone'); }
+    }
+    while (this._rFeed.length && this._rFeed[0].t <= 0) this._rFeed.shift().el.remove();
+    // keep the objectives under the tower as it grows or shrinks
+    this._rPlaceT -= dt;
+    if (this._rPlaceT <= 0) { this._rPlaceT = 0.5; this._rpgPlace(); }
+  }
+
+  _rpgFeedAdd(f) {
+    const el = h('div', { class: `fe ${f.kind}` },
+      f.kind === 'xp' ? (f.xp ? h('b', {}, `+${f.xp} XP`) : null) : h('b', {}, f.text),
+      h('span', {}, f.kind === 'xp' ? f.text : f.sub || ''));
+    this.el.rFeed.appendChild(el);
+    this._rFeed.push({ el, t: f.kind === 'xp' ? 2.6 : 3.4 });
+    while (this._rFeed.length > 4) this._rFeed.shift().el.remove();
+  }
+
+  // below the tower (lap times in solo events); the lean meter steps aside if they'd touch
+  _rpgPlace() {
+    const E = this.el, base = this.root.getBoundingClientRect();
+    if (!base.height) return;
+    const tw = E.tower.getBoundingClientRect();
+    const above = tw.height > 0 && this.race.mode !== 'trial' ? tw : E.laps.getBoundingClientRect();
+    const top = Math.round(above.bottom - base.top + 10);
+    if (top !== this._rTop) { this._rTop = top; E.rObj.style.top = `${top}px`; }
+    const lean = E.leanC.getBoundingClientRect(), ob = E.rObj.getBoundingClientRect();
+    E.leanC.style.visibility = lean.height && ob.bottom > lean.top - 6 ? 'hidden' : '';
   }
 
   // ------------------------------------------------------------ touch

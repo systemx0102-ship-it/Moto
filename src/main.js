@@ -54,6 +54,7 @@ class Game {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.__game = this;
+    window.__rpg = Rpg;
     window.__ready = true;
   }
 
@@ -106,6 +107,8 @@ class Game {
 
   restartRace() {
     if (!this.lastCfg) return;
+    // an RPG event is rebuilt from the current state of the machine (fresh seed too)
+    if (this.lastCfg.rpg) { this.startRpgEvent(this.lastCfg.rpg.eventId); return; }
     const cfg = { ...this.lastCfg, seed: (this.lastCfg.seed || 1) + 1 };
     this.startRace(cfg);
   }
@@ -114,11 +117,16 @@ class Game {
     if (this.race) { this.race.dispose(); this.race = null; }
     this.state = 'menu';
     this.garage.clearPodium();
-    const bike = BIKE_BY_ID[Save.data.garage.bike] || BIKES[0];
-    this.garage.setBike(bike, Save.data.garage.livery[bike.id] ?? 0);
+    // back from a Modo Leyenda event (finished or abandoned): the hub, with the mode's machine
+    const rpg = !!(this.lastCfg && this.lastCfg.rpg) && typeof this.ui.rpgHub === 'function' && Rpg.started;
+    if (rpg) this.garage.setBike(Rpg.activeSpec(), Rpg.bike().livery || 0);
+    else {
+      const bike = BIKE_BY_ID[Save.data.garage.bike] || BIKES[0];
+      this.garage.setBike(bike, Save.data.garage.livery[bike.id] ?? 0);
+    }
     this.garage.activate();
     this.engine.renderer.toneMappingExposure = 1;
-    this.ui.mainMenu();
+    if (rpg) this.ui.rpgHub(); else this.ui.mainMenu();
   }
 
   onRaceFinished(race, results) {
@@ -138,6 +146,8 @@ class Game {
     Save.save();
     this._lastResults = results;
     this._lastChamp = champInfo;
+    // Modo Leyenda: objectives, XP, loot and map progress from the event's report
+    this._lastRewards = race.rpg ? Rpg.finish(race.rpgReport()) : null;
     // podium scene with the top three
     this.state = 'results';
     this.engine.renderer.toneMappingExposure = 1;
@@ -146,7 +156,13 @@ class Game {
     this.garage.setMode('podium');
     this.garage.activate();
     Audio.playMusic('podium');
-    this.ui.results(race, results, champInfo);
+    this._showResults(race, results, champInfo);
+  }
+
+  // results screen: the RPG rewards screen when the event belongs to Modo Leyenda
+  _showResults(race, results, champInfo) {
+    if (race.rpg && this._lastRewards && typeof this.ui.rpgRewards === 'function') this.ui.rpgRewards(race, results, this._lastRewards);
+    else this.ui.results(race, results, champInfo);
   }
 
   watchReplay() {
@@ -165,7 +181,7 @@ class Game {
     this.state = 'results';
     this.garage.activate();
     Audio.playMusic('podium');
-    this.ui.results(this.race, this._lastResults, this._lastChamp);
+    this._showResults(this.race, this._lastResults, this._lastChamp);
   }
 
   // ------------------------------------------------------------- championship
