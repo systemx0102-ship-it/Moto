@@ -94,8 +94,10 @@ export class RpgRace {
   }
 
   introText() {
-    const race = this.race, laps = race.laps;
-    return [this.rpg.name, `${TYPE_NAME[this.type].toUpperCase()} · ${race.track.def.name.toUpperCase()} · ${laps} ${laps === 1 ? 'VUELTA' : 'VUELTAS'}`];
+    const race = this.race, laps = race.laps, type = TYPE_NAME[this.type];
+    // the type goes in the sub line unless the event is simply named after it
+    const sub = [type.toLowerCase() === this.rpg.name.toLowerCase() ? `Nivel ${this.rpg.level}` : type, race.track.def.name, `${laps} ${laps === 1 ? 'vuelta' : 'vueltas'}`];
+    return [this.rpg.name, sub.join(' · ').toUpperCase()];
   }
 
   // ------------------------------------------------------------------ frame
