@@ -3,14 +3,20 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { Save } from './Settings.js';
 import { setMaxAnisotropy } from './textures.js';
 import { clamp } from './utils.js';
+import { LensFX } from './postfx/LensFX.js';
+import { FXAAShader } from './postfx/fxaa.js';
+import { resolveGrade } from './postfx/grades.js';
 
-// Display-space grading: radial speed blur, chromatic aberration, vignette,
-// grain, flash and tint. Runs after tone mapping.
+const TIER = { bajo: 0, medio: 1, alto: 2, ultra: 3 };
+const _v = new THREE.Vector3(), _fwd = new THREE.Vector3(), _buf = new THREE.Vector2();
+
+// Display-space grading: radial speed blur, chromatic aberration, light sharpening,
+// nitro heat shimmer, filmic lift/gamma/gain + split toning, vignette, grain,
+// flash and tint. Runs after tone mapping (and FXAA when there is no MSAA).
 const FinalShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -30,6 +36,15 @@ const FinalShader = {
     uRain: { value: 0 },
     uSpeed: { value: 0 },
     uAspect: { value: 1.7 },
+    uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
+    uSharpen: { value: 0 },
+    uShimmer: { value: 0 },
+    uVibrance: { value: 0 },
+    uLift: { value: new THREE.Vector3(0, 0, 0) },
+    uGamma: { value: new THREE.Vector3(1, 1, 1) },
+    uGain: { value: new THREE.Vector3(1, 1, 1) },
+    uShadowTint: { value: new THREE.Vector3(0, 0, 0) },
+    uHighTint: { value: new THREE.Vector3(0, 0, 0) },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -38,9 +53,11 @@ const FinalShader = {
   fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse;
     uniform float uTime, uBlur, uCA, uVignette, uGrain, uFlash, uTintAmt, uSat, uContrast, uDamage, uRain, uSpeed, uAspect;
-    uniform vec3 uFlashColor, uTint;
-    uniform vec2 uCenter;
+    uniform float uSharpen, uShimmer, uVibrance;
+    uniform vec3 uFlashColor, uTint, uLift, uGamma, uGain, uShadowTint, uHighTint;
+    uniform vec2 uCenter, uTexel;
     varying vec2 vUv;
+    const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
     // raindrops on the lens: returns uv offset (refraction) and a mask in z
     vec3 drops(vec2 uv) {
@@ -71,6 +88,16 @@ const FinalShader = {
       vec2 uvIn = vUv;
       vec3 dr = vec3(0.0);
       if (uRain > 0.001) { dr = drops(vUv); uvIn += dr.xy; }
+      // nitro: heat shimmer rippling in from the screen edges
+      float edge = 0.0;
+      if (uShimmer > 0.001) {
+        vec2 e = (vUv - 0.5) * vec2(uAspect, 1.0);
+        edge = smoothstep(0.3, 0.95, length(e)) * uShimmer;
+        vec2 q = vUv * vec2(uAspect, 1.0) * 14.0;
+        vec2 w = vec2(sin(q.y * 1.9 + uTime * 17.0 + sin(q.x * 1.3 + uTime * 6.0)),
+                      cos(q.x * 1.6 - uTime * 15.0 + sin(q.y * 0.8 - uTime * 9.0)));
+        uvIn += w * edge * 0.0045;
+      }
       vec2 dir = uvIn - uCenter;
       float dist = length(dir);
       vec3 col;
@@ -93,13 +120,28 @@ const FinalShader = {
         col.r = texture2D(tDiffuse, uvIn + dir * ca).r;
         col.g = texture2D(tDiffuse, uvIn).g;
         col.b = texture2D(tDiffuse, uvIn - dir * ca).b;
+        // light luma sharpening (clamped so edges never ring)
+        if (uSharpen > 0.0) {
+          vec3 nb = texture2D(tDiffuse, uvIn + vec2(uTexel.x, 0.0)).rgb + texture2D(tDiffuse, uvIn - vec2(uTexel.x, 0.0)).rgb
+                  + texture2D(tDiffuse, uvIn + vec2(0.0, uTexel.y)).rgb + texture2D(tDiffuse, uvIn - vec2(0.0, uTexel.y)).rgb;
+          col += clamp(dot(col - nb * 0.25, LUMA) * uSharpen, -0.045, 0.045);
+        }
       }
       // drop highlights
       col = mix(col, col * 0.85 + vec3(0.06), dr.z * 0.5);
-      // grading
-      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-      col = mix(vec3(l), col, uSat);
+      // filmic grade: lift / gamma / gain, split toning (cool shadows, warm highlights)
+      col = max(col, 0.0);
+      col = col * uGain + uLift * (1.0 - col);
+      col = pow(col, uGamma);
+      float lg = dot(col, LUMA);
+      col += uShadowTint * (1.0 - smoothstep(0.0, 0.5, lg)) + uHighTint * smoothstep(0.35, 1.0, lg);
+      // saturation with vibrance (muted colours gain more than already vivid ones)
+      float l = dot(col, LUMA);
+      float chroma = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+      col = mix(vec3(l), col, uSat + uVibrance * (1.0 - smoothstep(0.0, 0.5, chroma)));
       col = (col - 0.5) * uContrast + 0.5;
+      // nitro energy: faint cold glow breathing at the frame edge
+      col += vec3(0.12, 0.42, 1.0) * edge * edge * (0.05 + 0.03 * sin(uTime * 23.0 + dist * 40.0));
       col = mix(col, col * uTint, uTintAmt);
       // vignette
       float v = smoothstep(0.95, 0.25, dist * (1.0 + uVignette));
@@ -141,6 +183,12 @@ export class Engine {
     this._last = performance.now();
     this._fpsAcc = 0; this._fpsFrames = 0;
     this._slowTime = 0; this._fastTime = 0;
+    // cinematic look (grade + sun for the lens) is remembered per scene, so the
+    // garage stays neutral and a replay keeps its race's look
+    this._looks = new WeakMap();
+    this.look = this._newLook();
+    this._looks.set(this.scene, this.look);
+    this._bloomBase = [0.55, 0.6, 0.86];
 
     this.applyQuality();
     window.addEventListener('resize', () => this.resize());
@@ -154,6 +202,10 @@ export class Engine {
     r.shadowMap.enabled = q.shadows > 0;
     r.shadowMap.needsUpdate = true;
     if (this.composer) { this.composer.dispose?.(); this.composer = null; }
+    this.lens?.dispose(); this.bloom?.dispose?.(); this.aaPass?.dispose?.(); this.finalPass?.dispose?.();
+    this.lens = null; this.aaPass = null;
+    const tier = q.post ? (TIER[Save.settings.quality] || 2) : 0;
+    this.tier = tier;
     if (q.post) {
       const size = r.getDrawingBufferSize(new THREE.Vector2());
       const rt = new THREE.WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), {
@@ -162,29 +214,101 @@ export class Engine {
       const composer = new EffectComposer(r, rt);
       this.renderPass = new RenderPass(this.scene, this.camera);
       composer.addPass(this.renderPass);
+      // lens work reads the clean HDR frame (before bloom) at 1/4 res
+      this.lens = new LensFX(tier);
+      composer.addPass(this.lens.prepass);
       this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.55, 0.6, 0.86);
       this.bloom.enabled = q.bloom;
       composer.addPass(this.bloom);
-      composer.addPass(new OutputPass());
+      // lens composite + tone mapping + sRGB (replaces OutputPass)
+      composer.addPass(this.lens.composite);
+      // no MSAA on this preset: FXAA on the display image
+      if (!q.msaa) { this.aaPass = new ShaderPass(FXAAShader); composer.addPass(this.aaPass); }
       this.finalPass = new ShaderPass(FinalShader);
+      this.finalPass.uniforms.uSharpen.value = tier === 1 ? 0.45 : tier === 3 ? 0.3 : 0.4;
       composer.addPass(this.finalPass);
       this.composer = composer;
     } else {
       this.bloom = null; this.finalPass = null;
     }
+    this._applyLook();
     this.resize();
   }
 
   setScene(scene, camera = this.camera) {
+    if (scene !== this.scene) {
+      this.look = this._looks.get(scene) || this._newLook();
+      this._looks.set(scene, this.look);
+      this._applyLook();
+    }
     this.scene = scene;
     this.camera = camera;
     if (this.renderPass) { this.renderPass.scene = scene; this.renderPass.camera = camera; }
+    if (this.finalPass) this.finalPass.uniforms.uShimmer.value = 0;
     this.resize();
   }
 
   setBloom(strength = 0.55, radius = 0.6, threshold = 0.86) {
+    const b = this._bloomBase;
+    b[0] = strength; b[1] = radius; b[2] = threshold;
     if (!this.bloom) return;
-    this.bloom.strength = strength; this.bloom.radius = radius; this.bloom.threshold = threshold;
+    this.bloom.strength = strength * this.look.grade.bloom; this.bloom.radius = radius; this.bloom.threshold = threshold;
+  }
+
+  // Filmic look for the current scene: time of day ('day', 'sunset', 'night'…,
+  // 'neutral' for menus) adjusted by weather ('rain', 'storm', 'fog'…). Cached.
+  setGrade(time = 'neutral', weather = 'clear') {
+    const L = this.look;
+    const key = `${time}|${weather}`;
+    if (L.key === key) return;
+    L.key = key;
+    L.grade = resolveGrade(time, weather);
+    this._applyLook();
+  }
+
+  // Sun (or moon) for shafts and lens glare: world direction, colour, strength 0..1.
+  setSun(dir, color, amount = 1) {
+    const L = this.look;
+    L.sunDir.copy(dir).normalize();
+    L.sunColor.set(color);
+    L.sunAmt = amount;
+  }
+
+  _newLook() {
+    return { key: 'neutral|clear', grade: resolveGrade('neutral'), sunDir: new THREE.Vector3(0, 1, 0), sunColor: new THREE.Color(1, 1, 1), sunAmt: 0 };
+  }
+
+  _applyLook() {
+    const g = this.look.grade;
+    const b = this._bloomBase;
+    if (this.bloom) this.bloom.strength = b[0] * g.bloom;
+    if (this.lens) this.lens.setLook(g);
+    if (!this.finalPass) return;
+    const u = this.finalPass.uniforms;
+    u.uLift.value.fromArray(g.lift);
+    u.uGamma.value.fromArray(g.gamma);
+    u.uGain.value.fromArray(g.gain);
+    u.uShadowTint.value.fromArray(g.shadow);
+    u.uHighTint.value.fromArray(g.high);
+    u.uSat.value = g.sat; u.uContrast.value = g.contrast; u.uVibrance.value = g.vib;
+  }
+
+  // project the sun into screen space; fades out off screen / behind the camera
+  _updateSun() {
+    const L = this.look, cam = this.camera;
+    let vis = 0, x = 0.5, y = 0.5;
+    if (L.sunAmt > 0 && cam.isPerspectiveCamera) {
+      cam.updateMatrixWorld();
+      cam.getWorldDirection(_fwd);
+      const facing = _fwd.dot(L.sunDir);
+      if (facing > 0.05) {
+        _v.copy(cam.position).add(L.sunDir).project(cam);
+        x = _v.x * 0.5 + 0.5; y = _v.y * 0.5 + 0.5;
+        const off = Math.max(Math.abs(x - 0.5), Math.abs(y - 0.5)) - 0.5;
+        vis = L.sunAmt * clamp(1 - off / 0.35, 0, 1) * clamp((facing - 0.05) / 0.25, 0, 1);
+      }
+    }
+    this.lens.setSun(x, y, vis, L.sunColor);
   }
 
   get fx() { return this.finalPass ? this.finalPass.uniforms : null; }
@@ -203,6 +327,9 @@ export class Engine {
     if (this.composer) {
       this.composer.setPixelRatio(this.renderer.getPixelRatio());
       this.composer.setSize(w, h);
+      const buf = this.renderer.getDrawingBufferSize(_buf);
+      this.finalPass.uniforms.uTexel.value.set(1 / Math.max(1, buf.x), 1 / Math.max(1, buf.y));
+      if (this.aaPass) this.aaPass.uniforms.uTexel.value.set(1 / Math.max(1, buf.x), 1 / Math.max(1, buf.y));
     }
     this.width = w; this.height = h;
   }
@@ -245,6 +372,7 @@ export class Engine {
 
   render() {
     if (this.finalPass) this.finalPass.uniforms.uTime.value = this.time;
+    if (this.lens) this._updateSun();
     if (this.composer) this.composer.render(this.dt);
     else this.renderer.render(this.scene, this.camera);
   }

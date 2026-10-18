@@ -610,6 +610,12 @@ export class Race {
     const drops = (W.drops || 0) * (this.cam.mode === 3 ? 0.6 : 1);
     fx.uRain.value = damp(fx.uRain.value, drops * (this.phase === 'replay' ? 0.5 : 1), 1.5, dt);
     fx.uSpeed.value = clamp(p.v / 60, 0, 1);
+    // cinematic look: filmic grade per time/weather, sun (moon at night) for shafts + lens glare
+    const eng = this.game.engine, T = this.ts.env.T;
+    eng.setGrade(this.def.time, this.ts.env.weather);
+    if (T.night) eng.setSun(this._moonDir || (this._moonDir = new THREE.Vector3().setFromSphericalCoords(1, 55 * Math.PI / 180, (T.sunAzim + 40) * Math.PI / 180)), 0x9ab4ff, 0.4);
+    else eng.setSun(this.ts.env.sunDir, T.sunColor, clamp(1 - (W.gray || 0) * 1.3, 0, 1));
+    if (fx.uShimmer) fx.uShimmer.value = damp(fx.uShimmer.value, p.nitroOn && (this.phase === 'race' || this.phase === 'finished') ? 1 : 0, 5, dt);
   }
 
   // ------------------------------------------------------------------ ghost
