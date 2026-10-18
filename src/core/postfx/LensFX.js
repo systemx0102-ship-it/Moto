@@ -1,7 +1,9 @@
 // Cinematic lens simulation, all done at low resolution in HDR before tone mapping:
-//  · anamorphic streaks: horizontal-only pyramid of the bright-pass (stretched glare)
+//  · anamorphic streaks: horizontal-only pyramid of the bright-pass (stretched glare),
+//    plus an analytic hairline streak through the sun
 //  · ghosts + chromatic halo from a 1/8 bright image, modulated by procedural lens dirt
-//  · crepuscular rays: 3-pass radial blur of the sky around the sun at 1/4 res
+//  · crepuscular rays: radial blur of the sky around the sun (1/4 res, 1/8 on medio),
+//    with an eased 1x1 "how open is the sun" term for glare and streak
 // `prepass` sits right after the RenderPass (reads the clean HDR frame, no swap);
 // `composite` replaces OutputPass: adds the lens light, tone maps and encodes sRGB.
 import * as THREE from 'three';
