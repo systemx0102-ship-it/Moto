@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { rng, clamp } from '../core/utils.js';
 import { leafClusterTexture, firFrondTexture, pineTuftTexture, palmFrondTexture, grassTexture, fernTexture, barkTexture } from './vegTextures.js';
 import { groundTextures } from '../core/textures.js';
+import { TRACK_SCALE } from './trackgen.js';
 
 export const WIND = { time: { value: 0 }, strength: { value: 1 } };
 
@@ -540,7 +541,9 @@ export class Vegetation {
   build() {
     const th = this.track.def.theme;
     const snowy = th === 'alpine';
-    const S = (n) => Math.round(n);
+    // longer circuits need proportionally more roadside vegetation
+    const lenK = Math.min(1.3, Math.sqrt((this.track.def.scale ?? TRACK_SCALE)));
+    const S = (n) => Math.round(n * lenK);
     const grassN = this.q.density >= 1 ? 1 : this.q.density >= 0.7 ? 0.5 : 0;
     if (th === 'gp') {
       this._species({ make: (s) => broadleafTree(s, 'oak'), leafTex: leafClusterTexture('oak', 1), barkKind: 'oak', count: S(260), far: 700, scale: [0.85, 1.3], seed: 11, minD: 8 });

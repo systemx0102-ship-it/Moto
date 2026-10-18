@@ -484,6 +484,9 @@ export class Race {
             } else if (near) Audio.impact(0.6);
             this.effects.skidBreak(b.id + 'r'); this.effects.skidBreak(b.id + 'f');
             break;
+          case 'drift':
+            if (b.isPlayer) this.hud.toast(`Derrape  ${e.t.toFixed(1)} s`, '#e2231a', 1100);
+            break;
           case 'land':
             if (b.isPlayer && e.impact > 3) { this.cam.addShake(clamp(e.impact / 12, 0.1, 0.9)); Audio.impact(clamp(e.impact / 16, 0.1, 0.7)); Input.rumble(0.7, 0.3, 120); if (e.air > 0.5) this.hud.toast(`Salto  ${e.air.toFixed(1)} s`, '#ffffff', 900); }
             break;

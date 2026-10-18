@@ -141,7 +141,22 @@ function periodicCatmull(keys, u) {
  * Returns typed arrays indexed by sample: x, y, z, tx, tz (unit tangent), rx, rz (right),
  * kappa (signed curvature, +left), bank (rad, + raises right side), s (arc length).
  */
+// Layouts are authored compactly and scaled up uniformly: longer straights and wider,
+// faster bends. Jump positions follow the scale; crest shapes keep their size.
+export const TRACK_SCALE = 1.5;
+function scaledDef(def) {
+  const S = def.scale ?? TRACK_SCALE;
+  if (S === 1) return def;
+  return {
+    ...def,
+    corners: def.corners.map(([x, z, r]) => [x * S, z * S, (r ?? 40) * S]),
+    bumps: def.bumps && def.bumps.map(([s0, H, w]) => [s0 * S, H, w]),
+    elevation: def.elevation && def.elevation.map(([f, h]) => [f, h * Math.sqrt(S)]),
+  };
+}
+
 export function buildCenterline(def, ds = 2) {
+  def = scaledDef(def);
   const fp = filletPath(def, 1);
   let { pts } = resampleClosed(fp.pts, ds);
   pts = smoothClosed(pts, def.smooth ?? 6, 0.5);

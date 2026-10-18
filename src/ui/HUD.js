@@ -20,7 +20,7 @@ export class HUD {
     E.pos = h('div', { class: 'hud-pos hud-panel' }, E.posBlk, h('div', { class: 'blk' }, h('div', { class: 'k' }, 'VUELTA'), E.lapV));
     E.laps = h('div', { class: 'hud-laps hud-panel' }, h('div', { class: 'times' }));
     E.tower = h('div', { class: 'hud-tower' });
-    E.mapC = canvas(210, 210, 'hud-map');
+    E.mapC = canvas(270, 270, 'hud-map');
     E.gaugeC = canvas(340, 150, 'hud-gauge');
     E.leanC = canvas(200, 110, 'hud-lean');
     E.lights = h('div', { class: 'hud-lights off' }, ...Array.from({ length: 5 }, () => h('i', {})));

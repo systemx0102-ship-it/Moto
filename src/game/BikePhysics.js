@@ -190,8 +190,19 @@ export class BikePhysics {
     // ---------------- lean & yaw
     const speedK = clamp(this.v / 14, 0, 1);
     const gripLean = Math.atan(muAvail) + 2 * DEG;
-    const leanMax = Math.min(this.maxLean, gripLean + 6 * DEG);
-    const target = this.airborne ? this.lean * 0.98 : inp.steer * leanMax * (0.3 + 0.7 * speedK);
+    // with assists the rider can't lean past the grip limit
+    const leanMax = Math.min(this.maxLean, env.assist && !this.ai ? gripLean : gripLean + 6 * DEG);
+    let target = this.airborne ? this.lean * 0.98 : inp.steer * leanMax * (0.3 + 0.7 * speedK);
+    // cornering assist: while steering into a bend, pull the lean toward what the
+    // curve needs at this speed, so digital/keyboard input carves clean lines
+    if (env.assist && !this.ai && !this.airborne && Math.abs(inp.steer) > 0.05 && this.v > 8) {
+      const need = Math.atan((this.v * this.v * Math.abs(P.kappa || 0)) / G) * 1.08;
+      const turnSign = -Math.sign(P.kappa || 0);
+      if (need > 3 * DEG && Math.sign(inp.steer) === turnSign) {
+        const ideal = turnSign * Math.min(leanMax, need);
+        target = lerp(target, ideal, 0.45 * Math.min(1, Math.abs(inp.steer) * 1.4));
+      }
+    }
     // critically damped lean response limited by the bike's lean rate
     const k = 9 * (this.leanRate / 3);
     const acc = (target - this.lean) * k * k - this.leanVel * 2 * k;
@@ -220,27 +231,53 @@ export class BikePhysics {
       this.steerAngle = damp(this.steerAngle, 0, 4, dt);
     }
 
-    // drift: rear brake or power-slide while leaned
+    // drift: a tap of rear brake (or a power-slide) while leaned kicks the rear out;
+    // the slide then holds on the throttle, its angle set by lean and steering
+    // (countersteer straightens it), and ends when you roll off or slow down
     const driftIn = (inp.rearBrake > 0.3 && this.v > 9) ? inp.rearBrake : 0;
     const powerSlide = this.wheelspin * clamp((Math.abs(this.lean) - 0.25) * 2, 0, 1) * clamp((this.v - 6) / 10, 0, 1);
-    const slideAmt = clamp(driftIn * 0.9 + powerSlide + (P.offRoad ? 0.2 : 0) + (env.wet ? 0.1 : 0), 0, 1);
+    const turnDir = -Math.sign(this.lean) || -Math.sign(inp.steer) || 0;
+    if (!this.drifting && !this.ai && !this.airborne && this.v > 10 && Math.abs(this.lean) > 0.14 && (driftIn > 0 || powerSlide > 0.3)) {
+      this.drifting = true; this.driftT = 0; this.driftDir = turnDir;
+    }
+    if (this.drifting) {
+      this.driftT += dt;
+      const counter = Math.sign(inp.steer) !== 0 && -Math.sign(inp.steer) !== this.driftDir;
+      // straightening up (or leaning the other way) ends the slide on corner exit
+      this.driftUp = Math.abs(this.lean) < 0.1 || Math.sign(this.lean) === this.driftDir ? (this.driftUp || 0) + dt : 0;
+      if (this.airborne || this.v < 8 || (inp.throttle < 0.15 && driftIn === 0) || this.driftUp > 0.25 || (counter && Math.abs(this.slip) < 0.08 && this.driftT > 0.3)) {
+        this.drifting = false;
+        if (this.driftT > 1) this.events.push({ type: 'drift', t: this.driftT });
+      }
+    }
+    const driftAmt = this.drifting ? clamp(0.55 + inp.throttle * 0.3 + driftIn * 0.3, 0, 1) : 0;
+    const slideAmt = clamp(Math.max(driftAmt, driftIn * 0.9 + powerSlide) + (P.offRoad ? 0.2 : 0) + (env.wet ? 0.1 : 0), 0, 1);
     if (!this.airborne) {
       this.h += yawRate * dt;
-      // rear steps out in the direction of the turn
-      const kick = slideAmt * (-Math.sign(this.lean) || -inp.steer) * clamp(Math.abs(this.lean) / 0.5, 0, 1) * 0.9;
-      this.h += kick * dt * (driftIn > 0 ? 1.6 : 1);
-      const gripK = lerp(14, 1.8, slideAmt) * (P.offRoad ? 0.6 : 1);
+      if (this.drifting) {
+        // steer the slip angle toward a target: deeper with lean + throttle, shallower when countersteering
+        const lean01 = clamp(Math.abs(this.lean) / 0.6, 0, 1);
+        const steerInto = Math.sign(inp.steer) === -this.driftDir ? Math.abs(inp.steer) : -Math.abs(inp.steer);
+        const tgt = this.driftDir * clamp((0.08 + lean01 * 0.5) * (0.7 + inp.throttle * 0.35) + steerInto * 0.16 * lean01 + driftIn * 0.08, 0, 0.85);
+        this.h += (tgt - wrapAngle(this.h - this.vh)) * 4.5 * dt;
+        this.nitro = Math.min(1, this.nitro + dt * 0.05);
+      } else {
+        // rear steps out in the direction of the turn
+        const kick = slideAmt * turnDir * clamp(Math.abs(this.lean) / 0.5, 0, 1) * 0.9;
+        this.h += kick * dt * (driftIn > 0 ? 1.6 : 1);
+      }
+      const gripK = lerp(14, this.drifting ? 1.25 : 1.8, slideAmt) * (P.offRoad ? 0.6 : 1);
       this.vh += wrapAngle(this.h - this.vh) * Math.min(1, gripK * dt);
     }
     this.slip = wrapAngle(this.h - this.vh);
-    const slipMax = env.assist ? 0.6 : 0.75;
+    const slipMax = this.drifting ? 0.95 : env.assist ? 0.6 : 0.75;
     if (Math.abs(this.slip) > slipMax) {
-      if (this.v > 15 && !this.ai && !env.assist) { this.crash('highside'); return; }
+      if (this.v > 15 && !this.ai && !env.assist && !this.drifting) { this.crash('highside'); return; }
       this.h = this.vh + Math.sign(this.slip) * slipMax;
       this.slip = Math.sign(this.slip) * slipMax;
     }
-    // scrub speed while sliding
-    this.v *= 1 - Math.abs(Math.sin(this.slip)) * 0.55 * dt;
+    // scrub speed while sliding (a held drift bleeds less: it's on the throttle)
+    this.v *= 1 - Math.abs(Math.sin(this.slip)) * (this.drifting ? 0.24 : 0.55) * dt;
 
     // ---------------- wheelie / stoppie
     const wantWheelie = inp.wheelie && this.v > 3 && !this.airborne;
@@ -326,7 +363,7 @@ export class BikePhysics {
         this.vh = th + Math.atan2(vn, vt);
         this.h = this.vh + this.slip * 0.3;
         this.events.push({ type: 'wall', impact, side, x: this.x, y: this.y + 0.6, z: this.z });
-        if (impact > (env.assist ? 16 : 12.5) && !this.ai) { this.crash('wall'); return; }
+        if (impact > (env.assist ? 22 : 12.5) && !this.ai) { this.crash('wall'); return; }
         if (impact > 15 && this.ai) { this.crash('wall'); return; }
       } else {
         // grinding along the wall
@@ -370,6 +407,7 @@ export class BikePhysics {
     if (this.crashed) return;
     this.crashed = true;
     this.crashT = 0;
+    this.drifting = false;
     this.crashSpin = (Math.random() - 0.5) * 6;
     this.crashSide = this.lean !== 0 ? Math.sign(this.lean) : (Math.random() < 0.5 ? -1 : 1);
     this.events.push({ type: 'crash', kind, v: this.v, x: this.x, y: this.y, z: this.z });
@@ -398,7 +436,7 @@ export class BikePhysics {
     this.rpm = damp(this.rpm, this.idle, 3, dt);
     if (this.v > 2) this.events.push({ type: 'scrape', x: this.x, y: this.y + 0.2, z: this.z, side: 0 });
     this._progress(P2);
-    if (this.crashT > 2.4) this.respawn();
+    if (this.crashT > 1.8) this.respawn();
   }
 
   respawn() {

@@ -198,7 +198,7 @@ button { font-family: inherit; }
 .tw-row.me .n { background: #fff; }
 .tw-row.me .g { color: #fff; }
 .tw-row.out { opacity: .45; }
-.hud-map { position: absolute; right: 18px; top: 18px; width: min(210px, 24vw); height: min(210px, 24vw); }
+.hud-map { position: absolute; right: 18px; top: 18px; width: min(270px, 28vw); height: min(270px, 28vw); }
 .hud-gauge { position: absolute; right: 18px; bottom: calc(16px + var(--safe-b)); width: min(340px, 44vw); height: min(150px, 19.4vw); }
 .hud-lean { position: absolute; left: 22px; bottom: calc(18px + var(--safe-b)); width: min(200px, 28vw); height: min(110px, 15.4vw); }
 .hud-center { position: absolute; left: 50%; top: 27%; transform: translate(-50%, -50%); text-align: center; white-space: nowrap; }
@@ -213,7 +213,7 @@ button { font-family: inherit; }
   background: rgba(10, 11, 13, .75); border-left: 3px solid #fff; color: #fff; animation: msgIn .3s var(--ease); white-space: nowrap; text-transform: uppercase; }
 .hud-cam { position: absolute; left: 50%; bottom: calc(18px + var(--safe-b)); transform: translateX(-50%); font-size: 12px; font-weight: 600; letter-spacing: .24em; color: var(--dim); opacity: 0; transition: opacity .3s; }
 .hud-cam.show { opacity: 1; }
-.hud-fps { position: absolute; right: 18px; top: calc(min(210px, 24vw) + 26px); font-size: 12px; color: var(--dim); letter-spacing: .1em; }
+.hud-fps { position: absolute; right: 18px; top: calc(min(270px, 28vw) + 26px); font-size: 12px; color: var(--dim); letter-spacing: .1em; }
 .hud-ghost { position: absolute; left: 50%; top: 20px; transform: translateX(-50%); font-size: 18px; font-weight: 600; letter-spacing: .1em; padding: 4px 14px; background: rgba(10, 11, 13, .7); }
 .hud-ghost:empty { display: none; }
 .hud-ghost.ahead { color: var(--green); } .hud-ghost.behind { color: #ff6b62; }

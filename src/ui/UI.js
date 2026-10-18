@@ -42,7 +42,7 @@ const TIPS = [
   'Frena recto y suelta el freno al inclinar. El neumático sólo tiene un 100% de agarre para repartir.',
   'Ponte detrás de un rival para aprovechar el rebufo: menos resistencia y el nitro se recarga más rápido.',
   'Los saltos largos recargan el nitro. Gas en el aire levanta el morro, freno lo baja.',
-  'Freno trasero (ESPACIO) en mitad de la curva = derrape controlado al estilo supermotard.',
+  'Para derrapar: inclina en la curva, toca ESPACIO y mantén el gas. Contravolantea para cerrar el derrape.',
   'Pulsa C para cambiar de cámara: persecución, lejana, a bordo o a ras de rueda.',
   'En mojado y nieve el agarre baja: frena antes y abre gas con suavidad.',
   'Las motos de campo (motocross, supermotard, trail) apenas pierden velocidad fuera del asfalto.',
@@ -368,7 +368,7 @@ export class UI {
   }
 
   _controlsHint() {
-    return h('div', {}, 'W/↑ gas  ·  S/↓ freno  ·  A/D inclinar  ·  Espacio freno trasero  ·  Shift nitro  ·  X caballito  ·  C cámara  ·  R volver a pista');
+    return h('div', {}, 'W/↑ gas  ·  S/↓ freno  ·  A/D inclinar  ·  Espacio derrapar  ·  Shift nitro  ·  X caballito  ·  C cámara  ·  R volver a pista');
   }
 
   // ---------------------------------------------------------------- results
