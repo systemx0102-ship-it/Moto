@@ -103,9 +103,17 @@ export function wheel(ctx, group, w) {
       [rimR - 0.006, 0], [rimR + 0.002, -rw / 2 + 0.008],
     ], 56), rimMat, { local: true });
     if (w.rimStripe) {
-      A.add(group, closedLathe([[rimR + 0.0035, -rw / 2 - 0.0015], [rimR + 0.0055, -rw / 2 - 0.0015], [rimR + 0.0055, -rw / 2 + 0.003], [rimR + 0.0035, -rw / 2 + 0.003]], 56), w.rimStripe, { local: true });
-      A.add(group, closedLathe([[rimR + 0.0035, rw / 2 + 0.0015], [rimR + 0.0055, rw / 2 + 0.0015], [rimR + 0.0055, rw / 2 - 0.003], [rimR + 0.0035, rw / 2 - 0.003]], 56), w.rimStripe, { local: true });
+      // pinstripe painted on the outer face of each rim flange (outside the tyre bead)
+      for (const sz of [-1, 1]) {
+        const g = ring(rimR - 0.011, rimR - 0.0065, 72);
+        if (sz < 0) g.rotateY(Math.PI);
+        g.translate(0, 0, sz * (rw / 2 + 0.0042));
+        A.add(group, g, w.rimStripe, { local: true });
+      }
     }
+    // valve stem
+    const vs = cyl(0.004, 0.004, 0.03, 8, 'y'); vs.translate(0, -(rimR - 0.035), rw * 0.18); vs.rotateZ(0.9);
+    A.add(group, vs, M.chrome(), { local: true });
   }
   // hub
   const hw = w.hubW ?? Math.max(0.05, tw * 0.45);
@@ -124,7 +132,7 @@ export function wheel(ctx, group, w) {
       const base = (i / n) * Math.PI * 2;
       const angles = split ? [base - 0.07, base + 0.07] : [base];
       for (const a0 of angles) {
-        A.add(group, spokeGeo(0.05, inner, split ? 0.017 : (w.spokeW ?? 0.028), w.spokeT ?? 0.018, a0, sweep, split ? (a0 < base ? -0.06 : 0.06) : 0), rimMat, { local: true });
+        A.add(group, spokeGeo(0.052, inner, split ? (w.spokeW ?? 0.021) : (w.spokeW ?? 0.028), w.spokeT ?? 0.024, a0, sweep, split ? (a0 < base ? -0.06 : 0.06) : 0), rimMat, { local: true });
       }
     }
   } else if (style === 'wire') {
