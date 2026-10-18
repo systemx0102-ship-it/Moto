@@ -113,6 +113,7 @@ const GHOSTS = /* glsl */`
 // tail lights streak while big lit areas (sky, wet-road sheen) do not smear sideways.
 const STREAK_PRE = /* glsl */`
   uniform sampler2D tSrc, tBlur;
+  uniform vec2 uTexel;
   uniform float uIsolate, uCut, uDesat;
   varying vec2 vUv;
   void main(){
@@ -120,6 +121,10 @@ const STREAK_PRE = /* glsl */`
     vec3 g = texture2D(tBlur, vUv).rgb;
     float br = max(c.r, max(c.g, c.b)), gb = max(g.r, max(g.g, g.b));
     float peak = smoothstep(uIsolate, uIsolate * 3.0, br / (gb + 0.04));
+    // tall smears (wet-road reflections) streak less than point lights
+    vec3 a = texture2D(tSrc, vUv + vec2(0.0, uTexel.y * 2.5)).rgb, b = texture2D(tSrc, vUv - vec2(0.0, uTexel.y * 2.5)).rgb;
+    float vert = (max(a.r, max(a.g, a.b)) + max(b.r, max(b.g, b.b))) * 0.5;
+    peak *= mix(0.4, 1.0, smoothstep(1.2, 3.0, br / (vert + 0.04)));
     c *= peak * max(br - uCut, 0.0) / max(br, 1e-4);
     // the cylindrical lens reads blue-white whatever the source colour
     c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), uDesat);
@@ -313,7 +318,7 @@ export class LensFX {
     this.mDown = mat(DOWN, { tSrc: tex(), uTexel: v2() });
     this.mBlur = mat(BLUR, { tSrc: tex(), uTexel: v2() });
     this.mGhost = mat(GHOSTS, { tSrc: tex(), tSoft: tex(), uAspect: f(1.7), uHalo: f(0.42) }, { GHOSTS: tier >= 2 ? 6 : 4 });
-    this.mSPre = mat(STREAK_PRE, { tSrc: tex(), tBlur: tex(), uIsolate: f(1.6), uCut: f(1), uDesat: f(0.5) });
+    this.mSPre = mat(STREAK_PRE, { tSrc: tex(), tBlur: tex(), uTexel: v2(), uIsolate: f(1.6), uCut: f(1), uDesat: f(0.5) });
     this.mSDown = mat(STREAK_DOWN, { tSrc: tex(), uTexel: v2() });
     this.mSUp = mat(STREAK_UP, { tLow: tex(), tHigh: tex(), uTexel: v2(), uStretch: f(0.86) });
     this.mRays = mat(RAYS, { tSrc: tex(), uSun: v2(), uStep: f(0.1), uAlpha: f() });
@@ -437,6 +442,7 @@ export class LensFX {
       m = this.mSPre; U = m.uniforms;
       U.tSrc.value = this.bright.texture; U.tBlur.value = this.glow.texture;
       U.uCut.value = p.cut; U.uIsolate.value = p.isolate; U.uDesat.value = p.desat;
+      U.uTexel.value.set(1 / this.bright.width, 1 / this.bright.height);
       this._draw(renderer, m, D[0]);
       m = this.mSDown; U = m.uniforms;
       for (let i = 1; i <= n; i++) {

@@ -88,15 +88,18 @@ const FinalShader = {
       vec2 uvIn = vUv;
       vec3 dr = vec3(0.0);
       if (uRain > 0.001) { dr = drops(vUv); uvIn += dr.xy; }
-      // nitro: heat shimmer rippling in from the screen edges
+      // nitro: heat shimmer rippling in from the screen edges (two octaves of
+      // rising, wobbling waves; no texture taps)
       float edge = 0.0;
       if (uShimmer > 0.001) {
         vec2 e = (vUv - 0.5) * vec2(uAspect, 1.0);
         edge = smoothstep(0.3, 0.95, length(e)) * uShimmer;
         vec2 q = vUv * vec2(uAspect, 1.0) * 14.0;
-        vec2 w = vec2(sin(q.y * 1.9 + uTime * 17.0 + sin(q.x * 1.3 + uTime * 6.0)),
+        vec2 w = vec2(sin(q.y * 1.9 - uTime * 17.0 + sin(q.x * 1.3 + uTime * 6.0)),
                       cos(q.x * 1.6 - uTime * 15.0 + sin(q.y * 0.8 - uTime * 9.0)));
-        uvIn += w * edge * 0.0045;
+        q *= 2.7;
+        w += 0.5 * vec2(sin(q.y * 1.3 - uTime * 29.0 + q.x * 0.7), cos(q.x * 1.1 + q.y * 0.6 - uTime * 23.0));
+        uvIn += w * edge * 0.0035;
       }
       vec2 dir = uvIn - uCenter;
       float dist = length(dir);

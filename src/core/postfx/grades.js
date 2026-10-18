@@ -19,7 +19,7 @@ const TIME = {
   neutral: { streak: 0.22, flare: 0, dirt: 0 },
   day: {
     lift: [0, 0.003, 0.01], gain: [1.03, 1.01, 0.98], shadow: [-0.01, 0, 0.016], high: [0.026, 0.012, -0.016],
-    sat: 1.08, vib: 0.2, contrast: 1.09,
+    sat: 1.1, vib: 0.25, contrast: 1.1,
     streak: 0.35, flare: 0.3, dirt: 0.55, rays: 0.4, rayTint: [1, 0.95, 0.85], thr: 1.7, rayThr: 0.45, sunLine: 0.8,
   },
   dawn: {
