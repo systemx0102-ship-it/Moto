@@ -219,7 +219,8 @@ const BEAM_FS = /* glsl */`
     float r = CA + CB * max(p.x, 0.0);
     float q = (p.y * p.y * KY * KY + p.z * p.z) / (r * r);
     // soft edges, 1/r-ish falloff from the lamp, cut by the road surface
-    return max(0.0, 1.0 - q) * pow(max(1.0 - p.x / L, 0.0), 1.5) / (0.3 + p.x * 0.4)
+    float e = max(0.0, 1.0 - q);
+    return e * e * pow(max(1.0 - p.x / L, 0.0), 1.5) / (0.3 + p.x * 0.4)
       * smoothstep(0.0, 0.3, dot(uPlane.xyz, p) + uPlane.w) * smoothstep(0.0, 0.25, p.x);
   }
   void main() {
@@ -249,11 +250,17 @@ const BEAM_FS = /* glsl */`
     // samples along the chord, jittered per pixel so long chords never band
     float seg = (t1 - t0) / float(STEPS), acc = 0.0;
     float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    for (int i = 0; i < STEPS; i++) acc += dens(o + d * (t0 + seg * (float(i) + j)));
+    for (int i = 0; i < STEPS; i++) {
+      float t = t0 + seg * (float(i) + j);
+      // the air right at the lens adds little: keeps a beam passing over the camera soft
+      acc += dens(o + d * t) * smoothstep(0.5, 4.0, t);
+    }
     // mist scatters forward (Henyey-Greenstein, g = 0.5): faint seen from behind the lamp,
     // stronger looking back into it; normalised to 1 seen side-on
     float ph = min(1.396 / pow(1.25 + d.x, 1.5), 1.8);
-    gl_FragColor = vec4(uColor * (acc * seg * ph * uInt * fogT(t0 + seg * float(STEPS) * 0.5)), 1.0);
+    // soft saturation: dense mist glows, it never turns into a solid white bar
+    float a = acc * seg * ph * uInt * fogT(t0 + seg * float(STEPS) * 0.5);
+    gl_FragColor = vec4(uColor * (0.9 - 0.9 * exp(-a / 0.9)), 1.0);
     ${OUT}
   }`;
 
@@ -487,6 +494,8 @@ export class BikeGlow {
     this._v = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._lastCam = new THREE.Vector3();
+    this._lastDir = new THREE.Vector3();
+    this._lastMove = 0;
     this._camCut = true;
     this._m = new THREE.Matrix4();
     this._g = { S: 0, I: 0 }; // size / intensity of the last glare drawn
@@ -638,8 +647,14 @@ export class BikeGlow {
     this.resK = H / 720;
     this.maxS = H * 0.2;
     // trails are exposed by the camera: kept relative to it, and dropped on a camera cut
-    this._camCut = this._camCut || this._lastCam.distanceToSquared(cam) > Math.max(64, (120 * dt) ** 2);
+    // (a jump well beyond the camera's own motion, or a sudden swing)
+    const move = this._lastCam.distanceTo(cam);
+    this._camCut = this._camCut || move > 2.5 + 1.5 * this._lastMove || this._lastDir.dot(this._cf) < 0.94;
+    this._lastMove = move;
     this._lastCam.copy(cam);
+    this._lastDir.copy(this._cf);
+    this._vm = camera.matrixWorldInverse.elements; // fresh: getWorldDirection updated it
+    this._wm = camera.matrixWorld.elements;
     this.ribbons.begin(cam);
     for (let i = 0; i < this.st.length; i++) this._bike(this.st[i], dt, cam);
     this.glare.flush();
@@ -751,8 +766,11 @@ export class BikeGlow {
         u.uInside.value = c.x > 0 && c.x < BEAM_L && (c.y * BEAM_KY) ** 2 + c.z * c.z < r * r ? 1 : 0;
         const pn = this._v.copy(n).transformDirection(inv), pp = this._v2.set(gx, gy, gz).applyMatrix4(inv);
         u.uPlane.value.set(pn.x, pn.y, pn.z, -pn.dot(pp));
-        // looking into the lamp the glare takes over; the shaft reads from the side/behind
-        u.uInt.value = (b.isPlayer ? 1 : 1.6) * Math.min(bi, 1.1) * (1 - 0.8 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
+        // looking into the lamp the glare takes over; the shaft reads from the side/behind.
+        // Onboard / wheel cameras sit right on the lamp: keep it to a soft glow there
+        const hd = s.heads[0], lx = hd.wx - cam.x, ly = hd.wy - cam.y, lz = hd.wz - cam.z;
+        const onLamp = 0.4 + 0.6 * sstep(1, 3.5, Math.sqrt(lx * lx + ly * ly + lz * lz));
+        u.uInt.value = 1.5 * (b.isPlayer ? 0.8 : 1) * onLamp * Math.min(bi, 1.1) * (1 - 0.8 * sstep(0.7, 0.97, hd.facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
       }
       // (the player's bike has a real spotlight doing this)
       if (!b.isPlayer && near && night > 0.3 && !p.crashed) {
@@ -823,9 +841,9 @@ export class BikeGlow {
     this.refl.add(rx, ry, rz, n.x, n.y, n.z, c[0] * k, c[1] * k, c[2] * k, seed, hw, len, (hl * 0.9) / d);
   }
 
-  // Long-exposure streak behind a lamp. Samples are stored relative to the camera, as a
-  // tracking shot would expose them: bikes running with the camera leave short streaks,
-  // bikes passing a static camera draw the full ribbon.
+  // Long-exposure streak behind a lamp. Samples are stored in camera space, as a panning /
+  // tracking shot would expose them: bikes the camera follows leave short streaks, bikes
+  // crossing the frame draw the full ribbon.
   _trailUpdate(tr, s, amt, crashed, cam) {
     const L = tr.light, buf = tr.buf, M = tr.M;
     if (this._camCut) tr.n = 0;
@@ -838,7 +856,10 @@ export class BikeGlow {
       const k = tr.head
         ? amt * L.view * (0.3 + 1.2 * this.night) * L.k
         : amt * Math.max(0.25, L.view) * (1.2 + 4 * this.night) * (1 + 1.6 * s.brake);
-      const rx = L.wx - cam.x, ry = L.wy - cam.y, rz = L.wz - cam.z;
+      const V = this._vm;
+      const rx = V[0] * L.wx + V[4] * L.wy + V[8] * L.wz + V[12];
+      const ry = V[1] * L.wx + V[5] * L.wy + V[9] * L.wz + V[13];
+      const rz = V[2] * L.wx + V[6] * L.wy + V[10] * L.wz + V[14];
       let o = tr.headI * 7;
       if (tr.n > 0 && (buf[o] - rx) ** 2 + (buf[o + 1] - ry) ** 2 + (buf[o + 2] - rz) ** 2 > 225) tr.n = 0; // respawn
       if (tr.n === 0 || this.time - tr.lastPush >= 1 / 50) {
@@ -854,12 +875,15 @@ export class BikeGlow {
     const R = this.ribbons, sp = R.sp, sw = R.sw, sc = R.sc;
     const w0 = tr.head ? 0.05 : 0.045;
     const n0 = own ? 4 : 1.5, n1 = own ? 9 : 6;
-    let n = 0;
+    let n = 0, px = 0, py = 0, pz = 0;
     for (let j = 0; j < tr.n && n < 64; j++) {
       const o = ((tr.headI - j + M) % M) * 7;
       const age = this.time - buf[o + 3];
       if (age > life) break;
       const x = buf[o], y = buf[o + 1], z = buf[o + 2];
+      // a gap no lamp could cover between samples: stop the streak there
+      if (n > 0 && (x - px) ** 2 + (y - py) ** 2 + (z - pz) ** 2 > 36) break;
+      px = x; py = y; pz = z;
       const dd = Math.sqrt(x * x + y * y + z * z);
       const f = 1 - age / life;
       // an even streak (constant speed) that dies away toward its end
@@ -868,7 +892,10 @@ export class BikeGlow {
       let w = w0 * (0.45 + 0.55 * f);
       const wMin = (2 * this.resK * dd) / this.pxK;
       if (w < wMin) { a *= w / wMin; w = wMin; }
-      sp[n * 3] = x + cam.x; sp[n * 3 + 1] = y + cam.y; sp[n * 3 + 2] = z + cam.z;
+      const Wm = this._wm;
+      sp[n * 3] = Wm[0] * x + Wm[4] * y + Wm[8] * z + Wm[12];
+      sp[n * 3 + 1] = Wm[1] * x + Wm[5] * y + Wm[9] * z + Wm[13];
+      sp[n * 3 + 2] = Wm[2] * x + Wm[6] * y + Wm[10] * z + Wm[14];
       sw[n] = w;
       sc[n * 3] = buf[o + 4] * a; sc[n * 3 + 1] = buf[o + 5] * a; sc[n * 3 + 2] = buf[o + 6] * a;
       n++;
