@@ -561,15 +561,33 @@ export class Race {
     if (!Audio.ready) return;
     const cam = this.game.engine.camera;
     Audio.setListener(cam);
-    const P = this.player, p = P.phys;
-    if (this.playerVoice) {
-      const inside = this.cam.mode >= 2;
-      this.playerVoice.vol = inside ? 1.1 : 0.85;
-      this.playerVoice.set(p.rpm, p.input.throttle, { limiter: p.limiter > 0, decel: p.input.throttle < 0.05 && p.v > 8 });
+    // per-track acoustics (procedural reverb) + background synthesis of every rival's engine buffers
+    if (this._audioEnv !== this.def.theme) {
+      this._audioEnv = this.def.theme;
+      Audio.setEnvironment(this.def.theme, { wet: !!(this.env.wet || this.env.snow) });
+      Audio.prewarm(this.bikes.map((b) => b.spec));
     }
+    const P = this.player, p = P.phys;
+    const live = this.phase !== 'replay';
+    const inside = this.cam.mode === 2 || this.cam.mode === 3; // helmet / nose cam: onboard mix
+    const cp = cam.position;
+    const camDist = Math.hypot(p.x - cp.x, p.y + 0.6 - cp.y, p.z - cp.z);
+    if (this.playerVoice) {
+      const v = this.playerVoice;
+      v.vol = inside ? 1 : 0.9;
+      if (live && p.gear !== this._aGear) { if (this._aGear !== undefined && !p.crashed) v.shift(p.gear > this._aGear ? 1 : -1); this._aGear = p.gear; }
+      v.set(p.rpm, p.input.throttle, {
+        limiter: p.limiter > 0, decel: p.input.throttle < 0.05 && p.v > 8,
+        load: (p.shiftT > 0 ? 0 : 1) * (p.airborne ? 0.6 : 1) * (p.crashed ? 0.3 : 1) * (p.v < 0.5 ? 0.7 : 1),
+        onboard: inside, dist: camDist, nitro: !!p.nitroOn && live, tc: live ? p.tcCut || 0 : 0, speed: p.v,
+      });
+    }
+    const ground = !p.airborne && !p.crashed;
     Audio.layers({
       speed: p.v, slip: (Math.abs(p.slip) > 0.1 || p.skid > 0.3 || p.wheelspin > 0.3) && !p.offRoad && !p.airborne ? clamp(Math.abs(p.slip) * 2 + p.skid + p.wheelspin * 0.6, 0, 1) : 0,
       scrape: this._scrape || 0, rumble: (p.offRoad ? clamp(p.v / 25, 0, 1) : 0) + (p.onCurb ? 0.5 : 0),
+      curb: !!p.onCurb && ground, offRoad: !!p.offRoad && ground, gravel: !!(p.proj && p.proj.gravel),
+      airborne: !!p.airborne, wet: !!(this.env.wet || this.env.snow), onboard: inside, nitro: !!p.nitroOn && live, dist: camDist,
     });
     this._scrape = Math.max(0, (this._scrape || 0) - dt * 6);
     // nearest AI voices with doppler
@@ -579,7 +597,7 @@ export class Race {
       const near = this.bikes.filter((b) => !b.isPlayer).map((b) => [b, (b.phys.x - cam.position.x) ** 2 + (b.phys.z - cam.position.z) ** 2])
         .filter(([, d]) => d < 140 * 140).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([b]) => b);
       for (const [b, v] of this.voices) if (!near.includes(b)) { v.stop(); this.voices.delete(b); }
-      for (const b of near) if (!this.voices.has(b)) this.voices.set(b, Audio.engine(b.spec, { positional: true, lite: true }));
+      for (const b of near) if (!this.voices.has(b)) { this.voices.set(b, Audio.engine(b.spec, { positional: true, lite: true })); b._aGear = b.phys.gear; }
     }
     const lv = this._lastCam || cam.position.clone();
     const lvx = (cam.position.x - lv.x) / Math.max(dt, 1e-3), lvz = (cam.position.z - lv.z) / Math.max(dt, 1e-3);
@@ -592,8 +610,10 @@ export class Race {
       const svx = Math.sin(q.vh) * q.v, svz = Math.cos(q.vh) * q.v;
       const vrel = ((svx - lvx) * dx + (svz - lvz) * dz) / d;
       const dopp = clamp(343 / (343 + vrel), 0.7, 1.4);
+      v.setHeading(q.h);
+      if (live && q.gear !== b._aGear) { if (b._aGear !== undefined && !q.crashed) v.shift(q.gear > b._aGear ? 1 : -1); b._aGear = q.gear; }
       v.vol = 0.9;
-      v.set(q.rpm, q.input.throttle, { dopp, limiter: q.limiter > 0 });
+      v.set(q.rpm, q.input.throttle, { dopp, limiter: q.limiter > 0, decel: q.input.throttle < 0.05 && q.v > 8, load: (q.shiftT > 0 ? 0 : 1) * (q.v < 0.5 ? 0.7 : 1) });
     }
   }
 
