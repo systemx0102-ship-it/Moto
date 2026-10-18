@@ -45,6 +45,11 @@ const plural = (n, one, many) => `${fmtN(n)} ${n === 1 ? one : many}`;
 const head = (title, extra = null) => h('div', { class: 'lh-h' }, h('span', {}, title), h('i'), extra);
 const fact = (k, v) => h('div', { class: 'lh-fact' }, h('span', {}, k), h('b', {}, v));
 const badge = (text, cls = '') => h('span', { class: 'lh-badge ' + cls }, text);
+// Element.append() would print null/false as text: drop them first
+const put = (el, ...kids) => { el.append(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false)); return el; };
+// catalogue track names are upper case; sentence lines want 'Costa Dorada'
+const SMALL = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y']);
+const tc = (str) => str.toLowerCase().split(' ').map((w, i) => (i && SMALL.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
 const keys = (list) => h('div', { class: 'lh-keys' }, ...list.map(([k, t]) => h('span', {}, ...k.split(' ').map((x) => h('span', { class: 'keycap' }, x)), h('em', {}, t))));
 
 // the six core ratings: solid base + lighter bonus from parts, mastery and talents
@@ -60,6 +65,17 @@ function ratingRows(id, baseOnly = false) {
       h('b', {}, String(tot)),
       h('span', { class: 'plus' }, bonus ? `+${bonus}` : ''));
   }));
+}
+
+// lifetime record of the mode (Rpg.s.life)
+function lifeStrip() {
+  const L = Rpg.s.life;
+  const cell = (k, v, u = '') => h('div', {}, h('span', {}, k), h('b', {}, v), u ? h('small', {}, u) : null);
+  return h('div', { class: 'lh-life glass' }, head('Trayectoria'),
+    h('div', { class: 'lh-life-g' },
+      cell('Pruebas', fmtN(L.races || 0)), cell('Victorias', fmtN(L.wins || 0)), cell('Podios', fmtN(L.podiums || 0)),
+      cell('Adelantamientos', fmtN(L.overtakes || 0)), cell('Derrape', fmtN(L.driftS || 0), 's'), cell('Distancia', fmtDec(L.km || 0), 'km'),
+      cell('Punta máxima', fmtN(L.topKmh || 0), 'km/h'), cell('Jefes', fmtN(L.bosses || 0))));
 }
 
 function bikeFacts(b) {
@@ -155,21 +171,21 @@ export const hubScreens = {
     // right column: the active machine
     const mBtn = this.btn('Maestría', RICON.mastery, go('mastery', () => this.rpgMastery?.()), 'small');
     if (mi.free > 0) mBtn.appendChild(badge(plural(mi.free, 'punto', 'puntos')));
-    const swap = this.btn('Cambiar de moto', ICO.swap, go('shop', () => this.rpgShop()), 'small');
+    const swap = this.btn('Cambiar moto', ICO.swap, go('shop', () => this.rpgShop()), 'small');
     const right = [mBtn, swap];
     const perks = st.perks.map((p) => D.PERKS[p]).filter(Boolean);
-    const panel = h('div', { class: 'lh-machine glass' },
+    const panel = h('div', { class: 'lh-machine glass' + (perks.length ? '' : ' noperks') },
       h('div', { class: 'kicker' }, `Moto activa · ${spec.klass}`),
       h('div', { class: 'lh-mname' }, spec.name),
       h('div', { class: 'lh-mrow' },
-        h('div', { class: 'lh-pow' }, icon(RICON.power), h('b', {}, fmtN(st.power)), h('span', {}, 'Poder')),
+        h('div', { class: 'lh-pow' }, h('div', { class: 'n' }, icon(RICON.power), h('b', {}, fmtN(st.power))), h('span', {}, 'Poder')),
         h('div', { class: 'lh-mast' },
           h('div', { class: 'k' }, h('span', {}, `Maestría ${mi.level}`), h('span', {}, mi.max ? 'Máx.' : `${fmtN(mi.xp)} / ${fmtN(mi.need)}`)),
           bar(mi.frac, 'mastery'),
           h('div', { class: 's' }, mi.free > 0 ? `${plural(mi.free, 'punto', 'puntos')} por asignar` : `${mi.spent} de ${mi.points} puntos asignados`))),
       head('Atributos', h('span', { class: 'lh-legend' }, h('i', { class: 'a' }), 'Base', h('i', { class: 'b' }), 'Mejoras')),
       ratingRows(spec.id),
-      head('Poderes únicos'),
+      h('div', { class: 'lh-perkh' }, head('Poderes únicos')),
       perks.length
         ? h('div', { class: 'lh-perks' }, ...perks.map((p) => h('div', { class: 'lh-perk' }, h('b', {}, p.name), h('span', {}, p.desc))))
         : h('div', { class: 'lh-none' }, 'Ninguno activo. Las piezas legendarias, las míticas y algunos talentos otorgan poderes únicos.'),
@@ -179,7 +195,7 @@ export const hubScreens = {
     const maxStars = regs.reduce((a, r) => a + r.maxStars, 0), nStars = Rpg.totalStars();
     const nBoss = Object.keys(Rpg.s.bosses).length, nRegDone = regs.filter((r) => r.done).length;
     const pr = (k, v, frac) => h('div', { class: 'lh-pr' }, h('span', {}, k), h('b', {}, v), bar(frac));
-    s.append(
+    put(s,
       h('div', { class: 'lh-scrim' }),
       rpgTopBar('Leyenda', `Región ${reg.index + 1} de ${regs.length} · ${reg.name} · ${reg.sub}`),
       h('div', { class: 'lh-nav' }, ...items),
@@ -227,7 +243,7 @@ export const hubScreens = {
       const b = BIKE_BY_ID[ids[idx]];
       cards.forEach((c, k) => c.classList.toggle('on', k === idx));
       g.garage.setBike(b, 0);
-      clear(panel).append(
+      put(clear(panel),
         h('div', { class: 'kicker' }, `Opción ${idx + 1} de ${ids.length} · ${b.klass}`),
         h('div', { class: 'lh-mname' }, b.name),
         h('div', { class: 'lh-blurb' }, b.blurb),
@@ -242,11 +258,11 @@ export const hubScreens = {
     }, 'primary');
     const back = this.btn('Volver', ICO.back, () => this.mainMenu(), 'small');
     const arrow = (d, txt) => { const a = h('div', { class: 'arrow-btn lh-arrow ' + (d < 0 ? 'l' : 'r') }, txt); a.addEventListener('click', () => { Audio.select(); pick(idx + d); }); return a; };
-    s.append(
+    put(s,
       h('div', { class: 'lh-scrim' }),
       rpgTopBar('Tu primera moto', 'Elige la máquina con la que empezará tu leyenda'),
       h('div', { class: 'lh-intro' },
-        h('div', { class: 'kicker acc' }, 'Modo Leyenda'),
+        h('div', { class: 'kicker acc' }, 'Primera elección'),
         h('div', { class: 't' }, 'Cada leyenda empieza con una sola máquina'),
         h('div', { class: 'p' }, 'Elige tu primera moto. Las demás se ganan derrotando a los jefes de cada región o se compran en el concesionario.')),
       h('div', { class: 'lh-opts' }, ...cards),
@@ -318,12 +334,12 @@ export const hubScreens = {
       const prevBoss = ri > 0 ? D.BOSSES[regs[ri - 1].boss] : null;
       const passed = r.events.filter((e) => e.state.passed).length;
       const tracks = [...new Set(r.events.map((e) => e.track))];
-      const th = trackThumb(TRACK_BY_ID[r.track], 360, 190);
-      clear(detail).append(
+      const th = trackThumb(TRACK_BY_ID[r.track], 400, 150);
+      put(clear(detail),
         h('div', { class: 'kicker' }, `Región ${ri + 1} de ${regs.length} · Nivel ${r.levels[0]}–${r.levels[1]}`),
         h('div', { class: 'lh-rname' }, r.name),
         h('div', { class: 'lh-rsub' }, r.sub),
-        h('div', { class: 'lh-rthumb' }, th, h('span', {}, tracks.length > 1 ? `${tracks.length} circuitos` : TRACK_BY_ID[r.track].name)),
+        h('div', { class: 'lh-rthumb' }, th, h('span', {}, tracks.length > 1 ? `${tracks.length} circuitos` : tc(TRACK_BY_ID[r.track].name))),
         r.unlocked ? null : h('div', { class: 'lh-req' }, icon(RICON.lock), h('span', {}, `Derrota a ${prevBoss.name} para desbloquear`)),
         h('div', { class: 'lh-rstats' },
           h('div', {}, h('span', {}, 'Estrellas'), h('b', {}, `${r.stars}/${r.maxStars}`), bar(r.stars / r.maxStars)),
@@ -336,8 +352,8 @@ export const hubScreens = {
         const state = e.state.passed ? 'done' : !e.unlocked ? 'lock' : e.id === next.id ? 'next' : 'open';
         const tag = { done: 'Superada', lock: 'Bloqueada', next: 'Siguiente', open: 'Disponible' }[state];
         const eb = e.boss ? D.BOSSES[e.boss] : null;
-        const sub = eb ? `Jefe · ${eb.name} · ${BIKE_BY_ID[eb.bike].name}`
-          : e.rival ? `${D.TYPE_NAME[e.type]} · contra ${BIKE_BY_ID[e.rival].name}` : `${D.TYPE_NAME[e.type]} · ${TRACK_BY_ID[e.track].name}`;
+        const sub = eb ? `${eb.title} · ${BIKE_BY_ID[eb.bike].name}`
+          : e.rival ? `${D.TYPE_NAME[e.type]} · contra ${BIKE_BY_ID[e.rival].name}` : `${D.TYPE_NAME[e.type]} · ${tc(TRACK_BY_ID[e.track].name)}`;
         const n = h('div', { class: `lh-ev ${state}` + (eb ? ' boss' : '') },
           h('div', { class: 'c' }, state === 'lock' ? icon(RICON.lock) : icon(TYPE_ICON[e.type])),
           h('div', { class: 'tt' }, h('div', { class: 'nm' }, e.name), h('div', { class: 'sb' }, sub)),
@@ -347,7 +363,7 @@ export const hubScreens = {
         n.addEventListener('click', () => { Audio.click(); ei = k; this._lhMap = { ri, ei }; this.rpgEvent(e.id); });
         return this._lhHover(n);
       });
-      clear(path).append(
+      put(clear(path),
         h('div', { class: 'lh-path-h' }, h('span', {}, 'Pruebas'), h('i'), h('span', { class: 'n' }, `${passed}/${r.events.length}`)),
         ...nodes);
       ei = evI ?? (ri === next.regionIndex ? next.index : nodes.findIndex((_, k) => !r.events[k].state.passed && r.events[k].unlocked));
@@ -359,7 +375,7 @@ export const hubScreens = {
       if (k >= 0) { ei = k; this._lhMap = { ri, ei }; }
       el.scrollIntoView({ block: 'nearest' });
     };
-    s.append(
+    put(s,
       h('div', { class: 'lh-scrim full' }),
       rpgTopBar('Mapa de regiones', `${Rpg.totalStars()} de ${regs.length * 15} estrellas · ${Object.keys(Rpg.s.bosses).length} de ${regs.length} jefes derrotados`),
       h('div', { class: 'lh-route' }, h('div', { class: 'lh-tiles' }, ...tiles), line),
@@ -411,7 +427,7 @@ export const hubScreens = {
       h('div', { class: 'lh-bdesc' }, D.TYPE_DESC[e.type]),
       lockText ? h('div', { class: 'lh-req' }, icon(RICON.lock), h('span', {}, lockText)) : null,
       h('div', { class: 'lh-facts six' },
-        fact('Circuito', tdef.name), fact('Hora', TIME_NAME[time] || time), fact('Clima', WEATHER_NAME[weather] || weather),
+        fact('Circuito', tc(tdef.name)), fact('Hora', TIME_NAME[time] || time), fact('Clima', WEATHER_NAME[weather] || weather),
         fact('Vueltas', String(e.laps)), fact('Rivales', rivals), fact('Nivel de piezas', `${Math.max(1, e.level - 1)}–${e.level + 2}`)),
       head('Poder'),
       h('div', { class: 'lh-pcmp ' + pc },
@@ -423,7 +439,10 @@ export const hubScreens = {
       h('div', { class: 'lh-objs' }, ...e.obj.map((o, i) => {
         const has = !!(st.stars & (1 << i));
         return h('div', { class: 'lh-obj' + (has ? ' on' : '') }, icon(RICON.star, has ? 'on' : ''), h('span', {}, D.objectiveText(o)), i === 0 ? h('em', {}, 'Para superar') : null);
-      })),
+      })));
+
+    // expected rewards card (bottom of the side column)
+    const rewCard = h('div', { class: 'lh-rewcard glass' },
       head('Recompensas'),
       h('div', { class: 'lh-rew' },
         h('div', {}, icon(ICO.xp), h('span', {}, 'Experiencia'), h('b', {}, `${fmtN(xp * 0.3)} – ${fmtN(xp)}`)),
@@ -432,18 +451,18 @@ export const hubScreens = {
         st.passed ? null : h('div', { class: 'bonus' }, icon(RICON.star), h('span', {}, 'Primera vez superada'), h('b', {}, `+${fmtN(D.XP_BONUS.firstClear + e.level * D.XP_BONUS.perLevel)} XP`)),
         boss && !beaten ? h('div', { class: 'bonus' }, icon(RICON.boss), h('span', {}, 'Jefe derrotado'), h('b', {}, e.boss === 'mitico' ? 'Pieza mítica y su moto' : 'Pieza legendaria y su moto')) : null));
 
-    // side column: track card + boss / rival / your machine
-    const th = trackThumb(tdef, 360, 200);
+    // side column: track card, boss / rival / your machine, rewards
+    const th = trackThumb(tdef, 360, 150);
     const side = [h('div', { class: 'lh-tcard glass' }, th,
       h('div', { class: 'pills' }, h('span', { class: 'pill' }, TIME_NAME[time] || time), h('span', { class: 'pill' }, WEATHER_NAME[weather] || weather)),
-      h('div', { class: 'inf' }, h('div', { class: 'nm' }, tdef.name), h('div', { class: 'mt' }, `${(th.__len / 1000).toFixed(2).replace('.', ',')} km · ${tdef.place}`)))];
+      h('div', { class: 'inf' }, h('div', { class: 'nm' }, tdef.name), h('div', { class: 'mt' }, `${(th.__len / 1000).toFixed(2).replace('.', ',')} km · ${tdef.place} · ${plural(e.laps, 'vuelta', 'vueltas')}`)))];
     if (boss) {
       const bb = BIKE_BY_ID[boss.bike];
       const adv = [['power', 'potencia'], ['top', 'punta'], ['grip', 'agarre']].filter(([k]) => boss.perf[k] > 1).map(([k, n]) => `+${Math.round((boss.perf[k] - 1) * 100)} % ${n}`).join(' · ');
       side.push(h('div', { class: 'lh-boss glass' + (beaten ? ' done' : '') },
         h('div', { class: 'k' }, icon(RICON.boss), boss.title),
         h('div', { class: 'n' }, boss.name),
-        h('div', { class: 'm' }, h('span', {}, 'Máquina'), h('b', {}, bb.name), h('em', {}, `${bb.klass} · ${bb.engine.hp} CV · ${bb.topKmh} km/h`)),
+        h('div', { class: 'm' }, h('b', {}, bb.name), h('em', {}, `${bb.klass} · ${bb.engine.hp} CV · ${bb.topKmh} km/h`)),
         h('div', { class: 'adv' }, `Ventaja del jefe: ${adv}`),
         h('div', { class: 'rw' }, beaten ? h('span', { class: 'ok' }, icon(RICON.check), 'Derrotado') : h('span', {}, icon(ICO.garage), 'Recompensa: su moto'))));
     } else if (e.rival) {
@@ -459,14 +478,15 @@ export const hubScreens = {
         h('div', { class: 'n' }, sp.name),
         h('div', { class: 'm' }, `${sp.klass} · Maestría ${mi.level} · Poder ${fmtN(pw)}`)));
     }
+    side.push(rewCard);
 
     const run = this.btn('Correr', ICO.play, () => { this._lhMap = { ri: e.regionIndex, ei: e.index }; g.startRpgEvent(id); }, 'primary');
     const gear = this.btn('Equipamiento', RICON.gear, () => this.rpgGear?.(), 'small');
     const bk = this.btn('Volver', ICO.back, goBack, 'small');
     if (!unlocked) run.disabled = true;
-    s.append(
+    put(s,
       h('div', { class: 'lh-scrim brief' }),
-      rpgTopBar(e.name, `${reg.name} · Prueba ${e.index + 1} de ${reg.events.length}`),
+      rpgTopBar(reg.name, `Región ${e.regionIndex + 1} de ${D.REGIONS.length} · Prueba ${e.index + 1} de ${reg.events.length}`),
       brief,
       h('div', { class: 'lh-bside' }, ...side),
       h('div', { class: 'bottom-bar' }, keys([['↑ ↓', 'Navegar'], ['Enter', 'Aceptar'], ['Esc', 'Volver']]), h('span', { class: 'grow' }), bk, gear, run));
@@ -505,11 +525,12 @@ export const hubScreens = {
       });
       const back = this.btn('Volver', ICO.back, () => this.rpgHub(), 'small');
       nav.push(back);
-      clear(s).append(
+      put(clear(s),
         h('div', { class: 'lh-scrim full' }),
         rpgTopBar('Contratos', 'Encargos de los patrocinadores. Avanzan con cada prueba, en cualquier región.'),
         h('div', { class: 'lh-cons' }, ...cards),
         h('div', { class: 'lh-con-note' }, `Cambiar un contrato sin completar cuesta ${fmtN(cost)} créditos.`),
+        lifeStrip(),
         h('div', { class: 'bottom-bar' }, keys([['↑ ↓', 'Navegar'], ['Enter', 'Aceptar'], ['Esc', 'Volver']]), h('span', { class: 'grow' }), back));
       this._setNav(nav, Math.min(focus, nav.length - 1));
       this.onBack = () => this.rpgHub();
@@ -564,7 +585,7 @@ export const hubScreens = {
         it.addEventListener('click', () => { Audio.select(); pick(i); });
         return it;
       });
-      clear(list).append(...rows);
+      put(clear(list), ...rows);
     };
     const pick = (i, focus = 0) => {
       idx = (i + BIKES.length) % BIKES.length;
@@ -592,7 +613,7 @@ export const hubScreens = {
         action = this.btn(`Comprar · ${fmtN(price)}`, RICON.credits, () => {
           if (!Rpg.buyBike(b.id)) { Audio.warn(); return; }
           Audio.fanfare();
-          clear(top).append(rpgTopBar('Concesionario', 'Motos del Modo Leyenda'));
+          put(clear(top), rpgTopBar('Concesionario', 'Motos del Modo Leyenda'));
           buildList(); pick(idx);
           this._lhToast(s, `Compra realizada: ${b.name}`);
         }, 'primary');
@@ -608,11 +629,11 @@ export const hubScreens = {
           return d;
         }));
       }
-      clear(panel).append(
+      put(clear(panel),
         h('div', { class: 'kicker' }, `${idx + 1} de ${BIKES.length} · ${b.klass}`),
         h('div', { class: 'lh-mname' }, b.name),
         h('div', { class: 'lh-blurb' }, b.blurb),
-        bikeFacts(b),
+        h('div', { class: 'lh-spec' }, `${b.engine.label} · ${b.engine.hp} CV · ${b.mass} kg · ${b.topKmh} km/h`),
         head('Atributos', own ? null : h('span', { class: 'lh-legend' }, 'Con tus talentos')),
         ratingRows(b.id),
         status,
@@ -624,8 +645,8 @@ export const hubScreens = {
     };
     const back = this.btn('Volver', ICO.back, () => this.rpgHub(), 'small');
     const arrow = (d, txt) => { const a = h('div', { class: 'arrow-btn lh-arrow ' + (d < 0 ? 'l' : 'r') }, txt); a.addEventListener('click', () => { Audio.select(); pick(idx + d); }); return a; };
-    top.append(rpgTopBar('Concesionario', 'Motos del Modo Leyenda'));
-    s.append(
+    put(top, rpgTopBar('Concesionario', 'Motos del Modo Leyenda'));
+    put(s,
       h('div', { class: 'lh-scrim' }),
       top, list, arrow(-1, '‹'), arrow(1, '›'), panel,
       h('div', { class: 'bottom-bar' }, keys([['← →', 'Moto'], ['↑ ↓', 'Navegar'], ['Esc', 'Volver']]), h('span', { class: 'grow' }), back));
@@ -736,7 +757,7 @@ export const hubScreens = {
     ];
     const skipEl = h('div', { class: 'lh-skip' }, h('span', { class: 'keycap' }, 'Enter'), h('em', {}, 'Saltar'));
     const body = h('div', { class: 'lh-rw-body' }, colA, colB, colC);
-    s.append(h('div', { class: 'lh-scrim rw' }), header, body, h('div', { class: 'bottom-bar lh-rw-bar' }, skipEl, h('span', { class: 'grow' }), ...btns));
+    put(s, h('div', { class: 'lh-scrim rw' }), header, body, h('div', { class: 'bottom-bar lh-rw-bar' }, skipEl, h('span', { class: 'grow' }), ...btns));
 
     // ---- the sequence (each step: instant? -> ms to wait before the next)
     const show = (el) => el && el.classList.add('in');
