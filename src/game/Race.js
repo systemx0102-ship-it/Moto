@@ -10,6 +10,7 @@ import { CameraController, CAM_NAMES } from './CameraController.js';
 import { Effects } from './Effects.js';
 import { BikeGlow } from './BikeGlow.js';
 import { SpeedFX } from './SpeedFX.js';
+import { RacingLine } from './RacingLine.js';
 import { Recorder, GhostTrack } from './Replay.js';
 import { HUD } from '../ui/HUD.js';
 import { Input } from '../core/Input.js';
@@ -146,6 +147,7 @@ export class Race {
     this.cam = new CameraController(this.game.engine.camera, this.track);
     this.cam.set(Save.settings.camera || 0);
     this.speedFx = new SpeedFX(this.scene, Save.quality, this);
+    this.racingLine = new RacingLine(this.scene, Save.quality, this);
     this.recorder = new Recorder(this.bikes.length);
     onProgress(0.92, 'Afinando motores…');
     this.hud = new HUD(this.game.ui.layer, this);
@@ -265,6 +267,7 @@ export class Race {
     this.glow.update(dt, this.game.engine.camera);
     this._postFx(dt);
     this.speedFx.update(dt, this.game.engine.camera);
+    this.racingLine.update(dt);
     this.hud.update(dt);
     // player dash
     this._dashT = (this._dashT || 0) - dt;
@@ -485,7 +488,7 @@ export class Race {
             this.effects.skidBreak(b.id + 'r'); this.effects.skidBreak(b.id + 'f');
             break;
           case 'drift':
-            if (b.isPlayer) this.hud.toast(`Derrape  ${e.t.toFixed(1)} s`, '#e2231a', 1100);
+            if (b.isPlayer) this.hud.driftEnd(e.t);
             break;
           case 'land':
             if (b.isPlayer && e.impact > 3) { this.cam.addShake(clamp(e.impact / 12, 0.1, 0.9)); Audio.impact(clamp(e.impact / 16, 0.1, 0.7)); Input.rumble(0.7, 0.3, 120); if (e.air > 0.5) this.hud.toast(`Salto  ${e.air.toFixed(1)} s`, '#ffffff', 900); }
@@ -777,6 +780,7 @@ export class Race {
     for (const [, v] of this.voices || []) v.stop();
     this.voices?.clear();
     this.speedFx?.dispose();
+    this.racingLine?.dispose();
     this.hud?.dispose();
     this.glow?.dispose();
     this.effects?.dispose();

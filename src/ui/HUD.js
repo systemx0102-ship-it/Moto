@@ -1,9 +1,11 @@
-// In-race heads-up display: position, laps/times, standings tower, minimap,
-// tachometer/speedometer with nitro ring, lean-angle meter and messages.
+// In-race heads-up display: position, laps/times, standings tower, minimap with
+// the route ahead, tachometer/speedometer with nitro ring, lean-angle meter,
+// drift-hold prompt, corner boards and messages.
 import { h, canvas } from './dom.js';
 import { clamp, formatTime, formatGap } from '../core/utils.js';
 import { Save } from '../core/Settings.js';
 import { Input } from '../core/Input.js';
+import { GUIDE_CSS } from '../game/RacingLine.js';
 
 const TAU = Math.PI * 2;
 
@@ -28,7 +30,23 @@ export class HUD {
     E.cam = h('div', { class: 'hud-cam' }, '');
     E.fps = h('div', { class: 'hud-fps' }, '');
     E.ghost = h('div', { class: 'hud-ghost' }, '');
-    this.root.append(E.pos, E.laps, E.tower, E.mapC, E.gaugeC, E.leanC, E.lights, E.center, E.cam, E.fps, E.ghost);
+    // drift-hold prompt (right-centre)
+    E.driftK = h('div', { class: 'k' }, 'Mantén el derrape');
+    E.driftV = h('b', {}, '0.00');
+    E.driftAK = h('span', {}, 'Ángulo');
+    E.driftA = h('b', {}, '0°');
+    E.driftX = h('span', { class: 'x' }, '');
+    E.driftBar = h('i', {});
+    E.drift = h('div', { class: 'hud-drift' }, E.driftK, h('div', { class: 't' }, E.driftV, h('small', {}, 's')),
+      h('div', { class: 'a' }, h('span', {}, E.driftAK, ' ', E.driftA), E.driftX), h('div', { class: 'bar' }, E.driftBar));
+    // corner board: chevrons toward the bend + distance to turn-in
+    E.cornerSign = h('div', { class: 'sign' }, h('i', {}), h('i', {}), h('i', {}));
+    E.cornerD = h('div', { class: 'd' }, '');
+    E.cornerV = h('div', { class: 's' }, '');
+    E.corner = h('div', { class: 'hud-corner' }, E.cornerSign, E.cornerD, E.cornerV);
+    this.root.append(E.pos, E.laps, E.tower, E.mapC, E.gaugeC, E.leanC, E.lights, E.center, E.cam, E.fps, E.ghost, E.drift, E.corner);
+    this._drifting = false; this._driftDoneT = 0; this._dMax = 0; this._dN0 = 0;
+    this._cornerOn = null; this._cornerCls = ''; this._cornerTxt = '';
     this.rows = new Map();
     this._msgT = 0; this._toastT = 0;
     this.maxLean = 0;
@@ -48,6 +66,7 @@ export class HUD {
     const pad = S * 0.1;
     const sc = (S - pad * 2) / b.size;
     this.mapT = (px, pz) => [S / 2 + (px - b.cx) * sc * -1, S / 2 + (pz - b.cz) * sc * -1];
+    this.mapK = { cx: b.cx, cz: b.cz, sc, h: S / 2 }; // same transform, allocation-free
     // x is mirrored so the map matches the driver's left/right when heading +z (up)
     const off = document.createElement('canvas');
     off.width = S; off.height = S;
@@ -74,6 +93,7 @@ export class HUD {
     const S = c.width;
     g.clearRect(0, 0, S, S);
     g.drawImage(this.mapBase, 0, 0);
+    if (me && this.race.racingLine && !me.phys.crashed) this._drawRoute(g, S, me.phys, this.race.racingLine);
     for (const b of bikes) {
       if (b === me) continue;
       const [mx, my] = this.mapT(b.phys.x, b.phys.z);
@@ -94,6 +114,99 @@ export class HUD {
       g.beginPath(); g.moveTo(0, -S * 0.046); g.lineTo(S * 0.032, S * 0.032); g.lineTo(0, S * 0.018); g.lineTo(-S * 0.032, S * 0.032); g.closePath(); g.fill(); g.stroke();
       g.restore();
     }
+  }
+
+  // Next ~400 m of the route as a thick line coloured like the painted chevrons
+  // (blue = full throttle, amber = lift, red = brake), fading toward its end.
+  _drawRoute(g, S, ph, rl) {
+    const t = this.race.track, { x, z } = t.c, N = t.N, K = this.mapK;
+    const step = 2, segs = Math.round(400 / (t.ds * step)), tail = Math.round(segs * 0.7);
+    const i0 = ph.proj.i ?? 0, v = ph.v;
+    const mx = (i) => K.h - (x[i] - K.cx) * K.sc, my = (i) => K.h - (z[i] - K.cz) * K.sc;
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(10,11,13,0.78)'; g.lineWidth = S * 0.05;
+    g.beginPath(); g.moveTo(mx(i0), my(i0));
+    for (let n = 1; n <= tail; n++) { const i = (i0 + n * step) % N; g.lineTo(mx(i), my(i)); }
+    g.stroke();
+    g.lineWidth = S * 0.028;
+    let bucket = -1;
+    g.beginPath();
+    for (let n = 0; n < segs; n++) {
+      const i = (i0 + n * step) % N, j = (i + step) % N;
+      const bk = Math.round(rl.level(j, v) * 8);
+      if (n >= tail) {
+        // fading tail: one short stroke per step
+        if (bucket >= 0) { g.stroke(); bucket = -1; }
+        g.globalAlpha = 1 - (n - tail) / (segs - tail);
+        g.strokeStyle = GUIDE_CSS[bk];
+        g.beginPath(); g.moveTo(mx(i), my(i)); g.lineTo(mx(j), my(j)); g.stroke();
+        continue;
+      }
+      if (bk !== bucket) {
+        if (bucket >= 0) g.stroke();
+        g.strokeStyle = GUIDE_CSS[bk]; bucket = bk;
+        g.beginPath(); g.moveTo(mx(i), my(i));
+      }
+      g.lineTo(mx(j), my(j));
+    }
+    if (bucket >= 0) g.stroke();
+    g.globalAlpha = 1;
+  }
+
+  // ------------------------------------------------------------ drift prompt
+  _drift(dt, ph) {
+    const E = this.el;
+    if (ph.drifting && !ph.crashed) {
+      if (!this._drifting) {
+        this._drifting = true; this._dMax = 0; this._dN0 = ph.nitro; this._driftDoneT = 0;
+        E.drift.className = 'hud-drift on';
+        E.driftK.textContent = 'Mantén el derrape'; E.driftAK.textContent = 'Ángulo'; E.driftX.textContent = '';
+      }
+      const ang = Math.abs(ph.slip) * 57.3;
+      this._dMax = Math.max(this._dMax, ang);
+      E.driftV.textContent = ph.driftT.toFixed(2);
+      E.driftA.textContent = `${Math.round(ang)}°`;
+      E.driftBar.style.transform = `scaleX(${clamp(ang / 45, 0, 1).toFixed(3)})`;
+    } else if (this._drifting) {
+      this._drifting = false;
+      if (this._driftDoneT <= 0) E.drift.className = 'hud-drift';
+    }
+    if (this._driftDoneT > 0) { this._driftDoneT -= dt; if (this._driftDoneT <= 0) E.drift.className = 'hud-drift'; }
+  }
+  // a held drift (> 1 s) ended cleanly: short success flash with the result
+  driftEnd(t) {
+    const E = this.el, ph = this.race.player.phys;
+    const gain = Math.round((ph.nitro - this._dN0) * 100);
+    E.driftK.textContent = 'Derrape completado';
+    E.driftV.textContent = t.toFixed(2);
+    E.driftAK.textContent = 'Máx';
+    E.driftA.textContent = `${Math.round(this._dMax)}°`;
+    E.driftX.textContent = gain > 0 ? `+${gain}% nitro` : '';
+    E.drift.className = 'hud-drift on done';
+    this._driftDoneT = 1.4;
+  }
+
+  // ------------------------------------------------------------ corner board
+  _corner(rl, ph, race) {
+    const E = this.el;
+    const nc = rl.nextCorner(ph.s), c = nc.c, d = nc.dist;
+    const live = race.phase === 'race' && !ph.crashed && ph.wrongWayT < 0.5 && c && d < 320 && d > 6;
+    // latch a corner once it calls for real braking, until its turn-in is reached
+    if (!live) this._cornerOn = null;
+    else if (this._cornerOn !== c && ph.v - c.v > 10 && c.drop > 8) { this._cornerOn = c; this._cornerHeavy = ph.v - c.v > 24; }
+    const on = this._cornerOn === c && live;
+    let cls = 'hud-corner';
+    if (on) {
+      cls += ` on ${c.dir > 0 ? 'l' : 'r'} n${c.n}${this._cornerHeavy ? '' : ' mid'}${d < 90 && ph.v - c.v > 14 ? ' urgent' : ''}`;
+      const txt = `${Math.max(10, Math.round(d / 10) * 10)}`;
+      if (txt !== this._cornerTxt) {
+        this._cornerTxt = txt;
+        E.cornerD.innerHTML = `${txt}<small>M</small>`;
+        const mph = Save.settings.units === 'mph';
+        E.cornerV.textContent = `${Math.round(c.v * (mph ? 2.23694 : 3.6))} ${mph ? 'MPH' : 'KM/H'}`;
+      }
+    }
+    if (cls !== this._cornerCls) { this._cornerCls = cls; E.corner.className = cls; }
   }
 
   // ------------------------------------------------------------ dash
@@ -279,6 +392,8 @@ export class HUD {
     this._drawMap(race.bikes, me);
     this._drawGauge(ph, me.spec);
     this._drawLean(ph);
+    this._drift(dt, ph);
+    if (race.racingLine) this._corner(race.racingLine, ph, race);
     if (Save.settings.showFps) E.fps.textContent = `${Math.round(race.game.engine.fps)} FPS`;
     else E.fps.textContent = '';
     // ghost delta

@@ -221,6 +221,41 @@ button { font-family: inherit; }
 .replay-badge::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); margin-right: 10px; vertical-align: 1px; animation: recDot 1.4s ease-in-out infinite; }
 @keyframes recDot { 50% { opacity: .25; } }
 
+/* drift-hold prompt (right-centre) */
+.hud-drift { position: absolute; right: 22px; top: 44%; transform: translate(12px, -50%); min-width: 210px; padding: 10px 16px 12px 14px; opacity: 0;
+  background: rgba(10, 11, 13, .74); border-left: 3px solid var(--accent); transition: opacity .2s, transform .25s var(--ease); }
+.hud-drift.on { opacity: 1; transform: translate(0, -50%); }
+.hud-drift .k { font-size: 12px; font-weight: 600; letter-spacing: .2em; color: var(--dim); text-transform: uppercase; }
+.hud-drift .t b { font-size: 40px; font-weight: 700; line-height: 1.05; letter-spacing: .01em; }
+.hud-drift .t small { font-size: 18px; color: var(--dim); font-weight: 600; margin-left: 3px; }
+.hud-drift .a { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
+.hud-drift .a b { color: #fff; font-weight: 700; }
+.hud-drift .a .x { color: #fff; }
+.hud-drift .bar { height: 3px; margin-top: 8px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+.hud-drift .bar i { display: block; height: 100%; background: #fff; transform-origin: left; transform: scaleX(0); }
+.hud-drift.done { border-left-color: var(--green); }
+.hud-drift.done .k { color: var(--green); }
+.hud-drift.done .bar i { background: var(--green); transform: scaleX(1); }
+
+/* corner board: chevrons toward the bend + distance to turn-in */
+.hud-corner { position: absolute; left: 50%; top: 17%; transform: translate(-50%, -6px); display: flex; align-items: center; gap: 12px; padding: 6px 14px 6px 10px; opacity: 0;
+  background: rgba(10, 11, 13, .72); border-bottom: 3px solid var(--amber); transition: opacity .2s, transform .25s var(--ease); }
+.hud-corner.on { opacity: 1; transform: translate(-50%, 0); }
+.hud-corner.urgent { border-bottom-color: var(--accent); }
+.hud-corner .sign { display: flex; gap: 2px; }
+.hud-corner .sign i { width: 0; height: 0; border-top: 11px solid transparent; border-bottom: 11px solid transparent; display: none; }
+.hud-corner.r .sign i { border-left: 12px solid var(--amber); }
+.hud-corner.l .sign i { border-right: 12px solid var(--amber); }
+.hud-corner.urgent.r .sign i { border-left-color: var(--accent); }
+.hud-corner.urgent.l .sign i { border-right-color: var(--accent); }
+.hud-corner.n1 .sign i:nth-child(1), .hud-corner.n2 .sign i:nth-child(-n+2), .hud-corner.n3 .sign i { display: block; }
+.hud-corner.urgent .sign { animation: warnBlink .5s steps(2) infinite; }
+@keyframes warnBlink { 50% { opacity: .35; } }
+.hud-corner .d { font-size: 28px; font-weight: 700; line-height: 1; }
+.hud-corner .d small { font-size: 14px; color: var(--dim); font-weight: 600; margin-left: 2px; }
+.hud-corner .s { font-size: 12px; font-weight: 600; letter-spacing: .14em; color: var(--dim); }
+@media (max-width: 760px) { .hud-drift { top: 36%; min-width: 160px; } .hud-drift .t b { font-size: 30px; } }
+
 /* start lights gantry */
 .hud-lights { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); display: flex; gap: 10px; padding: 12px 16px; background: rgba(10, 11, 13, .82); border: 1px solid rgba(255, 255, 255, .08); transition: opacity .6s ease; }
 .hud-lights.off { opacity: 0; }

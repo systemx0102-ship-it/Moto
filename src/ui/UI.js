@@ -544,6 +544,7 @@ export class UI {
           row('Unidades', choice('units', [['kmh', 'KM/H'], ['mph', 'MPH']])),
           row('Cambio', choice('transmission', [['auto', 'AUTOMÁTICO'], ['manual', 'MANUAL']])),
           row('Ayudas de pilotaje', toggle('assist')),
+          row('Línea de trazada', toggle('racingLine')),
           row('Vibración', toggle('vibration')),
           row('Controles táctiles', toggle('touch')),
           row('Cámara inicial', choice('camera', [[0, 'PERSECUCIÓN'], [1, 'LEJANA'], [2, 'A BORDO'], [3, 'RUEDA']])),

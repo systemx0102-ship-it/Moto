@@ -28,6 +28,7 @@ const DEFAULTS = {
     rivals: 7,
     difficulty: 'normal',
     assist: true,
+    racingLine: true,
     timeSel: 'auto',
     weatherSel: 'auto',
   },
