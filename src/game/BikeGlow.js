@@ -17,6 +17,10 @@ const TIERS = [
 ];
 const LED = { electric: 1, sporttourer: 1, superbike: 1, adventure: 1, gp: 1, sm: 1, mx: 1 };
 const TAIL = [1.0, 0.035, 0.018];
+// outlets of silencers built without the shared muffler() helper (bike space)
+const OUTLETS = {
+  sporttourer: [{ pos: [-0.57, 0.526, 0.178], dir: [-1, 0.3, 0], r: 0.018 }, { pos: [-0.57, 0.474, 0.178], dir: [-1, 0.3, 0], r: 0.018 }],
+};
 // lamp output relative to a headlight (light reaching the lens is output * view / (d/10 m)^2)
 const I_TAIL = 0.2, I_BRAKE = 0.75;
 
@@ -46,7 +50,8 @@ const GLARE_VS = /* glsl */`
       vec2 a = (mat3(viewMatrix) * iAxis.xyz).xy;
       float la = length(a);
       vec2 dir = la > 1e-4 ? a / la : vec2(0.0, 1.0);
-      off = dir * (c.y + 1.0) * iShape.y * max(la, 0.2) + vec2(-dir.y, dir.x) * c.x * iShape.x;
+      // (perp, dir) keeps the quad's winding: from the outlet out along the axis
+      off = dir * (c.y + 1.0) * iShape.y * max(la, 0.2) + vec2(dir.y, -dir.x) * c.x * iShape.x;
     } else {
       float s = sin(iShape.z), co = cos(iShape.z);
       vec2 q = c * iShape.xy;
@@ -104,14 +109,15 @@ const DECAL_FS = /* glsl */`
     ${OUT}
   }`;
 
-// Wet-road reflection: a streak drawn in screen space (down the projected road normal,
-// toward the viewer) and cast back onto the road plane, so it keeps its photographic
-// shape at any distance and is still hidden by whatever stands on the road in front.
+// Wet-road reflection: a streak drawn in screen space along the projected road normal —
+// from the lamp's foot, through the mirror point, on toward the viewer — and cast back onto
+// the road plane, so it keeps its photographic shape at any distance and is still hidden
+// by whatever stands on the road in front of it.
 const REFL_VS = /* glsl */`
   attribute vec3 iPos;  // mirror point on the road
   attribute vec3 iNrm;  // road normal
   attribute vec4 iCol;  // rgb, ripple seed
-  attribute vec2 iSize; // half width, length (image-plane units)
+  attribute vec3 iSize; // half width, length toward the viewer, length up to the lamp's foot (image plane)
   uniform float uFogDensity;
   varying vec2 vUv;
   varying vec4 vCol;
@@ -125,7 +131,8 @@ const REFL_VS = /* glsl */`
     vec2 dir = Q.xy / max(-Q.z, 0.05) - s0;
     float ld = length(dir);
     dir = ld > 1e-6 ? dir / ld : vec2(0.0, -1.0);
-    vec3 r = vec3(s0 + dir * position.y * iSize.y + vec2(-dir.y, dir.x) * position.x * iSize.x, -1.0);
+    float along = position.y * (position.y < 0.0 ? iSize.z : iSize.y);
+    vec3 r = vec3(s0 + dir * along + vec2(-dir.y, dir.x) * position.x * iSize.x, -1.0);
     float t = clamp((dot(N, P) + 0.025) / min(dot(N, r), -1e-4), 0.0, zP * 3.0);
     gl_Position = projectionMatrix * vec4(r * t, 1.0);
     vUv = position.xy;
@@ -136,10 +143,10 @@ const REFL_FS = /* glsl */`
   varying vec4 vCol;
   void main() {
     float u = vUv.x, v = vUv.y;
-    float along = smoothstep(-0.12, 0.03, v) * pow(1.0 - clamp(v, 0.0, 1.0), 1.5);
+    float along = v < 0.0 ? smoothstep(-1.0, 0.0, v) * (0.55 + 0.45 * smoothstep(-0.25, 0.0, v)) : pow(1.0 - v, 1.5);
     float across = exp(-u * u * 5.0) * 0.55 + exp(-u * u * 40.0) * 0.45;
     // broken up by the ripples and grain of the wet asphalt
-    float rip = 0.72 + 0.28 * sin(v * 29.0 + vCol.a) * sin(v * 11.0 - vCol.a * 1.7 + u * 1.3);
+    float rip = 0.72 + 0.28 * sin(v * 23.0 + vCol.a) * sin(v * 9.0 - vCol.a * 1.7 + u * 1.3);
     gl_FragColor = vec4(vCol.rgb * along * across * rip, 1.0);
     ${OUT}
   }`;
@@ -190,36 +197,60 @@ const DISC_FS = /* glsl */`
     ${OUT}
   }`;
 
+// Headlight shaft: the closed cone mesh is only a proxy. Each pixel finds where its view
+// ray crosses the (convex) beam volume and integrates the scattered light along that chord,
+// so it reads right from the side, from behind along the beam, or from inside it.
+const BEAM_L = 17, BEAM_R = 3.4, BEAM_A = 0.04, BEAM_KY = 1 / 0.45;
 const BEAM_VS = /* glsl */`
-  attribute float aT;
-  varying float vT;
-  varying vec3 vW;
-  varying vec3 vN;
+  varying vec3 vL;
   void main() {
-    vT = aT;
-    vec4 wp = modelMatrix * vec4(position, 1.0);
-    vW = wp.xyz;
-    vN = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * viewMatrix * wp;
+    vL = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`;
 const BEAM_FS = /* glsl */`
-  uniform vec3 uColor;
-  uniform float uInt;
-  uniform vec4 uPlane;
-  uniform float uFogDensity;
-  varying float vT;
-  varying vec3 vW;
-  varying vec3 vN;
+  uniform vec3 uColor, uCam;
+  uniform float uInt, uInside, uFogDensity;
+  uniform vec4 uPlane; // road plane in beam space
+  varying vec3 vL;
   ${FADE}
+  const float L = ${BEAM_L.toFixed(1)}, CA = ${BEAM_A.toFixed(3)}, CB = ${(BEAM_R / BEAM_L).toFixed(5)}, KY = ${BEAM_KY.toFixed(4)};
+  float dens(vec3 p) {
+    float r = CA + CB * max(p.x, 0.0);
+    float q = (p.y * p.y * KY * KY + p.z * p.z) / (r * r);
+    // soft edges, 1/r-ish falloff from the lamp, cut by the road surface
+    return max(0.0, 1.0 - q) * pow(max(1.0 - p.x / L, 0.0), 1.5) / (0.3 + p.x * 0.4)
+      * smoothstep(0.0, 0.3, dot(uPlane.xyz, p) + uPlane.w) * smoothstep(0.0, 0.25, p.x);
+  }
   void main() {
-    vec3 V = cameraPosition - vW;
-    float dist = length(V);
-    // soft fake volume: thickest where the shell faces the eye, fading along and near the road
-    float facing = abs(dot(normalize(vN), V / dist));
-    float a = facing * sqrt(facing) * pow(1.0 - vT, 1.6) * smoothstep(0.0, 0.08, vT);
-    a *= smoothstep(0.03, 0.5, dot(uPlane.xyz, vW) + uPlane.w);
-    a *= smoothstep(0.6, 3.0, dist);
-    gl_FragColor = vec4(uColor * a * uInt * fogT(dist), 1.0);
+    bool inside = uInside > 0.5;
+    if (gl_FrontFacing == inside) discard;
+    vec3 o = uCam, dv = vL - o;
+    float tf = length(dv);
+    vec3 d = dv / tf;
+    float t0 = 0.0, t1 = tf;
+    if (!inside) {
+      // entering here: leave through the far wall or an end cap
+      t0 = tf;
+      float ex = 1e4;
+      if (d.x > 1e-4) ex = (L - o.x) / d.x; else if (d.x < -1e-4) ex = -o.x / d.x;
+      float r0 = CA + CB * o.x;
+      float A = KY * KY * d.y * d.y + d.z * d.z - CB * CB * d.x * d.x;
+      float B = 2.0 * (KY * KY * o.y * d.y + o.z * d.z - CB * r0 * d.x);
+      float C = KY * KY * o.y * o.y + o.z * o.z - r0 * r0;
+      float D = B * B - 4.0 * A * C;
+      if (abs(A) > 1e-6 && D > 0.0) {
+        float s = sqrt(D), ra = (-B - s) / (2.0 * A), rb = (-B + s) / (2.0 * A);
+        float w = A > 0.0 ? max(ra, rb) : min(ra, rb);
+        if (w > t0 + 1e-3) ex = min(ex, w);
+      }
+      t1 = max(ex, t0);
+    }
+    float seg = (t1 - t0) / 5.0, acc = 0.0;
+    for (int i = 0; i < 5; i++) acc += dens(o + d * (t0 + seg * (float(i) + 0.5)));
+    // mist scatters forward (Henyey-Greenstein, g = 0.5): faint seen from behind the lamp,
+    // stronger looking back into it; normalised to 1 seen side-on
+    float ph = min(1.396 / pow(1.25 + d.x, 1.5), 2.5);
+    gl_FragColor = vec4(uColor * (acc * seg * ph * uInt * fogT(t0 + seg * 2.5)), 1.0);
     ${OUT}
   }`;
 
@@ -268,7 +299,7 @@ class Batch {
 class GlareBatch extends Batch {
   constructor(max, fogU) {
     super(quadGeometry(), max, [['iPos', 3], ['iCol', 4], ['iShape', 4], ['iAxis', 4]],
-      additive({ uniforms: { tAtlas: { value: glareAtlas() }, uFogDensity: fogU }, vertexShader: GLARE_VS, fragmentShader: GLARE_FS }), 9);
+      additive({ uniforms: { tAtlas: { value: glareAtlas() }, uFogDensity: fogU }, vertexShader: GLARE_VS, fragmentShader: GLARE_FS, side: THREE.DoubleSide }), 9);
   }
   add(x, y, z, r, g, b, frame, sx, sy, rot, pull, ax = 0, ay = 0, az = 0, axial = 0) {
     if (this.n >= this.max) return;
@@ -303,26 +334,26 @@ class DecalBatch extends Batch {
 class ReflBatch extends Batch {
   constructor(max, fogU) {
     const g = new THREE.InstancedBufferGeometry();
-    const pos = [], idx = [], SEG = 8;
+    const pos = [], idx = [], SEG = 12;
     for (let i = 0; i <= SEG; i++) {
-      const v = -0.12 + (1.12 * i) / SEG;
+      const v = -1 + (2 * i) / SEG;
       pos.push(-1, v, 0, 1, v, 0);
       if (i < SEG) { const a = i * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
     }
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
-    super(g, max, [['iPos', 3], ['iNrm', 3], ['iCol', 4], ['iSize', 2]], additive({
+    super(g, max, [['iPos', 3], ['iNrm', 3], ['iCol', 4], ['iSize', 3]], additive({
       uniforms: { uFogDensity: fogU }, vertexShader: REFL_VS, fragmentShader: REFL_FS, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6,
     }), 4);
   }
-  add(x, y, z, nx, ny, nz, r, g, b, seed, hw, len) {
+  add(x, y, z, nx, ny, nz, r, g, b, seed, hw, len, up) {
     if (this.n >= this.max) return;
     const i = this.n++, [P, N, C, S] = this.attrs;
     P.array[i * 3] = x; P.array[i * 3 + 1] = y; P.array[i * 3 + 2] = z;
     N.array[i * 3] = nx; N.array[i * 3 + 1] = ny; N.array[i * 3 + 2] = nz;
     C.array[i * 4] = r; C.array[i * 4 + 1] = g; C.array[i * 4 + 2] = b; C.array[i * 4 + 3] = seed;
-    S.array[i * 2] = hw; S.array[i * 2 + 1] = len;
+    S.array[i * 3] = hw; S.array[i * 3 + 1] = len; S.array[i * 3 + 2] = up;
   }
 }
 
@@ -413,29 +444,26 @@ function discGeometry(r, z) {
   return g;
 }
 
-// Headlight light-cone shell along +x: flattened ellipse section, open ends.
-function beamGeometry(L, R) {
-  const ts = [0, 0.03, 0.1, 0.22, 0.4, 0.62, 0.82, 1], seg = 18;
-  const pos = [], aT = [], idx = [];
-  for (const t of ts) {
-    const rad = 0.04 + R * t;
-    for (let j = 0; j <= seg; j++) {
-      const a = (j / seg) * Math.PI * 2;
-      pos.push(t * L, Math.cos(a) * rad * 0.45, Math.sin(a) * rad);
-      aT.push(t);
-    }
+// Closed proxy hull of the headlight beam along +x (flattened elliptic cone, both ends
+// capped, outward winding): every ray through the volume has one front and one back face.
+function beamGeometry() {
+  const seg = 20, pos = [], idx = [];
+  const ring = (x, r) => { const b = pos.length / 3; for (let j = 0; j < seg; j++) { const a = (j / seg) * Math.PI * 2; pos.push(x, (Math.cos(a) * r) / BEAM_KY, Math.sin(a) * r); } return b; };
+  // the hull is the exact cone, so the proxy slightly outgrows it to avoid clipping rays
+  const r0 = ring(0, BEAM_A * 1.08), r1 = ring(BEAM_L, (BEAM_A + BEAM_R) * 1.08);
+  for (let j = 0; j < seg; j++) {
+    const j1 = (j + 1) % seg;
+    idx.push(r0 + j, r0 + j1, r1 + j, r0 + j1, r1 + j1, r1 + j);
   }
-  for (let i = 0; i < ts.length - 1; i++) {
-    for (let j = 0; j < seg; j++) {
-      const a = i * (seg + 1) + j, b = a + seg + 1;
-      idx.push(a, b, a + 1, a + 1, b, b + 1);
-    }
+  const c0 = pos.length / 3; pos.push(0, 0, 0);
+  const c1 = pos.length / 3; pos.push(BEAM_L, 0, 0);
+  for (let j = 0; j < seg; j++) {
+    const j1 = (j + 1) % seg;
+    idx.push(c0, r0 + j1, r0 + j, c1, r1 + j, r1 + j1);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('aT', new THREE.Float32BufferAttribute(aT, 1));
   g.setIndex(idx);
-  g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
 }
@@ -453,9 +481,11 @@ export class BikeGlow {
     this.renderer = env?.engine?.renderer || null;
     this._cf = new THREE.Vector3();
     this._up = new THREE.Vector3();
+    this._v = new THREE.Vector3();
+    this._v2 = new THREE.Vector3();
     this._m = new THREE.Matrix4();
     this._g = { S: 0, I: 0 }; // size / intensity of the last glare drawn
-    this._beamGeo = beamGeometry(17, 3.4);
+    this._beamGeo = beamGeometry();
 
     let nG = 0, nD = 0, nR = 0, nV = 0;
     this.st = bikes.map((b) => this._setup(b));
@@ -500,7 +530,7 @@ export class BikeGlow {
       const lp = new THREE.Vector3(t.pos[0] - 0.012, t.pos[1], t.pos[2] ?? 0).applyMatrix4(rel(grp).invert());
       s.tails.push({ grp, lx: lp.x, ly: lp.y, lz: lp.z, view: 0 });
     }
-    for (const e of m.exhausts || []) {
+    for (const e of m.exhausts?.length ? m.exhausts : b.phys.electric ? [] : OUTLETS[spec.design] || []) {
       const d = Math.hypot(e.dir[0], e.dir[1], e.dir[2]) || 1;
       s.ex.push({ lx: e.pos[0], ly: e.pos[1], lz: e.pos[2] ?? 0, dx: e.dir[0] / d, dy: e.dir[1] / d, dz: e.dir[2] / d, r: e.r || 0.04 });
     }
@@ -527,17 +557,21 @@ export class BikeGlow {
       const h = m.headlights[0];
       const grp = s.heads[0].grp;
       const mat = additive({
-        uniforms: { uColor: { value: new THREE.Color(hc[0], hc[1], hc[2]) }, uInt: { value: 0 }, uPlane: { value: new THREE.Vector4(0, 1, 0, 0) }, uFogDensity: this.fogU },
+        uniforms: {
+          uColor: { value: new THREE.Color(hc[0], hc[1], hc[2]) }, uCam: { value: new THREE.Vector3() }, uInt: { value: 0 }, uInside: { value: 0 },
+          uPlane: { value: new THREE.Vector4(0, 1, 0, 0) }, uFogDensity: this.fogU,
+        },
         vertexShader: BEAM_VS, fragmentShader: BEAM_FS, side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(this._beamGeo, mat);
       const mb = new THREE.Matrix4().compose(new THREE.Vector3(h.pos[0] + 0.03, h.pos[1], h.pos[2] ?? 0),
         new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -0.035), new THREE.Vector3(1, 1, 1));
       rel(grp).invert().multiply(mb).decompose(mesh.position, mesh.quaternion, mesh.scale);
+      mesh.updateMatrix();
       mesh.renderOrder = 6;
       mesh.visible = false;
       grp.add(mesh);
-      s.beam = { mesh, mat };
+      s.beam = { mesh, mat, grp };
     }
     // neon underglow + electric motor arcs
     const lv = m.livery;
@@ -653,7 +687,7 @@ export class BikeGlow {
       if (h.view < 0.01 || -(vx * cf.x + vy * cf.y + vz * cf.z) < 0.25) continue;
       const E = (h.k * h.view * own) / Math.max(0.0625, d * d * 0.01);
       this._glare(x, y, z, d, E, s.hc, true, 1);
-      if (refl) this._reflect(x, y, z, gx, gy, gz, n, cam, s.hc, s.seed + i);
+      if (refl) this._reflect(x, y, z, d, gx, gy, gz, n, cam, s.hc, s.seed + i);
     }
     // ---- tail / brake lights
     const tk = I_TAIL + (I_BRAKE - I_TAIL) * brake;
@@ -671,7 +705,7 @@ export class BikeGlow {
       if (t.view < 0.01 || -(vx * cf.x + vy * cf.y + vz * cf.z) < 0.25) continue;
       const E = (tk * t.view * own) / Math.max(0.0625, d * d * 0.01);
       this._glare(x, y, z, d, E, TAIL, false, brake);
-      if (refl) this._reflect(x, y, z, gx, gy, gz, n, cam, TAIL, s.seed + 7 + i);
+      if (refl) this._reflect(x, y, z, d, gx, gy, gz, n, cam, TAIL, s.seed + 7 + i);
     }
 
     // ---- light trails (long exposure): night/dusk, or very high speed by day
@@ -686,7 +720,7 @@ export class BikeGlow {
       const d = s.discs[i];
       const heat = d.front ? s.heatF : s.heatR;
       d.mesh.visible = discOn && heat > 0.12;
-      if (d.mesh.visible) { d.mat.uniforms.uHeat.value = heat; d.mat.uniforms.uGain.value = 0.35 + 1.5 * night; }
+      if (d.mesh.visible) { d.mat.uniforms.uHeat.value = heat; d.mat.uniforms.uGain.value = 0.3 + 1.25 * night; }
     }
 
     // ---- exhaust backfire flames / electric arcs
@@ -699,10 +733,16 @@ export class BikeGlow {
       const on = bi > 0.12 && dist < Tq.beamDist;
       s.beam.mesh.visible = on;
       if (on) {
+        // camera and road plane in beam space (the lamp group's matrix is fresh from above)
+        const B = s.beam, u = B.mat.uniforms;
+        const inv = this._m.multiplyMatrices(B.grp.matrixWorld, B.mesh.matrix).invert();
+        const c = u.uCam.value.copy(cam).applyMatrix4(inv);
+        const r = (BEAM_A + (BEAM_R * clamp(c.x, 0, BEAM_L)) / BEAM_L) * 1.08;
+        u.uInside.value = c.x > 0 && c.x < BEAM_L && (c.y * BEAM_KY) ** 2 + c.z * c.z < r * r ? 1 : 0;
+        const pn = this._v.copy(n).transformDirection(inv), pp = this._v2.set(gx, gy, gz).applyMatrix4(inv);
+        u.uPlane.value.set(pn.x, pn.y, pn.z, -pn.dot(pp));
         // looking into the lamp the glare takes over; the shaft reads from the side/behind
-        const u = s.beam.mat.uniforms;
-        u.uInt.value = 0.3 * bi * (1 - 0.85 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
-        u.uPlane.value.set(n.x, n.y, n.z, -(n.x * gx + n.y * gy + n.z * gz));
+        u.uInt.value = 1.6 * bi * (1 - 0.8 * sstep(0.7, 0.97, s.heads[0].facing)) * (1 - sstep(0.75, 1, dist / Tq.beamDist));
       }
       // (the player's bike has a real spotlight doing this)
       if (!b.isPlayer && near && night > 0.3) {
@@ -756,7 +796,7 @@ export class BikeGlow {
 
   // Lamp mirrored by wet asphalt: a streak from the mirror point toward the viewer, longest
   // and brightest at grazing angles (Fresnel), sized from the glare just drawn.
-  _reflect(x, y, z, gx, gy, gz, n, cam, c, seed) {
+  _reflect(x, y, z, d, gx, gy, gz, n, cam, c, seed) {
     const hc = (cam.x - gx) * n.x + (cam.y - gy) * n.y + (cam.z - gz) * n.z;
     const hl = (x - gx) * n.x + (y - gy) * n.y + (z - gz) * n.z;
     if (hc < 0.15 || hl < 0.05) return;
@@ -769,8 +809,8 @@ export class BikeGlow {
     const S = this._g.S, k = this._g.I * F * this.wet * 0.75;
     if (k < 0.01) return;
     // image-plane units: pixels / pxK
-    const len = (S * (3 + 5 * F) + 10 * this.resK) / this.pxK, hw = (S * 0.22 + 1.2 * this.resK) / this.pxK;
-    this.refl.add(rx, ry, rz, n.x, n.y, n.z, c[0] * k, c[1] * k, c[2] * k, seed, hw, len);
+    const len = (S * (2.5 + 4 * F) + 14 * this.resK) / this.pxK, hw = (S * 0.3 + 2.5 * this.resK) / this.pxK;
+    this.refl.add(rx, ry, rz, n.x, n.y, n.z, c[0] * k, c[1] * k, c[2] * k, seed, hw, len, (hl * 0.9) / d);
   }
 
   _trailUpdate(tr, s, amt, crashed, cam) {
@@ -866,13 +906,13 @@ export class BikeGlow {
       const flick = 0.7 + Math.random() * 0.45;
       const len = (0.16 + 0.42 * s.burstI) * (0.55 + 0.45 * env) * flick;
       const wid = (0.045 + x.r * 0.75) * (0.8 + 0.3 * flick);
-      const fi = I * (1.4 + 2.6 * night) * flick;
+      const fi = I * (1.0 + 1.7 * night) * flick;
       gl.add(px, py, pz, fi, fi, fi, 3, wid, len * 0.5, 0, 0.12, ax, ay, az, 1);
-      // muzzle flash glow + blue root at the outlet
+      // muzzle flash glow just clear of the silencer + blue root at the outlet
       const gi = I * (1.2 + 4.5 * night);
-      const gs = 0.14 + 0.22 * I;
-      gl.add(px + ax * 0.06, py + ay * 0.06, pz + az * 0.06, gi, gi * 0.42, gi * 0.12, 0, gs, gs, 0, 0.2);
-      gl.add(px, py, pz, I * 0.8, I * 1.2, I * 2.4, 0, 0.05, 0.05, 0, 0.1);
+      const gs = 0.1 + 0.16 * I;
+      gl.add(px + ax * 0.12, py + ay * 0.12, pz + az * 0.12, gi, gi * 0.42, gi * 0.12, 0, gs, gs, 0, 0.15);
+      gl.add(px, py, pz, I * 0.8, I * 1.2, I * 2.4, 0, 0.05, 0.05, 0, 0.12);
       // the flash licks the asphalt at night
       if (night > 0.3) { const k = I * 0.22 * night; this.decals.add(px + ax * 0.3, gy, pz + az * 0.3, n.x, n.y, n.z, ax, az, 0.9, 0.7, k, k * 0.4, k * 0.1, 0); }
     }
