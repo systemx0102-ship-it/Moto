@@ -14,6 +14,7 @@ function liveryMaterials(spec, livery, opts) {
   });
   const mats = {
     paint: P({ map: tex }),
+    paintPlain: P({ map: liveryTexture(livery, '', '') }),
     paintSolid: P({ color: livery.base }),
     paint2Solid: P({ color: livery.second }),
     accentSolid: P({ color: livery.accent }),
@@ -156,7 +157,7 @@ export class BikeModel {
 
   dispose() {
     this.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-    for (const k of ['paint', 'paintSolid', 'paint2Solid', 'accentSolid', 'frame', 'wheel', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'dash']) this.mats[k]?.dispose?.();
+    for (const k of ['paint', 'paintPlain', 'paintSolid', 'paint2Solid', 'accentSolid', 'frame', 'wheel', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'dash']) this.mats[k]?.dispose?.();
     this.mats.dashTex?.dispose();
     this.root.removeFromParent();
   }

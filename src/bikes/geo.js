@@ -9,18 +9,19 @@ function catmull(p0, p1, p2, p3, t) {
   return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
 }
 
-const SEC_KEYS = ['x', 'y', 'w', 'ht', 'hb', 'n', 'z', 'nb'];
+const SEC_KEYS = ['x', 'y', 'w', 'ht', 'hb', 'n', 'z', 'nb', 'wb', 'wt'];
 
 function normSection(s) {
   return {
     x: s.x, y: s.y ?? 0, w: s.w ?? 0.1, ht: s.ht ?? s.h ?? 0.1, hb: s.hb ?? s.ht ?? s.h ?? 0.1,
-    n: s.n ?? 2.4, z: s.z ?? 0, nb: s.nb ?? s.n ?? 2.4,
+    n: s.n ?? 2.4, z: s.z ?? 0, nb: s.nb ?? s.n ?? 2.4, wb: s.wb ?? s.w ?? 0.1, wt: s.wt ?? s.w ?? 0.1,
   };
 }
 
 /**
  * Loft a smooth shell along +X through superellipse cross-sections.
- * section: {x, y (center), w (half width), ht (top half-height), hb (bottom half-height), n (exponent), z}
+ * section: {x, y (center), w (half width), ht (top half-height), hb (bottom half-height), n (exponent), z,
+ *           wb / wt (half width the sides taper to toward the bottom / top: wedge-shaped sections)}
  * opts: radial, sub (subdivisions between sections), t0/t1 (partial arc), capStart/capEnd
  * UV: u along X (0..1), v around (0 bottom, .25 +z, .5 top, .75 -z)
  */
@@ -47,6 +48,7 @@ export function loft(sections, opts = {}) {
         r[key] = catmull(s0[key], s1[key], s2[key], s3[key], t);
       }
       r.w = Math.max(r.w, 0.0005); r.ht = Math.max(r.ht, 0.0005); r.hb = Math.max(r.hb, 0.0005);
+      r.wb = Math.max(r.wb, 0.0005); r.wt = Math.max(r.wt, 0.0005);
       r.n = Math.max(r.n, 0.6); r.nb = Math.max(r.nb, 0.6);
       rings.push(r);
     }
@@ -60,7 +62,8 @@ export function loft(sections, opts = {}) {
       const t = t0 + (t1 - t0) * (j / radial);
       const c = Math.cos(t), s = Math.sin(t);
       const e = 2 / (s >= 0 ? r.n : r.nb);
-      const z = r.z + r.w * Math.sign(c) * Math.pow(Math.abs(c), e);
+      const wid = r.w + ((s >= 0 ? r.wt : r.wb) - r.w) * Math.abs(s);
+      const z = r.z + wid * Math.sign(c) * Math.pow(Math.abs(c), e);
       const y = r.y + (s >= 0 ? r.ht : r.hb) * Math.sign(s) * Math.pow(Math.abs(s), e);
       pos.push(r.x, y, z);
       uv.push((r.x - x0) / (x1 - x0 || 1), (t + Math.PI / 2) / (Math.PI * 2));
@@ -91,6 +94,102 @@ export function loft(sections, opts = {}) {
   g.setIndex(idx);
   g.computeVertexNormals();
   if (opts.flip) flipGeometry(g);
+  return g;
+}
+
+/**
+ * Loft through arbitrary half-profiles mirrored across z = 0, with optional hard creases.
+ * sections: [{ x, pts: [[z, y], ...] }] — pts run from the bottom centre (z = 0) round the +z
+ * side to the top centre (z = 0); every section has the same number of points.
+ * opts: sub (rings between sections), around (samples per profile span), creases (indices of
+ * profile points that are sharp edges), capStart/capEnd.
+ * UV: u along X (0..1), v = arc length round the loop from the bottom centre (.25 ~ +z side).
+ */
+export function loftProfile(sections, opts = {}) {
+  const sub = opts.sub ?? 6, ar = opts.around ?? 4;
+  let secs = sections;
+  if (secs[secs.length - 1].x < secs[0].x) {
+    secs = secs.slice().reverse();
+    opts = { ...opts, capStart: opts.capEnd, capEnd: opts.capStart };
+  }
+  const m = secs[0].pts.length;
+  const crease = new Set(opts.creases || []);
+  const rings = [];
+  for (let i = 0; i < secs.length - 1; i++) {
+    const s0 = secs[Math.max(0, i - 1)], s1 = secs[i], s2 = secs[i + 1], s3 = secs[Math.min(secs.length - 1, i + 2)];
+    const steps = i === secs.length - 2 ? sub + 1 : sub;
+    for (let k = 0; k < steps; k++) {
+      const t = k / sub;
+      const pts = [];
+      for (let j = 0; j < m; j++) {
+        const z = catmull(s0.pts[j][0], s1.pts[j][0], s2.pts[j][0], s3.pts[j][0], t);
+        const y = catmull(s0.pts[j][1], s1.pts[j][1], s2.pts[j][1], s3.pts[j][1], t);
+        pts.push([j === 0 || j === m - 1 ? 0 : Math.max(0.0005, z), y]);
+      }
+      rings.push({ x: catmull(s0.x, s1.x, s2.x, s3.x, t), pts });
+    }
+  }
+  const n = 2 * m - 2;
+  const half = (q) => (q < m ? q : n - q);
+  const isCrease = (q) => crease.has(half(((q % n) + n) % n));
+  const x0 = rings[0].x, x1 = rings[rings.length - 1].x;
+  const pos = [], uv = [], idx = [];
+  const ringIn = [], ringOut = [], ringLoop = [];
+  for (const r of rings) {
+    const L = [];
+    for (let q = 0; q < n; q++) { const h = half(q); L.push(q < m ? r.pts[h] : [-r.pts[h][0], r.pts[h][1]]); }
+    const P = (q) => L[((q % n) + n) % n];
+    const S = [];
+    for (let q = 0; q < n; q++) {
+      const p1 = P(q), p2 = P(q + 1);
+      const p0 = isCrease(q) ? p1 : P(q - 1), p3 = isCrease(q + 1) ? p2 : P(q + 2);
+      for (let k = 0; k < ar; k++) {
+        const t = k / ar;
+        S.push({ z: catmull(p0[0], p1[0], p2[0], p3[0], t), y: catmull(p0[1], p1[1], p2[1], p3[1], t), c: k === 0 && isCrease(q) });
+      }
+    }
+    const ns = S.length;
+    let len = 0;
+    const acc = [0];
+    for (let k = 1; k <= ns; k++) { const a = S[k - 1], b = S[k % ns]; len += Math.hypot(a.z - b.z, a.y - b.y); acc.push(len); }
+    const inI = [], outI = [];
+    const u = (r.x - x0) / (x1 - x0 || 1);
+    for (let k = 0; k <= ns; k++) {
+      const sp = S[k % ns];
+      const vtx = () => { pos.push(r.x, sp.y, sp.z); uv.push(u, acc[k] / (len || 1)); return pos.length / 3 - 1; };
+      const a = vtx();
+      const b = sp.c && k > 0 && k < ns ? vtx() : a;
+      inI.push(a); outI.push(b);
+    }
+    ringIn.push(inI); ringOut.push(outI); ringLoop.push(S);
+  }
+  for (let r = 0; r < rings.length - 1; r++) {
+    const ns = ringLoop[r].length;
+    for (let k = 0; k < ns; k++) {
+      const a = ringOut[r][k], b = ringIn[r][k + 1], c = ringOut[r + 1][k], d = ringIn[r + 1][k + 1];
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const cap = (ri, flip) => {
+    const r = rings[ri], S = ringLoop[ri];
+    let cy = 0, cz = 0;
+    for (const sp of S) { cy += sp.y; cz += sp.z; }
+    const c = pos.length / 3;
+    pos.push(r.x, cy / S.length, cz / S.length); uv.push(ri === 0 ? 0 : 1, 0.5);
+    const base = pos.length / 3;
+    for (const sp of S) { pos.push(r.x, sp.y, sp.z); uv.push(ri === 0 ? 0 : 1, 0.5); }
+    for (let k = 0; k < S.length; k++) {
+      const a = base + k, b = base + ((k + 1) % S.length);
+      if (flip) idx.push(c, a, b); else idx.push(c, b, a);
+    }
+  };
+  if (opts.capStart) cap(0, true);
+  if (opts.capEnd) cap(rings.length - 1, false);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
   return g;
 }
 

@@ -1,7 +1,7 @@
 // Reusable motorcycle components. All coordinates are bike space
 // (x forward, y up, z right; ground y=0) unless noted as wheel-local.
 import * as THREE from 'three';
-import { loft, tube, taperTube, lathe, box, cyl, sphere, place, rod, between, spring, ring, torus, mirrorZ, flipGeometry } from './geo.js';
+import { loft, loftProfile, tube, taperTube, lathe, box, cyl, sphere, place, rod, between, spring, ring, torus, mirrorZ, flipGeometry } from './geo.js';
 import { M } from '../core/materials.js';
 import { discTexture } from '../core/textures.js';
 
@@ -766,4 +766,4 @@ export function details(ctx, o = {}) {
   }
 }
 
-export { V, DEG, loft, tube, taperTube, lathe, box, cyl, sphere, place, rod, between, spring, ring, torus, mirrorZ };
+export { V, DEG, loft, loftProfile, tube, taperTube, lathe, box, cyl, sphere, place, rod, between, spring, ring, torus, mirrorZ };
