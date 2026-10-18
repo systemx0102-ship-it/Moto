@@ -251,6 +251,30 @@ export function concreteTexture(stripe = null, seed = 2) {
   });
 }
 
+// Polished studio concrete: trowel mottling, aggregate specks, saw-cut joints + roughness map
+export function polishedConcreteTexture(seed = 4) {
+  return cached(`pconc:${seed}`, () => {
+    const W = 512;
+    const n1 = makeTileFbm(seed, 4, 5), n2 = makeTileFbm(seed + 7, 24, 3);
+    const r = rng(seed * 13 + 1);
+    const mott = new Float32Array(W * W);
+    const { c, g } = fillPixels(W, W, (x, y, o) => {
+      const m = n1(x / W, y / W), f = n2(x / W, y / W);
+      mott[y * W + x] = m;
+      const sp = r() < 0.012 ? (r() < 0.5 ? -26 : 22) : 0;
+      const v = 96 + m * 22 + f * 6 + sp;
+      o[0] = clamp(v, 0, 255); o[1] = clamp(v, 0, 255); o[2] = clamp(v * 1.02, 0, 255); o[3] = 255;
+    });
+    g.fillStyle = 'rgba(20,20,22,0.85)';
+    g.fillRect(0, 0, 2, W); g.fillRect(0, 0, W, 2);
+    const rc = fillPixels(W, W, (x, y, o) => {
+      const v = clamp(70 + mott[y * W + x] * 60 + (x < 3 || y < 3 ? 120 : 0), 0, 255);
+      o[0] = v; o[1] = v; o[2] = v; o[3] = 255;
+    });
+    return { map: toTexture(c), roughnessMap: toTexture(rc.c, { srgb: false }) };
+  });
+}
+
 export function tireWallTexture() {
   return cached('tirewall', () => {
     const { c, g } = makeCanvas(256, 128);
@@ -410,23 +434,6 @@ export function leatherTexture() {
     });
     // stitched quilting pattern for seats
     return { map: toTexture(c), normalMap: toTexture(heightToNormal(height, W, W, 4), { srgb: false }) };
-  });
-}
-
-export function gridFloorTexture() {
-  return cached('gridfloor', () => {
-    const W = 1024;
-    const n = makeTileFbm(77, 8, 4);
-    const { c, g } = fillPixels(W, W, (x, y, o) => {
-      const v = 18 + n(x / W, y / W) * 8;
-      o[0] = v; o[1] = v; o[2] = v + 2; o[3] = 255;
-    });
-    g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 3;
-    for (let i = 0; i <= 8; i++) {
-      g.beginPath(); g.moveTo(i * W / 8, 0); g.lineTo(i * W / 8, W); g.stroke();
-      g.beginPath(); g.moveTo(0, i * W / 8); g.lineTo(W, i * W / 8); g.stroke();
-    }
-    return toTexture(c);
   });
 }
 

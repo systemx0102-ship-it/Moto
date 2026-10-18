@@ -1,10 +1,10 @@
 // 3D showroom: turntable, studio lights, reflective floor. Used by the main
 // menu, garage (bike select) and the podium/results ceremony.
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { BikeModel } from '../bikes/BikeModel.js';
-import { gridFloorTexture } from '../core/textures.js';
+import { polishedConcreteTexture, softCircleTexture } from '../core/textures.js';
 import { Save } from '../core/Settings.js';
 import { damp, clamp, rng } from '../core/utils.js';
 
@@ -13,13 +13,6 @@ export class GarageScene {
     this.engine = engine;
     const scene = new THREE.Scene();
     this.scene = scene;
-    scene.background = new THREE.Color(0x05060a);
-    scene.fog = new THREE.Fog(0x05060a, 14, 40);
-    const pm = new THREE.PMREMGenerator(engine.renderer);
-    this.envTex = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = this.envTex;
-    scene.environmentIntensity = 0.55;
-    pm.dispose();
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
     this.time = 0;
     this.mode = 'menu';
@@ -34,103 +27,157 @@ export class GarageScene {
   _buildStage() {
     const s = this.scene;
     const q = Save.quality;
-    // floor: mirror + glossy dark overlay
+    RectAreaLightUniformsLib.init();
+    // studio reflections: dark room lit only by the softboxes, baked to PMREM
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0x0c0d10);
+    const bright = (w, h, v, pos, rot) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(v, v, v * 1.02), side: THREE.DoubleSide }));
+      m.position.set(...pos); m.rotation.set(...rot); envScene.add(m);
+    };
+    bright(4, 1.6, 9, [0, 4.4, 0], [Math.PI / 2, 0, 0]);
+    bright(0.7, 4, 6, [-3.6, 2, 1.2], [0, Math.PI / 2, 0]);
+    bright(0.7, 4, 6, [3.6, 2, -1.2], [0, -Math.PI / 2, 0]);
+    bright(6, 0.25, 4, [0, 1.2, -5], [0, 0, 0]);
+    bright(0.25, 6, 2.5, [0, 3, 5], [0, Math.PI, 0]);
+    const floorEnv = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshBasicMaterial({ color: 0x2a2b2e }));
+    floorEnv.rotation.x = -Math.PI / 2; envScene.add(floorEnv);
+    const pm = new THREE.PMREMGenerator(this.engine.renderer);
+    this.envTex = pm.fromScene(envScene, 0.02).texture;
+    s.environment = this.envTex;
+    s.environmentIntensity = 0.9;
+    pm.dispose();
+    s.background = new THREE.Color(0x101114);
+
+    // cyclorama: seamless cove from floor into a round backdrop wall
+    const R0 = 8, cove = 2.6, R1 = R0 + cove, Hw = 9;
+    const prof = [];
+    for (let i = 0; i <= 12; i++) { const a = -Math.PI / 2 + (i / 12) * (Math.PI / 2); prof.push(new THREE.Vector2(R0 + Math.cos(a) * cove, cove + Math.sin(a) * cove)); }
+    prof.push(new THREE.Vector2(R1, Hw), new THREE.Vector2(0.01, Hw + 0.5));
+    const cycGeo = new THREE.LatheGeometry(prof, 96);
+    const cc = new Float32Array(cycGeo.attributes.position.count * 3);
+    for (let i = 0; i < cycGeo.attributes.position.count; i++) {
+      const y = cycGeo.attributes.position.getY(i);
+      const v = 0.85 - Math.min(1, y / Hw) * 0.55;
+      cc[i * 3] = v; cc[i * 3 + 1] = v; cc[i * 3 + 2] = v * 1.03;
+    }
+    cycGeo.setAttribute('color', new THREE.BufferAttribute(cc, 3));
+    // bounce light on the backdrop: brightest in the cove, falling off toward the ceiling
+    const gc = document.createElement('canvas'); gc.width = 4; gc.height = 256;
+    const gg = gc.getContext('2d');
+    const grd = gg.createLinearGradient(0, 256, 0, 0);
+    grd.addColorStop(0, '#2c2e33'); grd.addColorStop(0.45, '#3a3d43'); grd.addColorStop(0.75, '#1d1f23'); grd.addColorStop(1, '#08090b');
+    gg.fillStyle = grd; gg.fillRect(0, 0, 4, 256);
+    const gt = new THREE.CanvasTexture(gc); gt.colorSpace = THREE.SRGBColorSpace;
+    const cyc = new THREE.Mesh(cycGeo, new THREE.MeshStandardMaterial({ color: 0x5a5d64, vertexColors: true, roughness: 0.92, side: THREE.BackSide, emissive: 0xffffff, emissiveMap: gt, emissiveIntensity: 0.6, fog: false }));
+    cyc.receiveShadow = true;
+    s.add(cyc);
+    // accent LED line along the foot of the cove
+    const ledMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x00d8ff, emissiveIntensity: 1.6 });
+    this.ledMat = ledMat;
+    const led = new THREE.Mesh(new THREE.TorusGeometry(R0 + 0.15, 0.015, 6, 160), ledMat);
+    led.rotation.x = Math.PI / 2; led.position.y = 0.02;
+    s.add(led);
+
+    // polished concrete floor (over a planar mirror on high settings)
     if (q.post && q.shadows >= 2048) {
-      const mirror = new Reflector(new THREE.CircleGeometry(30, 64), {
-        textureWidth: 1024, textureHeight: 1024, color: 0x7f8590, clipBias: 0.003,
+      const mirror = new Reflector(new THREE.CircleGeometry(R0 + 0.3, 64), {
+        textureWidth: 1024, textureHeight: 1024, color: 0x8a8d94, clipBias: 0.003,
       });
       mirror.rotation.x = -Math.PI / 2;
       mirror.position.y = -0.002;
       s.add(mirror);
       this.mirror = mirror;
     }
-    const ftex = gridFloorTexture();
-    ftex.repeat.set(10, 10);
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(30, 64), new THREE.MeshStandardMaterial({
-      map: ftex, color: 0x9aa0aa, roughness: 0.35, metalness: 0.3, transparent: !!this.mirror, opacity: this.mirror ? 0.82 : 1,
+    const pc = polishedConcreteTexture(4);
+    pc.map.repeat.set(4, 4); pc.roughnessMap.repeat.set(4, 4);
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(R0 + 0.3, 64), new THREE.MeshStandardMaterial({
+      map: pc.map, roughnessMap: pc.roughnessMap, roughness: 1, metalness: 0.05, color: 0xb4b8bf,
+      transparent: !!this.mirror, opacity: this.mirror ? 0.9 : 1,
     }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     s.add(floor);
 
-    // turntable
+    // turntable: low brushed-steel disc with a rubber top and a thin light ring
     const tt = new THREE.Group();
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.75, 0.08, 96), new THREE.MeshStandardMaterial({ color: 0x15171c, metalness: 0.8, roughness: 0.25 }));
-    disc.position.y = 0.04; disc.receiveShadow = true; disc.castShadow = false;
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.74, 0.07, 128), new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 1, roughness: 0.35 }));
+    disc.position.y = 0.035; disc.receiveShadow = true;
     tt.add(disc);
-    const ringMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x00d8ff, emissiveIntensity: 3 });
+    const top = new THREE.Mesh(new THREE.CircleGeometry(1.66, 96), new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.85 }));
+    top.rotation.x = -Math.PI / 2; top.position.y = 0.0705; top.receiveShadow = true;
+    tt.add(top);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x00d8ff, emissiveIntensity: 2 });
     this.ringMat = ringMat;
-    const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(1.74, 0.012, 8, 128), ringMat);
-    ringMesh.rotation.x = Math.PI / 2; ringMesh.position.y = 0.075;
+    const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(1.68, 0.006, 6, 160), ringMat);
+    ringMesh.rotation.x = Math.PI / 2; ringMesh.position.y = 0.071;
     tt.add(ringMesh);
-    const inner = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.006, 6, 128), ringMat);
-    inner.rotation.x = Math.PI / 2; inner.position.y = 0.081;
-    tt.add(inner);
-    // light gaps (radial lines)
-    for (let i = 0; i < 24; i++) {
-      const g = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.004, 0.012), ringMat);
-      const a = (i / 24) * Math.PI * 2;
-      g.position.set(Math.cos(a) * 1.45, 0.082, Math.sin(a) * 1.45);
-      g.rotation.y = -a;
-      tt.add(g);
-    }
-    tt.position.y = 0;
+    // soft contact shadow under the bike
+    const cs = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.1), new THREE.MeshBasicMaterial({ map: softCircleTexture(), color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false }));
+    cs.rotation.x = -Math.PI / 2; cs.position.y = 0.073;
+    tt.add(cs);
     s.add(tt);
     this.turntable = tt;
     this.bikeHolder = new THREE.Group();
-    this.bikeHolder.position.y = 0.08;
+    this.bikeHolder.position.y = 0.071;
     tt.add(this.bikeHolder);
 
-    // backdrop: curved wall with vertical light strips
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x0b0d12, roughness: 0.6, metalness: 0.4, side: THREE.BackSide });
-    const wall = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 9, 64, 1, true), wallMat);
-    wall.position.y = 4.5;
-    s.add(wall);
-    const stripMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 2.2 });
-    this.stripMat = stripMat;
-    for (let i = 0; i < 28; i++) {
-      const a = (i / 28) * Math.PI * 2;
-      const st = new THREE.Mesh(new THREE.BoxGeometry(0.06, 6.5, 0.06), stripMat);
-      st.position.set(Math.cos(a) * 11.85, 3.6, Math.sin(a) * 11.85);
-      s.add(st);
+    // softboxes: visible diffuser panels + matching area lights
+    const boxMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 2.2, 2.25) });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.6, metalness: 0.4 });
+    const softbox = (w, h, intensity, pos, look) => {
+      const l = new THREE.RectAreaLight(0xfff8f0, intensity, w, h);
+      l.position.set(...pos); l.lookAt(...look);
+      s.add(l);
+      const g = new THREE.Group();
+      g.position.copy(l.position); g.quaternion.copy(l.quaternion);
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(w, h), boxMat);
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, h + 0.08, 0.25), frameMat);
+      fr.position.z = -0.14;
+      g.add(panel, fr);
+      s.add(g);
+      return l;
+    };
+    this.areaLights = [
+      softbox(4, 1.6, 9, [0, 4.4, 0], [0, 0, 0]),
+      softbox(0.7, 4, 7, [-3.6, 2, 1.2], [0, 0.8, 0]),
+      softbox(0.7, 4, 7, [3.6, 2, -1.2], [0, 0.8, 0]),
+    ];
+    // stands for the side strip boxes
+    for (const x of [-3.6, 3.6]) {
+      const z = x < 0 ? 1.2 : -1.2;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 4, 8), frameMat);
+      pole.position.set(x * 1.04, 2, z * 1.04); s.add(pole);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.03, 16), frameMat);
+      base.position.set(x * 1.04, 0.015, z * 1.04); s.add(base);
     }
-    // ceiling light rings
-    const ceilMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveIntensity: 1.6 });
-    for (const r of [2.6, 3.4]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.03, 8, 96), ceilMat);
-      ring.rotation.x = Math.PI / 2; ring.position.y = 6.2;
-      s.add(ring);
-    }
-    // logo floor text ring
-    // lights
-    const hemi = new THREE.HemisphereLight(0x9ab0ff, 0x101010, 0.35);
+    const hemi = new THREE.HemisphereLight(0xdfe6ff, 0x202022, 0.25);
     s.add(hemi);
-    const key = new THREE.SpotLight(0xffffff, 120, 30, 0.42, 0.6, 1.6);
-    key.position.set(3.5, 7, 4);
-    key.target.position.set(0, 0.5, 0);
+    // shadow caster from the overhead box
+    const key = new THREE.SpotLight(0xffffff, 26, 20, 0.6, 1, 1.4);
+    key.position.set(0.4, 6, 0.6);
+    key.target.position.set(0, 0, 0);
     key.castShadow = q.shadows > 0;
     key.shadow.mapSize.set(Math.min(2048, q.shadows || 1024), Math.min(2048, q.shadows || 1024));
     key.shadow.bias = -0.0004;
-    key.shadow.camera.near = 2; key.shadow.camera.far = 20;
+    key.shadow.radius = 6;
+    key.shadow.camera.near = 2; key.shadow.camera.far = 12;
     s.add(key, key.target);
-    const rim = new THREE.SpotLight(0x40c8ff, 90, 30, 0.5, 0.7, 1.6);
-    rim.position.set(-4, 4, -4);
-    rim.target.position.set(0, 0.6, 0);
-    s.add(rim, rim.target);
-    const rim2 = new THREE.SpotLight(0xff3a6a, 60, 30, 0.5, 0.7, 1.6);
-    rim2.position.set(4, 3, -5);
-    rim2.target.position.set(0, 0.6, 0);
-    s.add(rim2, rim2.target);
-    this.rimLights = [rim, rim2];
+    // cool and warm rim accents from behind
+    const rim = new THREE.SpotLight(0x8fd8ff, 30, 30, 0.5, 0.8, 1.6);
+    rim.position.set(-4, 3, -5); rim.target.position.set(0, 0.6, 0);
+    const rim2 = new THREE.SpotLight(0xffb08a, 20, 30, 0.5, 0.8, 1.6);
+    rim2.position.set(4.5, 2.5, -4.5); rim2.target.position.set(0, 0.6, 0);
+    s.add(rim, rim.target, rim2, rim2.target);
 
-    // floating dust motes
-    const N = 300;
+    // faint dust in the light
+    const N = 220;
     const pos = new Float32Array(N * 3);
     const r = rng(5);
-    for (let i = 0; i < N; i++) { pos[i * 3] = r.range(-8, 8); pos[i * 3 + 1] = r.range(0.2, 6); pos[i * 3 + 2] = r.range(-8, 8); }
+    for (let i = 0; i < N; i++) { pos[i * 3] = r.range(-5, 5); pos[i * 3 + 1] = r.range(0.2, 5); pos[i * 3 + 2] = r.range(-5, 5); }
     const pg = new THREE.BufferGeometry();
     pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    this.dust = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0x88aacc, size: 0.025, transparent: true, opacity: 0.5, depthWrite: false }));
+    this.dust = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xcfd8e0, size: 0.012, transparent: true, opacity: 0.2, depthWrite: false }));
     s.add(this.dust);
   }
 
@@ -161,7 +208,9 @@ export class GarageScene {
     m.root.rotation.y = 0;
     this.bikes.push(m);
     this.bike = m;
-    this.ringMat.emissive.set(m.livery.accent === '#111111' || m.livery.accent === '#1a1a1a' ? m.livery.base : m.livery.accent);
+    const accent = m.livery.accent === '#111111' || m.livery.accent === '#1a1a1a' ? m.livery.base : m.livery.accent;
+    this.ringMat.emissive.set(accent);
+    this.ledMat.emissive.set(accent);
     this._flash = 1;
     return m;
   }
@@ -179,9 +228,9 @@ export class GarageScene {
         const blk = new THREE.Mesh(new THREE.BoxGeometry(2.1, hgt, 2.6), mat);
         blk.position.set(x, hgt / 2, 0); blk.castShadow = true; blk.receiveShadow = true;
         g.add(blk);
-        const e = new THREE.Mesh(new THREE.BoxGeometry(2.12, 0.04, 2.62), edge.clone());
+        const e = new THREE.Mesh(new THREE.BoxGeometry(2.12, 0.03, 0.03), edge.clone());
         e.material.emissive.set(col);
-        e.position.set(x, hgt, 0);
+        e.position.set(x, hgt - 0.015, 1.31);
         g.add(e);
         const c = document.createElement('canvas'); c.width = 128; c.height = 128;
         const cg = c.getContext('2d');
@@ -242,10 +291,10 @@ export class GarageScene {
   activate() {
     this.active = true;
     this.engine.setScene(this.scene, this.camera);
-    this.engine.setBloom(0.5, 0.55, 0.82);
+    this.engine.setBloom(0.28, 0.45, 1.6);
     const fx = this.engine.fx;
     if (fx) { fx.uBlur.value = 0; fx.uVignette.value = 0.38; fx.uTintAmt.value = 0; fx.uFlash.value = 0; fx.uDamage.value = 0; fx.uRain.value = 0; }
-    this.engine.renderer.toneMappingExposure = 1;
+    this.engine.renderer.toneMappingExposure = 0.95;
   }
 
   deactivate() { this.active = false; }
@@ -279,11 +328,9 @@ export class GarageScene {
     cam.fov = this.engine.width < this.engine.height ? 48 : 32;
     cam.updateProjectionMatrix();
     // light show
-    this.rimLights[0].intensity = 80 + Math.sin(t * 1.3) * 20;
-    this.rimLights[1].intensity = 50 + Math.cos(t * 0.9) * 15;
     if (this._flash > 0) { this._flash = Math.max(0, this._flash - dt * 2.5); }
-    this.ringMat.emissiveIntensity = 2.5 + Math.sin(t * 3) * 0.6 + this._flash * 6;
-    this.stripMat.emissiveIntensity = 1.8 + this._flash * 2;
+    this.ringMat.emissiveIntensity = 1.8 + Math.sin(t * 2) * 0.3 + this._flash * 5;
+    this.ledMat.emissiveIntensity = 1.4 + this._flash * 3;
     this.dust.rotation.y = t * 0.02;
     if (this.confetti && this.confetti.visible) {
       const p = this.confetti.geometry.attributes.position;
