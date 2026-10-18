@@ -35,7 +35,7 @@ const DEFAULTS = {
   ghosts: {}, // trackId -> { bike, lap, data(base64) }
   champ: null,
   stats: { races: 0, wins: 0, podiums: 0, km: 0, crashes: 0, topSpeed: 0 },
-  garage: { bike: 'raptor', livery: {} },
+  garage: { bike: 'spectra', livery: {} },
   trophies: {},
 };
 

@@ -680,13 +680,13 @@ export function tireTexture(knobby = false) {
     }
     // lettering on both sidewalls
     g.font = '700 22px Orbitron, Arial, sans-serif';
-    g.fillStyle = 'rgba(210,210,210,0.55)';
+    g.fillStyle = 'rgba(120,120,124,0.42)';
     g.textBaseline = 'middle';
     for (let k = 0; k < 2; k++) {
       g.fillText('MÍTICO RACE', k * W / 2 + 40, H * 0.14);
       g.fillText('MÍTICO RACE', k * W / 2 + 40, H * 0.86);
     }
-    g.fillStyle = 'rgba(255,210,0,0.55)';
+    g.fillStyle = 'rgba(120,120,124,0.32)';
     for (let k = 0; k < 2; k++) {
       g.fillText('SOFT', k * W / 2 + 330, H * 0.14);
       g.fillText('SOFT', k * W / 2 + 330, H * 0.86);
@@ -794,6 +794,9 @@ export function liveryTexture(livery, label = '', number = '') {
         g.stroke();
       }
       sideBand(0.5, 0.006, accent);
+    } else if (pattern === 'pinstripe') {
+      // fine accent pinstripes running along both flanks
+      for (const vc of [0.25, 0.75]) { sideBand(vc + 0.055, 0.0018, accent); sideBand(vc - 0.07, 0.0018, accent); }
     } else if (pattern === 'flames') {
       g.fillStyle = second;
       for (const vc of [0.25, 0.75]) {
@@ -811,14 +814,16 @@ export function liveryTexture(livery, label = '', number = '') {
     }
     // labels on both sides
     if (label) {
-      g.font = '900 52px Orbitron, Arial, sans-serif';
+      const ls = livery.labelScale ?? 1, lu = livery.labelU ?? 0.45, lv = livery.labelV ?? 0.27;
+      g.font = `${livery.labelFont ?? '900'} ${Math.round(52 * ls)}px ${livery.labelFamily ?? 'Orbitron, Arial, sans-serif'}`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
+      const lc = livery.labelColor ?? accent;
       // +z side: v .25 (normal orientation)
-      g.save(); g.translate(W * 0.45, vy(0.27));
-      g.fillStyle = accent; g.fillText(label, 0, 0, W * 0.32); g.restore();
+      g.save(); g.translate(W * lu, vy(lv));
+      g.fillStyle = lc; g.fillText(label, 0, 0, W * 0.32 * ls); g.restore();
       // -z side: rotated 180°
-      g.save(); g.translate(W * 0.45, vy(0.73)); g.rotate(Math.PI);
-      g.fillStyle = accent; g.fillText(label, 0, 0, W * 0.32); g.restore();
+      g.save(); g.translate(W * lu, vy(1 - lv)); g.rotate(Math.PI);
+      g.fillStyle = lc; g.fillText(label, 0, 0, W * 0.32 * ls); g.restore();
     }
     if (number) {
       g.font = '900 110px Orbitron, Arial, sans-serif';

@@ -149,7 +149,7 @@ export class UI {
         h('span', {}, h('span', { class: 'keycap' }, 'ENTER'), ' aceptar'),
         h('span', {}, h('span', { class: 'keycap' }, 'ESC'), ' volver'),
         h('span', { class: 'grow' }),
-        h('span', {}, 'v1.0 · Motor 3D procedural · 12 motos · 6 circuitos')),
+        h('span', {}, `v1.0 · Motor 3D procedural · ${BIKES.length} motos · 6 circuitos`)),
     );
     this._setNav(items);
     Audio.playMusic('menu');
@@ -214,7 +214,7 @@ export class UI {
     left.addEventListener('click', () => { Audio.select(); select(idx - 1); });
     right.addEventListener('click', () => { Audio.select(); select(idx + 1); });
     s.append(
-      h('div', { class: 'top-bar' }, h('h2', {}, 'GARAJE'), h('span', { class: 'pill c1' }, '12 MOTOS'), h('span', { class: 'grow' }), h('span', { class: 'dim' }, 'Arrastra para girar · rueda para zoom')),
+      h('div', { class: 'top-bar' }, h('h2', {}, 'GARAJE'), h('span', { class: 'pill c1' }, `${BIKES.length} MOTOS`), h('span', { class: 'grow' }), h('span', { class: 'dim' }, 'Arrastra para girar · rueda para zoom')),
       list, panel, left, right,
       h('div', { class: 'bottom-bar' }, back, choose),
     );

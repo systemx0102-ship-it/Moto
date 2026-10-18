@@ -82,7 +82,7 @@ export function engineUnit(ctx, o) {
   // ---- side covers: clutch (right), alternator + sprocket (left)
   const zr = W / 2 + 0.004, zl = -W / 2 - 0.004;
   roundCover(A, [cx - 0.1 * s, cy - 0.01 * s], 0.086 * s, 1, zr, coverMat, { boss: 0.5, bossDx: 0.01 * s, bolts: 10, depth: 0.014, bevel: 0.012 });
-  const cap = cyl(0.014, 0.014, 0.012, 12, 'z'); place(cap, { p: [cx - 0.06 * s, cy + 0.06 * s, zr + 0.026] }); A.add('chassis', cap, M.anodized(0xc81e1e));
+  const cap = cyl(0.014, 0.014, 0.012, 12, 'z'); place(cap, { p: [cx - 0.06 * s, cy + 0.06 * s, zr + 0.026] }); A.add('chassis', cap, M.darkChrome());
   roundCover(A, [cx, cy], 0.072 * s, -1, zl, coverMat, { boss: 0.42, bolts: 8, depth: 0.012, bevel: 0.014 });
   roundCover(A, [cx - back * 0.82, cy - 0.015 * s], 0.05 * s, -1, zl, M.engine(0x1c1d20), { ex: 1.3, bolts: 3, depth: 0.008, bevel: 0.008 });
   // shift shaft + water pump / starter

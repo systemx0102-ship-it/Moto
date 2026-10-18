@@ -956,4 +956,233 @@ function twostroke(ctx) {
   details(ctx, { damper: true, kickstand: false });
 }
 
-export const DESIGNS = { superbike, gp, naked, electric, cruiser, bobber, cafe, drag, mx, sm, adventure, twostroke };
+// 13. Sport tourer: big inline-4 under a full touring fairing (modelled on a modern
+// 1100 cc sport tourer): sharp nose with twin slanted LED lights, tall screen, layered
+// side panels over graphite inner panels, faceted tank with gold pinstripes, stepped
+// two-up seat with grab rails, angular right-side silencer, six-spoke wheels.
+function textDecal(ctx, text, pos, size, side, o = {}) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.font = `${o.weight ?? 800} ${o.px ?? 84}px ${o.font ?? 'Rajdhani, Arial, sans-serif'}`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (o.italic) { g.setTransform(1, 0, -0.25, 1, 32, 0); }
+  g.fillStyle = o.color ?? '#f2f2f2';
+  g.fillText(text, 256, 68);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const m = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.3, metalness: 0.2, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+  const pl = new THREE.PlaneGeometry(size[0], size[1]);
+  if (side < 0) pl.rotateY(Math.PI);
+  place(pl, { p: pos, r: [o.rx ?? 0, side * (o.ry ?? 0), o.rz ?? 0] });
+  ctx.A.add('chassis', pl, m);
+}
+
+// Thin panel lying on a face of a loftProfile body (between profile points i and j),
+// spanning authored x stations with per-station fractions [lo, hi] across the face,
+// pushed `off` along the face normal. Used for lamps and inserts that sit on bodywork.
+function facePatch(A, secs, i, j, xs, lo, hi, off, side, mat, group = 'chassis') {
+  const at = (x) => {
+    let k = 0;
+    while (k < secs.length - 2 && secs[k + 1].x > x) k++;
+    const a = secs[k], b = secs[k + 1];
+    const t = Math.min(1, Math.max(0, (a.x - x) / (a.x - b.x)));
+    return a.pts.map((p, n) => [p[0] + (b.pts[n][0] - p[0]) * t, p[1] + (b.pts[n][1] - p[1]) * t]);
+  };
+  const pos = [];
+  xs.forEach((x, k) => {
+    const pr = at(x), P0 = pr[i], P1 = pr[j];
+    const dz = P1[0] - P0[0], dy = P1[1] - P0[1], l = Math.hypot(dz, dy) || 1;
+    const nz = dy / l, ny = -dz / l; // outward normal of the face in the (z, y) plane
+    const sg = nz * 1 + ny * 0 >= 0 || ny > 0 ? 1 : -1;
+    for (const f of [lo[k], hi[k]]) {
+      const z = P0[0] + dz * f + nz * sg * off, y = P0[1] + dy * f + ny * sg * off;
+      pos.push(x, y, side * z);
+    }
+  });
+  // two skins with their own vertices so each side gets a proper normal
+  const n = pos.length / 3;
+  const idx = [];
+  for (let k = 0; k < xs.length - 1; k++) {
+    const a = k * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, b, c, b, d, c, n + a, n + c, n + b, n + b, n + c, n + d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos.concat(pos), 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  A.add(group, g, mat);
+}
+
+function sporttourer(ctx) {
+  const { A, mats } = ctx;
+  setupChassis(ctx);
+  fork(ctx, { type: 'usd', innerMat: M.chrome(), outerMat: M.anodized(0x2c2a26), capColor: 0x8a6a2a });
+  wheels(ctx, { caliperColor: 0x34363b, carrier: '#2a2a2a', fDiscR: 0.15, discStyle: 'drilled', rimStripe: mats.accentSolid });
+  swingarm(ctx, { style: 'banana', mat: M.anodized(0x151517), h: 0.06 });
+  chain(ctx);
+  twinSpar(ctx, { mat: M.anodized(0x141416) });
+  radiator(ctx, [0.38, 0.52, 0], 0.3, 0.28, { tilt: -0.22 });
+  const eng = engineUnit(ctx, { pos: [0.1, 0.3], cyl: 4, tilt: 0.48, cooling: 'liquid', caseMat: M.engine(0x17181a), coverMat: M.engine(0x2c2e32), camMat: M.engine(0x2c2e32), filterMat: M.black() });
+  // 4-2-1 polished headers under the engine to the right-hand silencer
+  for (const [x, y, z] of eng.ports) {
+    header(ctx, [[x, y, z], [x + 0.07, y - 0.1, z * 1.05], [0.42, 0.26, z * 0.9], [0.36, 0.15, z * 0.6], [0.16, 0.12, z * 0.3], [-0.02, 0.14, 0.05]], 0.018, M.chrome());
+  }
+  header(ctx, [[-0.02, 0.14, 0.05], [-0.1, 0.2, 0.12], [-0.2, 0.29, 0.165]], 0.034, M.aluminum());
+  // angular silencer: brushed can with chamfered edges and a black end cap
+  const can = (x, yc, hh, hw) => ({ x, pts: [[0, yc - hh], [hw * 0.72, yc - hh], [hw, yc - hh * 0.32], [hw, yc + hh * 0.38], [hw * 0.74, yc + hh], [0, yc + hh]] });
+  const body = loftProfile([can(-0.19, 0.3, 0.05, 0.05), can(-0.26, 0.345, 0.1, 0.07), can(-0.47, 0.455, 0.106, 0.072), can(-0.51, 0.476, 0.096, 0.066)],
+    { sub: 5, around: 3, creases: [1, 2, 3, 4], capStart: true, capEnd: true });
+  body.translate(0, 0, 0.178);
+  A.add('chassis', body, M.aluminum());
+  const capG = loftProfile([can(-0.505, 0.474, 0.094, 0.064), can(-0.555, 0.5, 0.074, 0.052)], { sub: 3, around: 3, creases: [1, 2, 3, 4], capStart: true, capEnd: true });
+  capG.translate(0, 0, 0.178);
+  A.add('chassis', capG, M.black());
+  for (const k of [-1, 1]) { const o = cyl(0.018, 0.018, 0.02, 12, 'x'); place(o, { p: [-0.56, 0.5 + k * 0.026, 0.178] }); A.add('chassis', o, M.darkChrome()); }
+  A.add('chassis', rod([-0.4, 0.52, 0.17], [-0.42, 0.58, 0.14], 0.012, 8), M.black());
+
+  // ---- bodywork
+  const P = (x, ...pts) => ({ x, pts });
+  // one continuous front fairing: sharp nose, headlight crease, main flank crease and
+  // shoulder; its lower edge sweeps down behind the front wheel to cover the radiator
+  const FAIR = [
+    P(0.978, [0, 0.848], [0.025, 0.851], [0.042, 0.861], [0.05, 0.872], [0.032, 0.884], [0, 0.888]),
+    P(0.94, [0, 0.818], [0.05, 0.825], [0.085, 0.845], [0.1, 0.872], [0.07, 0.906], [0, 0.918]),
+    P(0.84, [0, 0.775], [0.07, 0.782], [0.12, 0.82], [0.145, 0.868], [0.115, 0.94], [0, 0.958]),
+    P(0.72, [0, 0.74], [0.1, 0.748], [0.165, 0.8], [0.195, 0.862], [0.165, 0.972], [0, 0.99]),
+    P(0.6, [0, 0.68], [0.12, 0.69], [0.19, 0.74], [0.215, 0.84], [0.19, 0.97], [0, 0.995]),
+    P(0.5, [0, 0.575], [0.13, 0.585], [0.2, 0.65], [0.218, 0.8], [0.19, 0.91], [0, 0.93]),
+    P(0.4, [0, 0.37], [0.14, 0.39], [0.21, 0.52], [0.218, 0.76], [0.18, 0.85], [0, 0.87]),
+    P(0.28, [0, 0.35], [0.14, 0.37], [0.205, 0.5], [0.212, 0.74], [0.17, 0.83], [0, 0.85]),
+    P(0.16, [0, 0.42], [0.12, 0.44], [0.175, 0.53], [0.185, 0.7], [0.15, 0.78], [0, 0.8]),
+    P(0.06, [0, 0.6], [0.085, 0.61], [0.12, 0.635], [0.13, 0.69], [0.1, 0.74], [0, 0.75]),
+  ];
+  A.add('chassis', loftProfile(FAIR, { sub: 6, around: 4, creases: [2, 3, 4], capStart: true, capEnd: true }), mats.paint);
+  // graphite chin below the lights with a slim central intake
+  const chin = loftProfile([
+    P(0.955, [0, 0.8], [0.03, 0.803], [0.05, 0.83], [0.035, 0.845], [0, 0.848]),
+    P(0.86, [0, 0.765], [0.07, 0.772], [0.11, 0.81], [0.09, 0.84], [0, 0.85]),
+    P(0.76, [0, 0.745], [0.09, 0.75], [0.14, 0.79], [0.12, 0.83], [0, 0.84]),
+  ], { sub: 4, around: 3, creases: [2], capStart: true, capEnd: true });
+  A.add('chassis', chin, mats.paint2Solid);
+  const slot = box(0.03, 0.022, 0.07, 0.008); place(slot, { p: [0.955, 0.818, 0], r: [0, 0, 0.5] }); A.add('chassis', slot, M.black());
+  // twin slanted LED headlights: dark housing, LED blade, clear cover
+  for (const s of [-1, 1]) {
+    // twin LED headlights laid on the nose's upper faces: housing, LED blade, clear cover
+    const xs = [0.968, 0.94, 0.9, 0.862, 0.83];
+    facePatch(A, FAIR, 3, 4, xs, [0.0, 0.0, 0.04, 0.12, 0.3], [0.62, 0.86, 0.9, 0.82, 0.55], 0.004, s, M.darkChrome());
+    facePatch(A, FAIR, 3, 4, xs.slice(1, 4), [0.12, 0.14, 0.22], [0.42, 0.5, 0.48], 0.0065, s, mats.head);
+    facePatch(A, FAIR, 3, 4, xs.slice(0, 4), [0.6, 0.66, 0.62, 0.56], [0.7, 0.76, 0.72, 0.64], 0.0065, s, mats.head);
+    facePatch(A, FAIR, 3, 4, xs, [0.0, 0.0, 0.04, 0.12, 0.3], [0.62, 0.86, 0.9, 0.82, 0.55], 0.009, s, M.lens());
+    // integrated front indicators on the cowl flanks
+    A.add('chassis', rod([0.79, 0.845, s * 0.165], [0.71, 0.86, s * 0.193], 0.006, 6), M.emissive(0xff8a00, 0.25));
+  }
+  ctx.headlights.push({ pos: [0.93, 0.87, 0], group: 'chassis', r: 0.05 });
+  // tall touring screen with smoked top edge
+  const screen = loft([
+    { x: 0.86, y: 0.935, w: 0.1, ht: 0.03, n: 2.1 },
+    { x: 0.74, y: 0.96, w: 0.155, ht: 0.12, n: 2.1 },
+    { x: 0.62, y: 0.97, w: 0.18, ht: 0.22, n: 2.1 },
+    { x: 0.575, y: 0.97, w: 0.172, ht: 0.255, n: 2.1 },
+  ], { radial: 22, sub: 6, t0: 0.03, t1: Math.PI - 0.03 });
+  A.add('chassis', screen, M.glass(0x2a3138, 0.32));
+  // graphite lower side panels with intake slots over the radiator flanks
+  for (const s of [-1, 1]) {
+    const lp = loft([
+      { x: 0.45, y: 0.55, w: 0.005, ht: 0.02, hb: 0.02, n: 3, z: s * 0.214 },
+      { x: 0.4, y: 0.5, w: 0.008, ht: 0.045, hb: 0.05, n: 5, z: s * 0.216 },
+      { x: 0.28, y: 0.46, w: 0.008, ht: 0.045, hb: 0.06, n: 5, z: s * 0.212 },
+      { x: 0.2, y: 0.49, w: 0.005, ht: 0.02, hb: 0.02, n: 3, z: s * 0.188 },
+    ], { radial: 22, sub: 5, capStart: true, capEnd: true });
+    A.add('chassis', lp, mats.paint2Solid);
+    for (let i = 0; i < 4; i++) {
+      const sl = box(0.09, 0.01, 0.006, 0.003);
+      place(sl, { p: [0.37 - i * 0.012, 0.52 - i * 0.022, s * 0.225], r: [0, 0, 0.42] });
+      A.add('chassis', sl, M.black());
+    }
+  }
+  // graphite inner panels behind the fairing, lower cowl
+  const inner = loftProfile([
+    P(0.44, [0, 0.62], [0.12, 0.63], [0.19, 0.7], [0.19, 0.845], [0, 0.865]),
+    P(0.2, [0, 0.56], [0.12, 0.57], [0.196, 0.64], [0.196, 0.845], [0, 0.865]),
+    P(0.02, [0, 0.55], [0.11, 0.56], [0.172, 0.62], [0.172, 0.81], [0, 0.835]),
+    P(-0.07, [0, 0.6], [0.07, 0.61], [0.122, 0.65], [0.122, 0.77], [0, 0.79]),
+  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
+  A.add('chassis', inner, mats.paint2Solid);
+  const belly = loftProfile([
+    P(0.4, [0, 0.36], [0.05, 0.37], [0.09, 0.41], [0.1, 0.45], [0, 0.47]),
+    P(0.3, [0, 0.23], [0.07, 0.24], [0.14, 0.31], [0.15, 0.42], [0, 0.45]),
+    P(0.1, [0, 0.215], [0.075, 0.225], [0.145, 0.29], [0.15, 0.4], [0, 0.43]),
+    P(-0.08, [0, 0.26], [0.06, 0.27], [0.12, 0.32], [0.12, 0.39], [0, 0.41]),
+    P(-0.15, [0, 0.31], [0.02, 0.315], [0.04, 0.34], [0.04, 0.37], [0, 0.38]),
+  ], { sub: 6, around: 3, creases: [2], capStart: true, capEnd: true });
+  A.add('chassis', belly, M.paint(0x1c1d20, { metal: 0.4, rough: 0.35 }));
+  // side vents: dark louvres in the panel's front flank
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const f = box(0.12 - i * 0.015, 0.008, 0.012, 0.003);
+      place(f, { p: [0.47 - i * 0.025, 0.75 - i * 0.035, s * 0.214], r: [0, 0, 0.55] });
+      A.add('chassis', f, M.black());
+    }
+  }
+  // faceted tank with gold pinstripes along the shoulder crease
+  const tank = loftProfile([
+    P(0.5, [0, 0.85], [0.08, 0.855], [0.1, 0.89], [0.08, 0.94], [0, 0.95]),
+    P(0.36, [0, 0.84], [0.155, 0.85], [0.185, 0.92], [0.15, 1.02], [0, 1.05]),
+    P(0.16, [0, 0.84], [0.16, 0.85], [0.19, 0.92], [0.155, 1.02], [0, 1.05]),
+    P(-0.02, [0, 0.84], [0.125, 0.85], [0.15, 0.89], [0.115, 0.95], [0, 0.975]),
+    P(-0.12, [0, 0.85], [0.07, 0.855], [0.08, 0.87], [0.06, 0.895], [0, 0.905]),
+  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
+  A.add('chassis', tank, mats.paintPlain);
+  for (const s of [-1, 1]) {
+    A.add('chassis', tube([[0.47, 0.935, s * 0.092], [0.36, 1.02, s * 0.153], [0.16, 1.022, s * 0.158], [-0.02, 0.952, s * 0.118]], 0.0025, { radial: 5 }), mats.accentSolid);
+    A.add('chassis', tube([[0.58, 0.845, s * 0.205], [0.42, 0.818, s * 0.214], [0.2, 0.796, s * 0.209], [0.08, 0.74, s * 0.16]], 0.0022, { radial: 5 }), mats.accentSolid);
+    textDecal(ctx, '1100 SX', [0.2, 0.975, s * 0.168], [0.13, 0.032], s, { ry: 0, rx: s * -0.55, color: '#e8e8e8' });
+  }
+  // stepped two-up seat
+  seatLoft(ctx, -0.08, -0.45, 0.835, 0.17, 0.05, { frontW: 0.72 });
+  seatLoft(ctx, -0.47, -0.76, 0.93, 0.135, 0.045);
+  // slim tail with integrated LED light, grab rails
+  const tail = loftProfile([
+    P(-0.04, [0, 0.7], [0.11, 0.71], [0.16, 0.76], [0.15, 0.82], [0, 0.83]),
+    P(-0.3, [0, 0.75], [0.11, 0.76], [0.155, 0.81], [0.14, 0.86], [0, 0.87]),
+    P(-0.55, [0, 0.8], [0.09, 0.81], [0.135, 0.86], [0.12, 0.92], [0, 0.93]),
+    P(-0.78, [0, 0.85], [0.06, 0.86], [0.09, 0.9], [0.08, 0.95], [0, 0.96]),
+    P(-0.88, [0, 0.88], [0.03, 0.885], [0.05, 0.915], [0.045, 0.955], [0, 0.96]),
+    P(-0.92, [0, 0.9], [0.01, 0.902], [0.02, 0.92], [0.016, 0.945], [0, 0.948]),
+  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
+  A.add('chassis', tail, mats.paintPlain);
+  tailLight(ctx, [-0.905, 0.928, 0], 0.07, 0.02, { tilt: 0.7 });
+  for (const s of [-1, 1]) {
+    ledStrip(ctx, [-0.83, 0.905, s * 0.07], [-0.9, 0.918, s * 0.025], 0.004, 'chassis', mats.tail);
+    const rail = tube([[-0.47, 0.905, s * 0.15], [-0.6, 0.93, s * 0.155], [-0.74, 0.95, s * 0.125], [-0.8, 0.955, s * 0.085]], 0.012, { radial: 8 });
+    A.add('chassis', rail, M.anodized(0x141416));
+    A.add('chassis', rod([-0.5, 0.9, s * 0.14], [-0.5, 0.82, s * 0.13], 0.01, 6), M.anodized(0x141416));
+  }
+  // side covers under the seats close the gap between tail, subframe and swingarm pivot
+  const covers = loftProfile([
+    P(0.0, [0, 0.55], [0.1, 0.56], [0.145, 0.62], [0.14, 0.72], [0, 0.74]),
+    P(-0.25, [0, 0.6], [0.1, 0.61], [0.14, 0.66], [0.135, 0.765], [0, 0.775]),
+    P(-0.45, [0, 0.68], [0.08, 0.69], [0.12, 0.73], [0.115, 0.805], [0, 0.815]),
+    P(-0.6, [0, 0.76], [0.05, 0.765], [0.08, 0.79], [0.078, 0.84], [0, 0.85]),
+  ], { sub: 5, around: 3, creases: [2, 3], capStart: true, capEnd: true });
+  A.add('chassis', covers, M.paint(0x141518, { metal: 0.3, rough: 0.4, clear: 0.6 }));
+  // number-plate hanger under the tail
+  const hanger = box(0.31, 0.012, 0.15, 0.006); place(hanger, { p: [-0.92, 0.74, 0], r: [0, 0, 0.876] }); A.add('chassis', hanger, M.plastic(0x101012));
+  rearFender(ctx, { from: 1.9, len: 1.4, mat: M.black(), w: 0.21 });
+  frontFender(ctx, { from: 1.75, len: 1.75, w: 0.13, mat: mats.paintSolid });
+  // cockpit
+  handlebar(ctx, { type: 'wide', rise: 0.07, back: 0.12, half: 0.33 });
+  dash(ctx, [0.56, 1.0, 0], 0.15, 0.09, { tilt: -1.0 });
+  for (const s of [-1, 1]) mirror(ctx, [0.66, 0.975, s * 0.17], s, { group: 'chassis', reach: 0.33, up: 0.075, dx: -0.04 });
+  // pegs with black hangers, passenger pegs
+  footpegs(ctx, -0.2, 0.42, 0.17);
+  for (const s of [-1, 1]) {
+    const hg = box(0.16, 0.1, 0.01, 0.01); place(hg, { p: [-0.17, 0.46, s * 0.15], r: [0, 0, -0.35] }); A.add('chassis', hg, M.anodized(0x141416));
+    const ph = box(0.2, 0.05, 0.01, 0.01); place(ph, { p: [-0.42, 0.56, s * 0.15], r: [0, 0, -0.55] }); A.add('chassis', ph, M.anodized(0x141416));
+    A.add('chassis', rod([-0.48, 0.52, s * 0.15], [-0.48, 0.52, s * 0.21], 0.011, 8), M.rubber());
+  }
+  shock(ctx, [-0.08, 0.62, 0], [-0.2, 0.36, 0], { r: 0.026, springColor: 0x3a3c40 });
+  details(ctx, { plate: { pos: [-1.03, 0.6, 0], tilt: 0.3 } });
+}
+
+export const DESIGNS = { superbike, gp, naked, electric, cruiser, bobber, cafe, drag, mx, sm, adventure, twostroke, sporttourer };

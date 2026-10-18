@@ -1,5 +1,5 @@
 // Bike catalog: specs (physics + sound), liveries and model geometry params.
-// 12 completely different machines. No riders anywhere.
+// 13 completely different machines. No riders anywhere.
 
 const T = {
   i4: [[0, 0.42], [0.25, 0.6], [0.5, 0.82], [0.72, 1], [0.88, 0.97], [1, 0.86]],
@@ -15,6 +15,22 @@ const T = {
 };
 
 export const BIKES = [
+  {
+    id: 'spectra', name: 'SPECTRA 1100 SX', short: 'SPECTRA', klass: 'SPORT TOURING', design: 'sporttourer',
+    blurb: 'Sport-turismo de 1100 cc y cuatro cilindros: carenado completo, cúpula alta, asiento para dos y potencia de sobra para cruzar el país.',
+    engine: { label: '1099 cc · 4 en línea', hp: 136, redline: 11000, idle: 1100, curve: T.i4, gears: [2.6, 1.95, 1.6, 1.38, 1.22, 1.1], sound: 'i4' },
+    mass: 235, topKmh: 255, maxLean: 52, leanRate: 2.6, brakeG: 1.1, grip: 0.98, offroad: 0.4, wheelieTend: 0.45, cda: null,
+    model: {
+      wb: 1.44, rake: 24, forkLen: 0.58, forkOffset: 0.03, pivot: [-0.13, 0.46], headLen: 0.15,
+      front: { R: 0.3, w: 0.12, rim: 0.216, style: 'split', spokes: 3, sweep: 0.12 },
+      rear: { R: 0.312, w: 0.19, rim: 0.216, style: 'split', spokes: 3, sweep: 0.12 },
+    },
+    liveries: [
+      { name: 'Negro Diablo', base: '#0b0b0d', second: '#3b3d42', accent: '#c9a54a', frame: '#141416', wheel: '#121212', pattern: 'pinstripe', seat: 0x2e3034, labelScale: 0.55, labelU: 0.62, labelV: 0.2, labelColor: '#d8d8d8', labelFamily: 'Rajdhani, Arial, sans-serif', labelFont: 'italic 700' },
+      { name: 'Verde Esmeralda', base: '#0f3626', second: '#0b0b0d', accent: '#c9a54a', frame: '#141416', wheel: '#121212', pattern: 'pinstripe', seat: 0x2e3034, labelScale: 0.55, labelU: 0.62, labelV: 0.2, labelColor: '#d8d8d8', labelFamily: 'Rajdhani, Arial, sans-serif', labelFont: 'italic 700' },
+      { name: 'Blanco Perla', base: '#e6e7e8', second: '#2b2d31', accent: '#b0181e', frame: '#141416', wheel: '#121212', pattern: 'pinstripe', seat: 0x2e3034, labelScale: 0.55, labelU: 0.62, labelV: 0.2, labelColor: '#2b2d31', labelFamily: 'Rajdhani, Arial, sans-serif', labelFont: 'italic 700' },
+    ],
+  },
   {
     id: 'raptor', name: 'RAPTOR RR1000', short: 'RAPTOR', klass: 'SUPERBIKE', design: 'superbike',
     blurb: 'Superbike de cuatro cilindros en línea. Agresiva, precisa y brutal a alta velocidad.',
