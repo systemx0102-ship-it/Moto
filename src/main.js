@@ -8,6 +8,7 @@ import { UI } from './ui/UI.js';
 import { Race } from './game/Race.js';
 import { BIKES, BIKE_BY_ID } from './bikes/catalog.js';
 import { TRACKS, TRACK_BY_ID } from './track/catalog.js';
+import { Rpg } from './rpg/Rpg.js';
 import { roadTextures, groundTextures, tireTexture, carbonTexture, leatherTexture } from './core/textures.js';
 import { nextFrame, sleep } from './core/utils.js';
 
@@ -96,6 +97,11 @@ class Game {
       this.ui.error(e);
     }
     this._loading = false;
+  }
+
+  // Modo Leyenda: launch an event of the region map with the active machine
+  startRpgEvent(eventId) {
+    this.startRace(Rpg.raceConfig(eventId));
   }
 
   restartRace() {

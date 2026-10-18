@@ -52,6 +52,8 @@ export class BikePhysics {
   }
 
   // Derive engine / chassis constants. perf: {power, grip, top} multipliers (AI balancing)
+  // plus the RPG mode's tuning: brake, lean, nitroPow, nitroDrain, nitroRegen, draft,
+  // drift, tough, wet (0..1 of the rain penalty removed) and airNitro.
   tune(perf = {}) {
     const sp = this.spec;
     const pw = perf.power ?? 1, gr = perf.grip ?? 1, tp = perf.top ?? 1;
@@ -75,8 +77,17 @@ export class BikePhysics {
     this.CdA = Math.max(0.15, (2 * (this.Pmax * eta - Frr * this.vTop)) / (RHO * this.vTop ** 3));
     this.mu = 1.28 * sp.grip * gr;
     this.maxLean = Math.min(sp.maxLean * DEG, Math.atan(this.mu * 1.05) + 4 * DEG);
-    this.leanRate = sp.leanRate;
-    this.brakeA = sp.brakeG * G * gr;
+    this.leanRate = sp.leanRate * (perf.lean ?? 1);
+    this.brakeA = sp.brakeG * G * gr * (perf.brake ?? 1);
+    this.nitroPow = perf.nitroPow ?? 1;
+    this.nitroDrain = perf.nitroDrain ?? 1;
+    this.nitroRegen = perf.nitroRegen ?? 1;
+    this.draftK = perf.draft ?? 1;
+    this.driftK = perf.drift ?? 1;
+    this.tough = perf.tough ?? 1;
+    this.wetK = clamp(perf.wet ?? 0, 0, 1);
+    this.airNitro = perf.airNitro ?? 1;
+    this.boost = 1; // temporary drive multiplier (RPG perks)
     this.wheelieA = G * 0.82 / Math.max(0.3, sp.wheelieTend);
     this.offroadGrip = sp.offroad;
   }
@@ -113,7 +124,7 @@ export class BikePhysics {
     const P = tr.project(this.x, this.z, this.hint, this.proj);
     this.hint = P.i;
     this.offRoad = P.offRoad; this.onCurb = P.onCurb;
-    const wetMul = env.wet ? 0.86 : env.snow ? 0.8 : 1;
+    const wetMul = 1 - (1 - (env.wet ? 0.86 : env.snow ? 0.8 : 1)) * (1 - this.wetK);
     const surfGrip = (P.offRoad ? 0.25 + this.offroadGrip * 0.62 : 1) * (P.onRoad || P.onCurb ? wetMul : 1);
     if (this.ghostT > 0) this.ghostT -= dt;
 
@@ -147,11 +158,11 @@ export class BikePhysics {
     let T = this.torqueAt(this.rpm) * throttle;
     if (limiter) T *= 0.15 + 0.5 * Math.random();
     // electric motors: torque available from 0 rpm
-    let Fdrive = (T * this.ratio() * 0.92) / this.r;
+    let Fdrive = (T * this.ratio() * 0.92) / this.r * this.boost;
     // nitro
     this.nitroOn = inp.nitro && this.nitro > 0.02 && !this.airborne && throttle > 0.2;
-    if (this.nitroOn) { Fdrive = Fdrive * 1.42 + this.mass * 1.6; this.nitro = Math.max(0, this.nitro - dt * 0.24); }
-    else this.nitro = Math.min(1, this.nitro + dt * (0.012 + this.draft * 0.08));
+    if (this.nitroOn) { Fdrive = Fdrive * (1 + 0.42 * this.nitroPow) + this.mass * 1.6 * this.nitroPow; this.nitro = Math.max(0, this.nitro - dt * 0.24 / this.nitroDrain); }
+    else this.nitro = Math.min(1, this.nitro + dt * (0.012 + this.draft * 0.08 * this.draftK) * this.nitroRegen);
 
     // ---------------- traction circle
     const muAvail = this.mu * surfGrip;
@@ -174,7 +185,7 @@ export class BikePhysics {
     if (this.v < 0.3) Fb = 0;
 
     // resistances
-    const drag = 0.5 * RHO * this.CdA * (1 - this.draft * 0.35) * (this.nitroOn ? 0.82 : 1) * this.v * this.v;
+    const drag = 0.5 * RHO * this.CdA * (1 - Math.min(0.6, this.draft * 0.35 * this.draftK)) * (this.nitroOn ? 0.82 : 1) * this.v * this.v;
     const rolling = (0.015 + (P.offRoad ? 0.05 + (1 - this.offroadGrip) * 0.16 : 0) + (P.gravel ? 0.35 * (1.2 - this.offroadGrip) : 0)) * this.mass * G;
     const align = Math.cos(this.vh - Math.atan2(P.tx, P.tz));
     const slopeF = this.mass * G * Math.sin(Math.atan(P.grade)) * align;
@@ -260,7 +271,7 @@ export class BikePhysics {
         const steerInto = Math.sign(inp.steer) === -this.driftDir ? Math.abs(inp.steer) : -Math.abs(inp.steer);
         const tgt = this.driftDir * clamp((0.08 + lean01 * 0.5) * (0.7 + inp.throttle * 0.35) + steerInto * 0.16 * lean01 + driftIn * 0.08, 0, 0.85);
         this.h += (tgt - wrapAngle(this.h - this.vh)) * 4.5 * dt;
-        this.nitro = Math.min(1, this.nitro + dt * 0.05);
+        this.nitro = Math.min(1, this.nitro + dt * 0.05 * this.driftK);
       } else {
         // rear steps out in the direction of the turn
         const kick = slideAmt * turnDir * clamp(Math.abs(this.lean) / 0.5, 0, 1) * 0.9;
@@ -338,7 +349,7 @@ export class BikePhysics {
         this.cvF -= impact * 0.35; this.cvR -= impact * 0.35;
         const pitchErr = Math.abs(this.pitch - Math.atan(P2.grade));
         if ((pitchErr > 0.7 || (impact > 14 && pitchErr > 0.35)) && !this.ai) { this.crash('landing'); return; }
-        if (this.airT > 0.4) this.nitro = Math.min(1, this.nitro + 0.05 + this.airT * 0.05);
+        if (this.airT > 0.4) this.nitro = Math.min(1, this.nitro + (0.05 + this.airT * 0.05) * this.airNitro);
         this.vy = vyGround; this.vyC = vyCenter;
       }
     }
@@ -363,7 +374,7 @@ export class BikePhysics {
         this.vh = th + Math.atan2(vn, vt);
         this.h = this.vh + this.slip * 0.3;
         this.events.push({ type: 'wall', impact, side, x: this.x, y: this.y + 0.6, z: this.z });
-        if (impact > (env.assist ? 22 : 12.5) && !this.ai) { this.crash('wall'); return; }
+        if (impact > (env.assist ? 22 : 12.5) * this.tough && !this.ai) { this.crash('wall'); return; }
         if (impact > 15 && this.ai) { this.crash('wall'); return; }
       } else {
         // grinding along the wall

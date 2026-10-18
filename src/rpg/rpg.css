@@ -1,0 +1,91 @@
+/* MODO LEYENDA (RPG) — shared pieces: top bar, wallet, profile chip, bars, stars,
+   rarity colours and the part card. Screen-specific sheets: hub.css, gear.css. */
+:root {
+  --r-comun: #a7adb5;
+  --r-raro: #3f8cff;
+  --r-epico: #a35bff;
+  --r-legendario: #ffb020;
+  --r-mitico: #ff3a3a;
+}
+.r-comun { --rc: var(--r-comun); }
+.r-raro { --rc: var(--r-raro); }
+.r-epico { --rc: var(--r-epico); }
+.r-legendario { --rc: var(--r-legendario); }
+.r-mitico { --rc: var(--r-mitico); }
+
+.rpg-ico { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; }
+.rpg-ico svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* top bar */
+.rpg-top { gap: 18px; }
+.rpg-title h2 { margin: 2px 0 0; }
+.rpg-title .kicker.acc { color: var(--accent); }
+.rpg-sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+.rpg-wallet { display: flex; gap: 8px; }
+.rpg-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; background: rgba(255, 255, 255, .05); border: 1px solid var(--line);
+  font-family: var(--font-h); font-weight: 700; font-size: 17px; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.rpg-chip.cr .rpg-ico { color: var(--gold); }
+.rpg-chip.fr .rpg-ico { color: #8fd8ff; }
+.rpg-power { display: inline-flex; align-items: baseline; gap: 7px; font-family: var(--font-h); }
+.rpg-power .rpg-ico { color: var(--amber); align-self: center; }
+.rpg-power b { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rpg-power span { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+
+/* profile chip */
+.rpg-profile { display: flex; align-items: center; gap: 10px; min-width: 210px; }
+.rpg-rank { --rk: #c08457; width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 1px solid var(--rk); background: linear-gradient(160deg, color-mix(in srgb, var(--rk) 26%, transparent), rgba(10, 11, 13, .6)); font-family: var(--font-h); line-height: 1; }
+.rpg-rank b { font-size: 20px; font-weight: 700; }
+.rpg-rank span { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--rk); margin-top: 2px; }
+.rpg-prof-xp { flex: 1; }
+.rpg-prof-xp .k { display: flex; justify-content: space-between; gap: 10px; font-family: var(--font-h); font-size: 13px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 5px; }
+.rpg-prof-xp .k span { color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+
+/* bars */
+.rpg-bar { position: relative; height: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.rpg-bar i { position: absolute; left: 0; top: 0; bottom: 0; transition: width .6s var(--ease); }
+.rpg-bar .fill { background: #fff; }
+.rpg-bar .ghost { background: rgba(255, 255, 255, .35); }
+.rpg-bar.xp .fill { background: linear-gradient(90deg, #f0a020, #ffd36a); }
+.rpg-bar.mastery .fill { background: linear-gradient(90deg, #3f8cff, #8fd8ff); }
+
+/* stars */
+.rpg-stars { display: inline-flex; gap: 2px; }
+.rpg-stars .rpg-ico { width: 15px; height: 15px; color: rgba(255, 255, 255, .22); }
+.rpg-stars .rpg-ico.on { color: #ffcf3a; }
+.rpg-stars .rpg-ico.on svg { fill: #ffcf3a; }
+
+/* rarity tag */
+.rpg-rtag { display: inline-block; padding: 1px 7px; font-family: var(--font-h); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--rc); border: 1px solid color-mix(in srgb, var(--rc) 55%, transparent); background: color-mix(in srgb, var(--rc) 12%, transparent); }
+
+/* part card */
+.rpg-card { --rc: #a7adb5; position: relative; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 9%, rgba(16, 17, 20, .94)), rgba(14, 15, 18, .94) 60%);
+  border: 1px solid color-mix(in srgb, var(--rc) 38%, var(--line)); border-top: 2px solid var(--rc); padding: 10px 12px 10px; min-width: 0; outline: none;
+  transition: border-color .15s, transform .15s, box-shadow .15s; }
+.rpg-card.r-legendario, .rpg-card.r-mitico { box-shadow: inset 0 0 22px color-mix(in srgb, var(--rc) 14%, transparent); }
+.rpg-card.sel, .rpg-card:hover, .rpg-card.focus { border-color: var(--rc); box-shadow: 0 0 0 1px var(--rc), 0 6px 24px rgba(0, 0, 0, .45); }
+.rpg-card-head { display: flex; align-items: center; gap: 10px; }
+.rpg-card-head .slot { width: 30px; height: 30px; color: var(--rc); padding: 4px; border: 1px solid color-mix(in srgb, var(--rc) 40%, transparent); }
+.rpg-card-head .tt { flex: 1; min-width: 0; }
+.rpg-card-head .nm { font-family: var(--font-h); font-weight: 700; font-size: 16px; letter-spacing: .02em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rpg-card-head .meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-size: 12px; color: var(--dim); }
+.rpg-card-head .pw { text-align: right; font-family: var(--font-h); line-height: 1.05; }
+.rpg-card-head .pw b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+.rpg-card-head .pw span { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.rpg-card-body { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); display: grid; gap: 3px; }
+.rpg-sl { display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: #d9dde2; }
+.rpg-sl .n { flex: 1; color: var(--dim); }
+.rpg-sl.pri .n { color: #e7eaee; }
+.rpg-sl b { font-family: var(--font-h); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.rpg-sl .d, .rpg-card-head .pw .d { font-family: var(--font-h); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.d.up { color: var(--green); }
+.d.down { color: #ff5a4e; }
+.rpg-perk { margin-top: 6px; padding: 6px 8px; border-left: 2px solid var(--rc); background: color-mix(in srgb, var(--rc) 10%, transparent); font-size: 12.5px; line-height: 1.35; }
+.rpg-perk b { display: block; font-family: var(--font-h); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--rc); }
+.rpg-perk span { color: #d9dde2; }
+.rpg-card-flags { position: absolute; right: 8px; bottom: 6px; display: flex; gap: 6px; align-items: center; font-family: var(--font-h); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+.rpg-card-flags .eq { color: var(--green); }
+.rpg-card-flags .nw { color: var(--amber); }
+.rpg-card-flags .lk { width: 13px; height: 13px; color: var(--dim); }
+.rpg-card.compact .rpg-card-flags { bottom: 4px; }

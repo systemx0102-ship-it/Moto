@@ -8,6 +8,7 @@ import { Save, QUALITY } from '../core/Settings.js';
 import { Audio } from '../core/Audio.js';
 import { Input } from '../core/Input.js';
 import { formatTime, clamp } from '../core/utils.js';
+import { installRpgUI } from '../rpg/ui/index.js';
 
 // Line icons (24px grid, stroked) for action buttons; main-menu entries are text only.
 const SVG = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
@@ -24,6 +25,7 @@ const ICON = {
   clear: SVG('<path d="M6 6l12 12M18 6L6 18"/>'),
 };
 const MENU_DESC = {
+  leyenda: 'Rol sobre ruedas: sube de nivel, consigue piezas legendarias, aprende talentos y derrota a los jefes de cada región para ganarte sus motos.',
   race: 'Una carrera contra rivales controlados por la IA en el circuito que elijas.',
   champ: 'Seis rondas, puntuación de Gran Premio. Gana el que más puntos sume.',
   trial: 'Vuelta lanzada contra el reloj y contra tu propio fantasma.',
@@ -156,6 +158,7 @@ export class UI {
     const s = this._screen();
     const bike = BIKE_BY_ID[Save.data.garage.bike] || BIKES[0];
     const entries = [
+      ['leyenda', 'Modo Leyenda', () => this.rpgHub()],
       ['race', 'Carrera rápida', () => this.trackSelect('race')],
       ['champ', 'Campeonato', () => this.champHub()],
       ['trial', 'Contrarreloj', () => this.trackSelect('trial')],
@@ -571,3 +574,5 @@ export class UI {
     this.root.appendChild(box);
   }
 }
+
+installRpgUI(UI);

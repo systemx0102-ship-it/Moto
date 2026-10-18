@@ -35,7 +35,10 @@ function buildCss() {
     fontFace('Barlow Condensed', '@fontsource/barlow-condensed/files/barlow-condensed-latin-600-normal.woff2', 600),
     fontFace('Barlow Condensed', '@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff2', 700),
   ].join('\n');
-  const css = fs.readFileSync(path.join(root, 'src/ui/ui.css'), 'utf8');
+  // the base UI sheet, then the RPG mode's sheets (src/rpg/rpg.css first, then the rest)
+  const rpgDir = path.join(root, 'src/rpg');
+  const rpgCss = fs.existsSync(rpgDir) ? fs.readdirSync(rpgDir).filter((f) => f.endsWith('.css')).sort((a, b) => (a === 'rpg.css' ? -1 : b === 'rpg.css' ? 1 : a.localeCompare(b))).map((f) => `src/rpg/${f}`) : [];
+  const css = ['src/ui/ui.css', ...rpgCss].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   fs.writeFileSync(path.join(dist, 'style.css'), fonts + '\n' + css);
 }
 
