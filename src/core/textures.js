@@ -159,6 +159,7 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
 // Generic ground (grass, sand, snow, dirt, gravel, rock, forest)
 const GROUND = {
   grass: { a: [58, 92, 34], b: [96, 128, 52], c: [44, 64, 28], scale: 6, blades: true, rough: 235, bump: 2.5 },
+  wildGrass: { a: [50, 70, 30], b: [88, 98, 46], c: [38, 48, 24], scale: 5, blades: true, pebbles: true, rough: 240, bump: 3 },
   dryGrass: { a: [120, 116, 60], b: [150, 140, 80], c: [92, 88, 48], scale: 6, blades: true, rough: 240, bump: 2.5 },
   sand: { a: [196, 120, 70], b: [222, 156, 98], c: [160, 92, 54], scale: 4, ripples: true, rough: 230, bump: 2 },
   snow: { a: [228, 234, 244], b: [250, 252, 255], c: [196, 208, 226], scale: 3, rough: 150, bump: 1.5 },

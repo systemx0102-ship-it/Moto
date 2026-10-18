@@ -47,7 +47,7 @@ export const THEMES = {
   },
   forest: {
     rockGround: 'mossStone', dirtGround: 'dirt', dirtAmt: 0.7,
-    ground: 'forest', runoffGround: 'grass', barrier: 'armco', fence: false,
+    ground: 'forest', runoffGround: 'wildGrass', barrier: 'armco', fence: false,
     road: { base: [50, 52, 56], edge: '#f0f0f0', centerDash: true, centerColor: '#f0f0f0', rubber: false },
     terrain: { amp: 40, scale: 360, base: 0, ridged: false, color: 0x4a6a3a, rockColor: 0x5a5a50 },
     far: { height: 220, color: 0x2a3a34, snow: false },

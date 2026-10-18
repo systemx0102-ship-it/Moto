@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { rng, clamp } from '../core/utils.js';
 import { leafClusterTexture, firFrondTexture, pineTuftTexture, palmFrondTexture, grassTexture, fernTexture, barkTexture } from './vegTextures.js';
+import { groundTextures } from '../core/textures.js';
 
 export const WIND = { time: { value: 0 }, strength: { value: 1 } };
 
@@ -490,6 +491,52 @@ export class Vegetation {
     this._instanced(geo, mat, items, [0.7, 1.3], { shadow: false, tint, sink: 0.03 });
   }
 
+  // forest-floor clutter: fallen logs, cut stumps and moss-covered boulders
+  _debris({ logs = 0, stumps = 0, rocks = 0, minD = 1.5, maxD = 45 } = {}) {
+    const bark = barkTexture('pine');
+    const r = this.r;
+    const mossy = (g, moss = 0.6) => {
+      const n = g.attributes.normal, col = new Float32Array(n.count * 3);
+      for (let i = 0; i < n.count; i++) {
+        const up = clamp((n.getY(i) - 0.15) * 1.6, 0, 1) * moss * (0.7 + r() * 0.3);
+        col[i * 3] = 1 - up * 0.62; col[i * 3 + 1] = 1 - up * 0.25; col[i * 3 + 2] = 1 - up * 0.7;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return g;
+    };
+    if (logs) {
+      const g = mossy(new THREE.CylinderGeometry(0.2, 0.24, 5.5, 12, 3).rotateZ(Math.PI / 2).translate(0, 0.17, 0), 0.8);
+      const m = new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, roughness: 0.95, vertexColors: true, color: 0x9a9486 });
+      this._instanced(g, m, this._place(Math.round(logs * this.q.density), minD, maxD, { pow: 1.3 }), [0.6, 1.25], { tint: 0.15, sink: 0.05 });
+    }
+    if (stumps) {
+      const g = new THREE.CylinderGeometry(0.26, 0.36, 0.55, 12, 1).translate(0, 0.22, 0);
+      const n = g.attributes.normal, col = new Float32Array(n.count * 3);
+      for (let i = 0; i < n.count; i++) { const top = n.getY(i) > 0.9; col.set(top ? [2.2, 1.7, 1.15] : [0.9, 0.95, 0.85], i * 3); }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const m = new THREE.MeshStandardMaterial({ map: bark.map, normalMap: bark.normalMap, roughness: 0.95, vertexColors: true, color: 0x8a8476 });
+      this._instanced(g, m, this._place(Math.round(stumps * this.q.density), minD, maxD, { pow: 1.3 }), [0.6, 1.4], { tint: 0.15, sink: 0.04 });
+    }
+    if (rocks) {
+      const st = groundTextures('mossStone', 41);
+      const m = new THREE.MeshStandardMaterial({ map: st.map, normalMap: st.normalMap, roughness: 0.9, vertexColors: true });
+      for (let v = 0; v < 3; v++) {
+        const g = new THREE.IcosahedronGeometry(0.6, 3);
+        const p = g.attributes.position, rr = rng(300 + v * 7);
+        const ph = [rr() * 6, rr() * 6, rr() * 6];
+        for (let i = 0; i < p.count; i++) {
+          const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+          const k = 1 + Math.sin(x * 3.1 + ph[0]) * 0.12 + Math.sin(y * 4.3 + ph[1]) * 0.1 + Math.sin(z * 2.7 + ph[2]) * 0.12;
+          p.setXYZ(i, x * k * 1.2, Math.max(-0.15, y * k * 0.62), z * k);
+        }
+        g.computeVertexNormals();
+        mossy(g, 0.9);
+        const items = this._place(Math.round((rocks / 3) * this.q.density), minD, maxD, { pow: 1.4 });
+        this._instanced(g, m, items, [0.5, 1.8], { tint: 0.12, sink: 0.08 });
+      }
+    }
+  }
+
   build() {
     const th = this.track.def.theme;
     const snowy = th === 'alpine';
@@ -518,13 +565,17 @@ export class Vegetation {
       this._species({ make: (s) => firTree(s, true), leafTex: firFrondTexture(true, 2), barkKind: 'pine', count: S(620), far: 1800, scale: [0.7, 1.25], seed: 61, minD: 3, wind: { amp: 0.12, freq: 0.9 }, tint: 0.12 });
       this._ground(grassTexture('snow', 10), S(1800 * grassN), 0, 25, [1.0, 0.45], { wind: 0.6 });
     } else if (th === 'forest') {
-      this._species({ make: (s) => firTree(s, false), leafTex: firFrondTexture(false, 3), barkKind: 'pine', count: S(560), far: 2600, scale: [0.75, 1.3], seed: 71, minD: 2.5, wind: { amp: 0.2, freq: 1.0 } });
-      this._species({ make: (s) => broadleafTree(s, 'beech'), leafTex: leafClusterTexture('beech', 7), barkKind: 'oak', count: S(300), far: 900, scale: [0.85, 1.35], seed: 81, minD: 2.5, wind: { amp: 0.35, freq: 1.4 } });
-      this._species({ make: (s) => broadleafTree(s, 'birch'), leafTex: leafClusterTexture('birch', 8), barkKind: 'birch', count: S(140), far: 300, scale: [0.85, 1.2], seed: 91, minD: 3, wind: { amp: 0.4, freq: 1.6 } });
-      this._ground(fernTexture(1), S(3200 * Math.max(0.35, grassN)), 0, 55, [1.5, 1.0], { wind: 0.7 });
-      this._ground(leafClusterTexture('bush', 9), S(700), 0, 60, [1.9, 1.4], { wind: 0.5 });
+      // dense mixed forest crowding the road: tall firs, beech and birch, young firs in the understory
+      this._species({ make: (s) => firTree(s, false), leafTex: firFrondTexture(false, 3), barkKind: 'pine', count: S(1500), far: 5200, scale: [0.75, 1.35], seed: 71, minD: 1.8, wind: { amp: 0.2, freq: 1.0 } });
+      this._species({ make: (s) => broadleafTree(s, 'beech'), leafTex: leafClusterTexture('beech', 7), barkKind: 'oak', count: S(650), far: 1800, scale: [0.85, 1.4], seed: 81, minD: 2, wind: { amp: 0.35, freq: 1.4 } });
+      this._species({ make: (s) => broadleafTree(s, 'birch'), leafTex: leafClusterTexture('birch', 8), barkKind: 'birch', count: S(260), far: 400, scale: [0.85, 1.2], seed: 91, minD: 2.5, wind: { amp: 0.4, freq: 1.6 } });
+      this._species({ make: (s) => firTree(s + 200, false), leafTex: firFrondTexture(false, 4), barkKind: 'pine', count: S(700), far: 0, scale: [0.22, 0.42], seed: 171, minD: 1.2, wind: { amp: 0.3, freq: 1.5 } });
+      this._ground(fernTexture(1), S(7000 * Math.max(0.35, grassN)), 0, 50, [1.7, 1.1], { wind: 0.7 });
+      this._ground(leafClusterTexture('bush', 9), S(1600), 0, 55, [1.9, 1.4], { wind: 0.5 });
       this._ground(grassTexture('green', 11), S(5000 * grassN), 0, 30, [1.1, 0.6]);
-      this._ground(grassTexture('green', 12), S(1500 * grassN), 0, 0, [1.0, 0.5], { inRunoff: true });
+      this._ground(grassTexture('green', 12), S(4500 * grassN), 0, 0, [1.0, 0.55], { inRunoff: true });
+      this._ground(grassTexture('flowers', 13), S(1200 * grassN), 0, 0, [1.0, 0.5], { inRunoff: true });
+      this._debris({ logs: 150, stumps: 170, rocks: 240 });
     }
     return this.group;
   }
