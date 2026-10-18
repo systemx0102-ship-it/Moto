@@ -8,6 +8,7 @@ import { BikePhysics } from './BikePhysics.js';
 import { AIController } from './AIController.js';
 import { CameraController, CAM_NAMES } from './CameraController.js';
 import { Effects } from './Effects.js';
+import { SpeedFX } from './SpeedFX.js';
 import { Recorder, GhostTrack } from './Replay.js';
 import { HUD } from '../ui/HUD.js';
 import { Input } from '../core/Input.js';
@@ -142,6 +143,7 @@ export class Race {
 
     this.cam = new CameraController(this.game.engine.camera, this.track);
     this.cam.set(Save.settings.camera || 0);
+    this.speedFx = new SpeedFX(this.scene, Save.quality, this);
     this.recorder = new Recorder(this.bikes.length);
     onProgress(0.92, 'Afinando motores…');
     this.hud = new HUD(this.game.ui.layer, this);
@@ -259,6 +261,7 @@ export class Race {
     this.ts.update(dt, this.game.engine.camera, new THREE.Vector3(P.phys.x, P.phys.y, P.phys.z));
     this.effects.update(dt, this.game.engine.camera, this.game.engine.renderer, this.scene.fog);
     this._postFx(dt);
+    this.speedFx.update(dt, this.game.engine.camera);
     this.hud.update(dt);
     // player dash
     this._dashT = (this._dashT || 0) - dt;
@@ -740,6 +743,7 @@ export class Race {
     if (this.playerVoice) this.playerVoice.stop();
     for (const [, v] of this.voices || []) v.stop();
     this.voices?.clear();
+    this.speedFx?.dispose();
     this.hud?.dispose();
     this.effects?.dispose();
     for (const b of this.bikes) b.model.dispose();
