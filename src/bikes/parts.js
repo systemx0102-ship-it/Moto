@@ -287,27 +287,70 @@ export function fork(ctx, o = {}) {
 }
 
 // Front mudguard (moves with wheel)
+// Moulded fender shell around a wheel: a crowned arch hugging the tyre with skirts
+// that deepen mid-span and narrowing ends. Angle t runs from the bottom toward the
+// front (t = PI is the top). Built as outer + inner skin so it reads from both sides.
+function archFender(ctx, wheelPos, o, defGroup, defMat) {
+  const R = o.R, w = o.w;
+  const t0 = o.from, len = o.len;
+  const crown = o.crown ?? w * 0.22;
+  const skirt = o.skirts ?? 0.035;
+  const endW = o.endW ?? 0.6;
+  const nu = 32, nv = 16;
+  const build = (off, flip) => {
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= nu; i++) {
+      const u = i / nu;
+      const t = t0 + len * u;
+      const env = Math.sin(Math.PI * u);
+      const hw = (w / 2) * (endW + (1 - endW) * Math.pow(env, 0.45));
+      const sk = skirt * Math.pow(env, 0.6) + 0.004;
+      const prof = [[R - sk, -hw * 0.96]];
+      for (let j = 0; j <= nv; j++) { const a = -Math.PI / 2 + (Math.PI * j) / nv; prof.push([R + crown * Math.pow(Math.cos(a), 0.7) * (0.6 + 0.4 * env), hw * Math.sin(a)]); }
+      prof.push([R - sk, hw * 0.96]);
+      for (const [r, z] of prof) {
+        const rr = r - off;
+        pos.push(wheelPos[0] + Math.sin(t) * rr, wheelPos[1] - Math.cos(t) * rr, z);
+        uv.push(u, (z / w) + 0.5);
+      }
+    }
+    const cols = nv + 3;
+    for (let i = 0; i < nu; i++) {
+      for (let j = 0; j < cols - 1; j++) {
+        const a = i * cols + j, b = a + 1, c = a + cols, d = c + 1;
+        if (flip) idx.push(a, b, c, b, d, c); else idx.push(a, c, b, b, c, d);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  };
+  const outer = build(0, false), inner = build(0.003, true);
+  // make sure the outer skin faces away from the wheel
+  const n = outer.attributes.normal, p = outer.attributes.position;
+  const mid = Math.floor(n.count / 2);
+  const rx = p.getX(mid) - wheelPos[0], ry = p.getY(mid) - wheelPos[1];
+  if (n.getX(mid) * rx + n.getY(mid) * ry < 0) { flipGeometry(outer); flipGeometry(inner); }
+  for (const g of [outer, inner]) ctx.A.add(o.group || defGroup, g, o.mat || defMat);
+}
+
 export function frontFender(ctx, o = {}) {
   const R = ctx.front.R + (o.gap ?? 0.025);
   const w = o.w ?? ctx.front.w * 1.15;
-  const t0 = o.from ?? 0.95, len = o.len ?? 2.0;
-  const outer = new THREE.CylinderGeometry(R, R, w, 32, 1, true, t0, len);
-  outer.rotateX(Math.PI / 2);
-  const inner = new THREE.CylinderGeometry(R - 0.004, R - 0.004, w, 32, 1, true, t0, len);
-  inner.rotateX(Math.PI / 2);
-  flipGeometry(inner);
-  for (const g of [outer, inner]) {
-    g.translate(ctx.front.x + (o.dx ?? 0), ctx.front.y + (o.dy ?? 0), 0);
-    ctx.A.add(o.group || 'forkSlider', g, o.mat || ctx.mats.paint);
-  }
-  const skirt = o.skirts ?? 0.035;
-  if (skirt > 0) {
-    for (const z of [-w / 2, w / 2]) {
-      // fender angle t (from the bottom toward the front) -> ring phi = t - PI/2
-      const sk = new THREE.RingGeometry(R - skirt, R + 0.002, 28, 1, t0 - Math.PI / 2, len);
-      sk.translate(ctx.front.x + (o.dx ?? 0), ctx.front.y + (o.dy ?? 0), z);
-      if (z < 0) flipGeometry(sk);
-      ctx.A.add(o.group || 'forkSlider', sk, o.mat || ctx.mats.paint);
+  const fpos = [ctx.front.x + (o.dx ?? 0), ctx.front.y + (o.dy ?? 0)];
+  archFender(ctx, fpos, { ...o, R, w, from: o.from ?? 0.95, len: o.len ?? 2.0 }, 'forkSlider', ctx.mats.paint);
+  // mounting brackets out to the fork sliders
+  if ((o.group || 'forkSlider') === 'forkSlider' && o.brackets !== false) {
+    const t = (o.from ?? 0.95) + (o.len ?? 2.0) * 0.42;
+    for (const s of [-1, 1]) {
+      const z0 = w / 2 - 0.004, z1 = ctx.fw - 0.022;
+      if (z1 <= z0) continue;
+      const b = box(0.05, 0.012, z1 - z0 + 0.01, 0.004);
+      place(b, { p: [fpos[0] + Math.sin(t) * (R - 0.012), fpos[1] - Math.cos(t) * (R - 0.012), s * (z0 + z1) / 2], r: [0, 0, t] });
+      ctx.A.add('forkSlider', b, M.black());
     }
   }
 }
@@ -316,25 +359,7 @@ export function frontFender(ctx, o = {}) {
 export function rearFender(ctx, o = {}) {
   const R = ctx.rear.R + (o.gap ?? 0.03);
   const w = o.w ?? ctx.rear.w * 1.1;
-  const t0 = o.from ?? 2.6, len = o.len ?? 1.6;
-  const outer = new THREE.CylinderGeometry(R, R, w, 28, 1, true, t0, len);
-  outer.rotateX(Math.PI / 2);
-  const inner = new THREE.CylinderGeometry(R - 0.004, R - 0.004, w, 28, 1, true, t0, len);
-  inner.rotateX(Math.PI / 2);
-  flipGeometry(inner);
-  for (const g of [outer, inner]) {
-    g.translate(ctx.rear.x, ctx.rear.y, 0);
-    ctx.A.add(o.group || 'swingarm', g, o.mat || M.black());
-  }
-  const skirt = o.skirts ?? 0.03;
-  if (skirt > 0) {
-    for (const z of [-w / 2, w / 2]) {
-      const sk = new THREE.RingGeometry(R - skirt, R + 0.002, 28, 1, t0 - Math.PI / 2, len);
-      sk.translate(ctx.rear.x, ctx.rear.y, z);
-      if (z < 0) flipGeometry(sk);
-      ctx.A.add(o.group || 'swingarm', sk, o.mat || M.black());
-    }
-  }
+  archFender(ctx, [ctx.rear.x, ctx.rear.y], { ...o, R, w, from: o.from ?? 2.6, len: o.len ?? 1.6, skirts: o.skirts ?? 0.03 }, 'swingarm', M.black());
 }
 
 // ---------------------------------------------------------------------------

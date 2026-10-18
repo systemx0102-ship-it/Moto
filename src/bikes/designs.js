@@ -6,6 +6,7 @@ import {
   tailLight, mirror, handlebar, dash, footpegs, numberPlate, closedLathe, details,
   loft, loftProfile, tube, taperTube, lathe, box, cyl, sphere, place, rod, spring, torus, mirrorZ, V, DEG,
 } from './parts.js';
+import { engineUnit } from './engine.js';
 import { M } from '../core/materials.js';
 
 // ---------------------------------------------------------------------------
@@ -197,14 +198,11 @@ function superbike(ctx) {
   chain(ctx);
   twinSpar(ctx, { mat: mats.frame });
   // engine (mostly hidden)
-  crankcase(ctx, [0.08, 0.32, 0], [0.42, 0.2, 0.3], { tilt: 0.05, covers: true });
-  const blk = box(0.2, 0.24, 0.34, 0.03); place(blk, { p: [0.2, 0.52, 0], r: [0, 0, -0.5] }); A.add('chassis', blk, M.engine());
-  const hc = box(0.12, 0.08, 0.32, 0.03); place(hc, { p: [0.27, 0.66, 0], r: [0, 0, -0.5] }); A.add('chassis', hc, mats.accentSolid);
   radiator(ctx, [0.37, 0.52, 0], 0.27, 0.28, { tilt: -0.25 });
+  const eng = engineUnit(ctx, { pos: [0.1, 0.3], cyl: 4, tilt: 0.5, cooling: 'liquid', caseMat: M.engine(0x1f2124), coverMat: M.engine(0x4a4d52), camMat: M.anodized(0x8a1010) });
   // headers -> collector -> right side muffler
-  for (let i = 0; i < 4; i++) {
-    const z = -0.09 + i * 0.06;
-    header(ctx, [[0.33, 0.56, z], [0.42, 0.4, z * 1.1], [0.36, 0.18, z * 0.6], [0.15, 0.12, z * 0.3], [-0.02, 0.15, 0.06]], 0.018);
+  for (const [x, y, z] of eng.ports) {
+    header(ctx, [[x, y, z], [x + 0.07, y - 0.1, z * 1.05], [0.4, 0.26, z * 0.9], [0.34, 0.14, z * 0.6], [0.15, 0.11, z * 0.3], [-0.02, 0.15, 0.06]], 0.018);
   }
   header(ctx, [[-0.02, 0.15, 0.06], [-0.14, 0.2, 0.14], [-0.22, 0.27, 0.17]], 0.03);
   muffler(ctx, [-0.22, 0.27, 0.17], [-0.56, 0.42, 0.17], { type: 'hex', r: 0.06, mat: M.titanium(), endcap: M.carbon() });
@@ -237,15 +235,13 @@ function gp(ctx) {
   swingarm(ctx, { style: 'banana', mat: M.carbon(), h: 0.06 });
   chain(ctx);
   twinSpar(ctx, { mat: M.aluminum() });
-  crankcase(ctx, [0.06, 0.32, 0], [0.4, 0.2, 0.28], { tilt: 0.08 });
-  // V4: front + rear banks
-  for (const [x, a] of [[0.24, -0.75], [0.0, 0.55]]) {
-    const b = box(0.16, 0.24, 0.3, 0.03); place(b, { p: [x, 0.52, 0], r: [0, 0, a] }); A.add('chassis', b, M.engine(0x2a2c30));
-  }
   radiator(ctx, [0.38, 0.52, 0], 0.27, 0.3, { tilt: -0.22 });
-  // exhaust: under seat, exits high
-  header(ctx, [[0.33, 0.5, 0.06], [0.4, 0.3, 0.08], [0.2, 0.16, 0.1], [-0.05, 0.2, 0.12], [-0.2, 0.4, 0.12], [-0.42, 0.62, 0.07]], 0.022);
-  header(ctx, [[0.33, 0.5, -0.06], [0.4, 0.3, -0.08], [0.2, 0.16, -0.1], [-0.05, 0.2, -0.12], [-0.25, 0.32, -0.15], [-0.42, 0.36, -0.16]], 0.022);
+  // 90-degree V4: front bank forward, rear bank under the tank
+  const eng = engineUnit(ctx, { pos: [0.12, 0.3], layout: 'v', cyl: 2, tilt: 0.72, vAngle: Math.PI / 2, scale: 0.85, pitch: 0.08, cooling: 'liquid', caseMat: M.engine(0x1a1b1e), coverMat: M.carbon(), camMat: M.engine(0x2e3034) });
+  eng.ports.forEach(([x, y, z], i) => {
+    if (i < 2) header(ctx, [[x, y, z], [x + 0.06, y - 0.1, z * 1.1], [0.36, 0.2, z], [0.15, 0.12, z * 0.8 - 0.05], [-0.1, 0.22, -0.12], [-0.25, 0.32, -0.15], [-0.42, 0.36, -0.16]], 0.02);
+    else header(ctx, [[x, y, z], [x - 0.06, y + 0.03, z], [-0.25, 0.52, z * 0.8], [-0.42, 0.62, 0.07]], 0.02);
+  });
   muffler(ctx, [-0.42, 0.62, 0.07], [-0.66, 0.72, 0.07], { type: 'round', r: 0.045, mat: M.titanium() });
   muffler(ctx, [-0.42, 0.36, -0.16], [-0.62, 0.44, -0.16], { type: 'round', r: 0.04, mat: M.titanium() });
   sportBody(ctx, { k: 0.95, tailX: -0.76, hump: 0.085, bellyMat: M.carbon() });
@@ -309,14 +305,10 @@ function naked(ctx) {
   }
   A.add('chassis', rod(ctx.sp(ctx.Lf - 0.01), ctx.sp(ctx.Lf + ctx.headLen + 0.01), 0.036, 16), fm);
   // inline triple (visible)
-  crankcase(ctx, [0.04, 0.3, 0], [0.4, 0.2, 0.26], { tilt: 0.05, coverMat: M.engine(0x6a6e75) });
-  finnedCylinder(ctx, [0.13, 0.4, 0], [0.4, 1, 0], 0.22, { core: 0.12, fin: 0.135, fins: 6, square: true, mat: M.engine(0x2f3236) });
-  const head = box(0.16, 0.08, 0.3, 0.025); place(head, { p: [0.23, 0.64, 0], r: [0, 0, -0.38] }); A.add('chassis', head, M.engine(0x6a6e75));
-  const vc = box(0.12, 0.04, 0.27, 0.02); place(vc, { p: [0.25, 0.69, 0], r: [0, 0, -0.38] }); A.add('chassis', vc, mats.accentSolid);
-  radiator(ctx, [0.36, 0.48, 0], 0.32, 0.24, { tilt: -0.15 });
-  for (let i = 0; i < 3; i++) {
-    const z = -0.07 + i * 0.07;
-    header(ctx, [[0.3, 0.58, z], [0.4, 0.42, z], [0.32, 0.2, z * 0.5], [0.1, 0.14, 0.04], [-0.06, 0.18, 0.1]], 0.019, M.titanium());
+  radiator(ctx, [0.38, 0.48, 0], 0.3, 0.24, { tilt: -0.15 });
+  const eng = engineUnit(ctx, { pos: [0.05, 0.31], cyl: 3, tilt: 0.38, cooling: 'liquid', caseMat: M.engine(0x232528), coverMat: M.engine(0x6a6e75), camMat: mats.accentSolid });
+  for (const [x, y, z] of eng.ports) {
+    header(ctx, [[x, y, z], [x + 0.06, y - 0.08, z * 1.05], [0.36, 0.24, z * 0.7], [0.3, 0.14, z * 0.4], [0.1, 0.12, 0.04], [-0.06, 0.18, 0.1]], 0.019, M.titanium());
   }
   muffler(ctx, [-0.06, 0.2, 0.12], [-0.3, 0.3, 0.17], { type: 'cone', r: 0.06, mat: M.darkChrome(), endcap: M.carbon() });
   // angular tank + scoops
@@ -589,12 +581,11 @@ function cafe(ctx) {
     A.add('chassis', tube([[H[0], H[1], s * 0.03], [H[0] - 0.06, 0.4, s * 0.08], [0.2, 0.15, s * 0.09], [-0.12, 0.14, s * 0.1], [px, py - 0.02, s * 0.1]], 0.015), fm);
   }
   // parallel twin, upright finned barrels, polished covers
-  crankcase(ctx, [0.03, 0.29, 0], [0.34, 0.18, 0.26], { coverMat: M.chrome(), coverR: 0.08 });
-  for (const z of [-0.06, 0.06]) finnedCylinder(ctx, [0.07, 0.37, z], [0.22, 1, 0], 0.24, { core: 0.05, fin: 0.065, fins: 10, mat: M.aluminum() });
-  const head = box(0.14, 0.07, 0.28, 0.025); place(head, { p: [0.13, 0.64, 0], r: [0, 0, -0.2] }); A.add('chassis', head, M.aluminum());
+  const eng = engineUnit(ctx, { pos: [0.03, 0.29], cyl: 2, pitch: 0.085, tilt: 0.2, scale: 0.95, rearGearbox: 0.22, cooling: 'air', caseMat: M.engine(0x9a9da2), finMat: M.aluminum(), coverMat: M.chrome(), camMat: M.aluminum(), filter: false });
   // twin upswept megaphones
-  for (const s of [-1, 1]) {
-    header(ctx, [[0.16, 0.56, s * 0.06], [0.28, 0.45, s * 0.1], [0.22, 0.22, s * 0.14], [0.0, 0.2, s * 0.16], [-0.2, 0.27, s * 0.17]], 0.022, M.chrome());
+  for (const [x, y, z] of eng.ports) {
+    const s = z < 0 ? -1 : 1;
+    header(ctx, [[x, y, z], [x + 0.07, y - 0.06, s * 0.08], [0.27, 0.36, s * 0.11], [0.22, 0.22, s * 0.14], [0.0, 0.2, s * 0.16], [-0.2, 0.27, s * 0.17]], 0.022, M.chrome());
     muffler(ctx, [-0.2, 0.27, s * 0.17], [-0.68, 0.42, s * 0.17], { type: 'megaphone', r: 0.05, mat: M.chrome() });
   }
   // long tank with knee dents
@@ -668,11 +659,7 @@ function drag(ctx) {
     A.add('chassis', tube([[H[0], H[1] + 0.1, s * 0.03], [H[0] - 0.3, H[1] - 0.02, s * 0.12], [-0.2, 0.62, s * 0.13], [-0.55, 0.66, s * 0.1]], 0.02), fm);
   }
   // V4 muscle engine, chrome, big
-  crankcase(ctx, [0.0, 0.3, 0], [0.5, 0.22, 0.3], { coverMat: M.chrome(), coverR: 0.1 });
-  for (const sx of [-1, 1]) {
-    const b = box(0.2, 0.26, 0.32, 0.04); place(b, { p: [sx * 0.15, 0.55, 0], r: [0, 0, -sx * 0.6] }); A.add('chassis', b, M.engine(0x2a2a2e));
-    const hc = box(0.12, 0.06, 0.34, 0.025); place(hc, { p: [sx * 0.23, 0.67, 0], r: [0, 0, -sx * 0.6] }); A.add('chassis', hc, M.chrome());
-  }
+  const eng = engineUnit(ctx, { pos: [0.02, 0.3], layout: 'v', cyl: 2, tilt: 0.62, vAngle: 1.25, scale: 1.1, pitch: 0.085, cooling: 'liquid', caseMat: M.engine(0x202124), coverMat: M.chrome(), camMat: M.chrome(), filterMat: M.chrome() });
   // fake tank (airbox) + giant chrome air scoops
   const tank = loft([
     { x: 0.46, y: 0.82, w: 0.1, ht: 0.06, hb: 0.08, n: 3 },
@@ -691,10 +678,12 @@ function drag(ctx) {
     const mouth = sphere(0.07, 14, 10); mouth.scale(0.15, 1.1, 0.9); mouth.translate(0.505, 0.74, s * 0.2); A.add('chassis', mouth, M.black());
   }
   // 4 exhausts (2 per side) low
-  for (const s of [-1, 1]) {
-    header(ctx, [[0.3, 0.5, s * 0.1], [0.35, 0.25, s * 0.14], [0.1, 0.13, s * 0.18], [-0.2, 0.18, s * 0.2]], 0.026, M.chrome());
-    muffler(ctx, [-0.2, 0.18, s * 0.2], [-0.62, 0.3, s * 0.22], { type: 'round', r: 0.058, mat: M.chrome() });
-  }
+  eng.ports.forEach(([x, y, z], i) => {
+    const s = z < 0 ? -1 : 1;
+    if (i < 2) header(ctx, [[x, y, z], [x + 0.08, y - 0.12, z * 1.3], [0.35, 0.25, s * 0.14], [0.1, 0.13, s * 0.18], [-0.2, 0.18, s * 0.2]], 0.026, M.chrome());
+    else header(ctx, [[x, y, z], [x - 0.05, y - 0.08, s * 0.14], [-0.1, 0.24, s * 0.19], [-0.2, 0.19, s * 0.2]], 0.024, M.chrome());
+  });
+  for (const s of [-1, 1]) muffler(ctx, [-0.2, 0.18, s * 0.2], [-0.62, 0.3, s * 0.22], { type: 'round', r: 0.058, mat: M.chrome() });
   seatLoft(ctx, -0.14, -0.5, 0.72, 0.17, 0.05, { frontRise: 0.04 });
   const tail = loft([
     { x: -0.46, y: 0.72, w: 0.13, ht: 0.04, hb: 0.04, n: 3 },
@@ -739,16 +728,15 @@ function mxBody(ctx, sm) {
   }
   A.add('chassis', tube([[H[0] - 0.02, H[1] - 0.02, 0], [H[0] - 0.08, 0.4, 0], [0.24, 0.24, 0]], 0.018), fm);
   // single cylinder
-  crankcase(ctx, [0.0, 0.33, 0], [0.3, 0.2, 0.2], { coverR: 0.08, coverMat: M.engine(0x8a8f96) });
-  finnedCylinder(ctx, [0.04, 0.42, 0], [0.12, 1, 0], 0.22, { core: 0.06, fin: 0.07, fins: 4, mat: M.engine(0x2f3236) });
-  const head = box(0.14, 0.08, 0.16, 0.02); place(head, { p: [0.08, 0.68, 0], r: [0, 0, -0.1] }); A.add('chassis', head, M.engine(0x8a8f96));
   for (const s of [-1, 1]) radiator(ctx, [0.18, 0.62, s * 0.11], 0.04, 0.22, { tilt: -0.3 });
+  const eng = engineUnit(ctx, { pos: [0.0, 0.33], cyl: 1, pitch: 0.09, width: 0.2, tilt: 0.14, scale: 0.86, rearGearbox: 0.2, cooling: 'liquid', caseMat: M.engine(0x3a3d42), coverMat: M.engine(0x8a8f96), camMat: M.anodized(sm ? 0xc81e1e : 0xff6a00), filter: false });
+  const [epx, epy] = eng.ports[0];
   // exhaust
   if (sm) {
-    header(ctx, [[0.12, 0.62, 0.03], [0.22, 0.52, 0.07], [0.2, 0.32, 0.12], [0.0, 0.3, 0.14], [-0.25, 0.48, 0.14]], 0.022, M.titanium());
+    header(ctx, [[epx, epy, 0.0], [epx + 0.07, epy - 0.05, 0.05], [0.22, 0.42, 0.09], [0.2, 0.32, 0.12], [0.0, 0.3, 0.14], [-0.25, 0.48, 0.14]], 0.022, M.titanium());
     muffler(ctx, [-0.25, 0.48, 0.14], [-0.6, 0.66, 0.14], { type: 'hex', r: 0.05, mat: M.carbon(), endcap: M.titanium() });
   } else {
-    header(ctx, [[0.12, 0.62, 0.03], [0.22, 0.52, 0.08], [0.18, 0.38, 0.13], [-0.05, 0.5, 0.14], [-0.3, 0.66, 0.13]], 0.022, M.titanium());
+    header(ctx, [[epx, epy, 0.0], [epx + 0.07, epy - 0.05, 0.05], [0.2, 0.42, 0.1], [0.18, 0.38, 0.13], [-0.05, 0.5, 0.14], [-0.3, 0.66, 0.13]], 0.022, M.titanium());
     muffler(ctx, [-0.3, 0.66, 0.13], [-0.66, 0.8, 0.12], { type: 'round', r: 0.045, mat: M.aluminum(), endcap: M.black() });
   }
   // tank + shrouds (plastics)
@@ -944,15 +932,14 @@ function twostroke(ctx) {
   chain(ctx);
   twinSpar(ctx, { mat: mats.frame, z: 0.12 });
   // compact V4 2-stroke block
-  crankcase(ctx, [0.06, 0.32, 0], [0.32, 0.18, 0.26], { tilt: 0.05 });
-  for (const [x, a] of [[0.17, -0.7], [-0.02, 0.55]]) {
-    const b = box(0.12, 0.18, 0.28, 0.02); place(b, { p: [x, 0.5, 0], r: [0, 0, a] }); A.add('chassis', b, M.engine(0x55595f));
-  }
-  radiator(ctx, [0.35, 0.5, 0], 0.32, 0.26, { tilt: -0.2 });
+  radiator(ctx, [0.35, 0.5, 0], 0.3, 0.26, { tilt: -0.2 });
+  const eng = engineUnit(ctx, { pos: [0.1, 0.3], layout: 'v', cyl: 2, tilt: 0.75, vAngle: 1.4, scale: 0.8, pitch: 0.08, blockH: 0.13, headH: 0.05, twoStroke: true, cooling: 'liquid', caseMat: M.engine(0x55595f), coverMat: M.engine(0x8a8f96), filter: false });
+  const fp = eng.ports.slice(0, 2), rp = eng.ports.slice(2);
   // four expansion chambers: two below, two up under the tail
   for (const s of [-1, 1]) {
-    expansionChamber(ctx, [[0.26, 0.42, s * 0.06], [0.36, 0.3, s * 0.08], [0.32, 0.16, s * 0.1], [0.12, 0.11, s * 0.1], [-0.12, 0.13, s * 0.12], [-0.28, 0.2, s * 0.14], [-0.38, 0.26, s * 0.15]], 0.05);
-    expansionChamber(ctx, [[0.0, 0.56, s * 0.05], [-0.06, 0.48, s * 0.1], [-0.15, 0.5, s * 0.13], [-0.32, 0.6, s * 0.1], [-0.48, 0.7, s * 0.05], [-0.62, 0.78, s * 0.04]], 0.045);
+    const f = fp[s < 0 ? 0 : 1], r = rp[s < 0 ? 0 : 1];
+    expansionChamber(ctx, [[f[0], f[1], f[2]], [0.36, 0.3, s * 0.08], [0.32, 0.16, s * 0.1], [0.12, 0.11, s * 0.1], [-0.12, 0.13, s * 0.12], [-0.28, 0.2, s * 0.14], [-0.38, 0.26, s * 0.15]], 0.05);
+    expansionChamber(ctx, [[r[0], r[1], r[2]], [r[0] - 0.05, r[1] - 0.02, s * 0.1], [-0.15, 0.5, s * 0.13], [-0.32, 0.6, s * 0.1], [-0.48, 0.7, s * 0.05], [-0.62, 0.78, s * 0.04]], 0.045);
   }
   sportBody(ctx, { k: 0.9, nose: 0.94, tailX: -0.8, hump: 0.09, smooth: true, noUnder: true });
   sportFace(ctx, { k: 0.9, nose: 0.94, lights: false });

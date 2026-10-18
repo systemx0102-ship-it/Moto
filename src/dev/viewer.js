@@ -45,9 +45,11 @@ const views = {
   side: [dist, 0.7, 0], other: [-dist, 0.7, 0], front34: [dist * 0.7, 1.2, dist * 0.7], rear34: [dist * 0.6, 1.3, -dist * 0.75],
   closeF: [1.6, 0.6, 1.0], front: [0, 0.8, dist], rear: [0, 0.9, -dist], top: [0.01, dist * 1.2, 0.01], low: [dist * 0.6, 0.3, dist * 0.5],
 };
-const p = views[view] || views.side;
+const p = params.get('cam') ? params.get('cam').split(',').map(Number) : views[view] || views.side;
 cam.position.set(...p);
-cam.lookAt(view === 'closeF' ? new THREE.Vector3(0, 0.4, 0.7) : new THREE.Vector3(0, 0.55, ids.length > 1 ? -2.6 : 0));
+if (params.get('look')) cam.lookAt(new THREE.Vector3(...params.get('look').split(',').map(Number)));
+else cam.lookAt(view === 'closeF' ? new THREE.Vector3(0, 0.4, 0.7) : new THREE.Vector3(0, 0.55, ids.length > 1 ? -2.6 : 0));
+if (params.get('fov')) { cam.fov = +params.get('fov'); cam.updateProjectionMatrix(); }
 renderer.render(scene, cam);
 document.title = `ok build=${buildMs.toFixed(0)}ms tris=${tris} draws=${renderer.info.render.calls}`;
 window.__ready = true;
