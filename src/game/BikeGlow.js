@@ -103,8 +103,8 @@ const DECAL_FS = /* glsl */`
     float u = vUv.x, v = vUv.y;
     // skewed decals (headlight pools) also widen toward the far end like a real beam
     float vv = v / (1.0 + vSkew * 0.6 * (u + 1.0));
-    float f = exp(-(u * u * 2.6 + vv * vv * 3.6)) * max(0.0, 1.0 - vSkew * u);
-    f *= smoothstep(1.0, 0.72, max(abs(u), abs(v)));
+    float f = exp(-(u * u * 2.8 + vv * vv * 4.0)) * max(0.0, 1.0 - vSkew * u);
+    f *= smoothstep(1.0, 0.6, length(vec2(u, v)));
     gl_FragColor = vec4(vCol * f, 1.0);
     ${OUT}
   }`;
@@ -246,14 +246,14 @@ const BEAM_FS = /* glsl */`
       }
       t1 = max(ex, t0);
     }
-    // 7 samples along the chord, jittered per pixel so long chords never band
-    float seg = (t1 - t0) / 7.0, acc = 0.0;
+    // samples along the chord, jittered per pixel so long chords never band
+    float seg = (t1 - t0) / float(STEPS), acc = 0.0;
     float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    for (int i = 0; i < 7; i++) acc += dens(o + d * (t0 + seg * (float(i) + j)));
+    for (int i = 0; i < STEPS; i++) acc += dens(o + d * (t0 + seg * (float(i) + j)));
     // mist scatters forward (Henyey-Greenstein, g = 0.5): faint seen from behind the lamp,
     // stronger looking back into it; normalised to 1 seen side-on
     float ph = min(1.396 / pow(1.25 + d.x, 1.5), 1.8);
-    gl_FragColor = vec4(uColor * (acc * seg * ph * uInt * fogT(t0 + seg * 3.5)), 1.0);
+    gl_FragColor = vec4(uColor * (acc * seg * ph * uInt * fogT(t0 + seg * float(STEPS) * 0.5)), 1.0);
     ${OUT}
   }`;
 
@@ -306,11 +306,11 @@ class GlareBatch extends Batch {
   }
   add(x, y, z, r, g, b, frame, sx, sy, rot, pull, ax = 0, ay = 0, az = 0, axial = 0) {
     if (this.n >= this.max) return;
-    const i = this.n++, [P, C, S, A] = this.attrs;
-    P.array[i * 3] = x; P.array[i * 3 + 1] = y; P.array[i * 3 + 2] = z;
-    C.array[i * 4] = r; C.array[i * 4 + 1] = g; C.array[i * 4 + 2] = b; C.array[i * 4 + 3] = frame;
-    S.array[i * 4] = sx; S.array[i * 4 + 1] = sy; S.array[i * 4 + 2] = rot; S.array[i * 4 + 3] = pull;
-    A.array[i * 4] = ax; A.array[i * 4 + 1] = ay; A.array[i * 4 + 2] = az; A.array[i * 4 + 3] = axial;
+    const i = this.n++, T = this.attrs, P = T[0].array, C = T[1].array, S = T[2].array, A = T[3].array;
+    P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z;
+    C[i * 4] = r; C[i * 4 + 1] = g; C[i * 4 + 2] = b; C[i * 4 + 3] = frame;
+    S[i * 4] = sx; S[i * 4 + 1] = sy; S[i * 4 + 2] = rot; S[i * 4 + 3] = pull;
+    A[i * 4] = ax; A[i * 4 + 1] = ay; A[i * 4 + 2] = az; A[i * 4 + 3] = axial;
   }
 }
 
@@ -324,11 +324,11 @@ class DecalBatch extends Batch {
   }
   add(x, y, z, nx, ny, nz, ax, az, hl, hw, r, g, b, skew = 0) {
     if (this.n >= this.max) return;
-    const i = this.n++, [P, N, A, C] = this.attrs;
-    P.array[i * 3] = x + nx * 0.03; P.array[i * 3 + 1] = y + ny * 0.03; P.array[i * 3 + 2] = z + nz * 0.03;
-    N.array[i * 3] = nx; N.array[i * 3 + 1] = ny; N.array[i * 3 + 2] = nz;
-    A.array[i * 4] = ax; A.array[i * 4 + 1] = az; A.array[i * 4 + 2] = hl; A.array[i * 4 + 3] = hw;
-    C.array[i * 4] = r; C.array[i * 4 + 1] = g; C.array[i * 4 + 2] = b; C.array[i * 4 + 3] = skew;
+    const i = this.n++, T = this.attrs, P = T[0].array, N = T[1].array, A = T[2].array, C = T[3].array;
+    P[i * 3] = x + nx * 0.03; P[i * 3 + 1] = y + ny * 0.03; P[i * 3 + 2] = z + nz * 0.03;
+    N[i * 3] = nx; N[i * 3 + 1] = ny; N[i * 3 + 2] = nz;
+    A[i * 4] = ax; A[i * 4 + 1] = az; A[i * 4 + 2] = hl; A[i * 4 + 3] = hw;
+    C[i * 4] = r; C[i * 4 + 1] = g; C[i * 4 + 2] = b; C[i * 4 + 3] = skew;
   }
 }
 
@@ -352,11 +352,11 @@ class ReflBatch extends Batch {
   }
   add(x, y, z, nx, ny, nz, r, g, b, seed, hw, len, up) {
     if (this.n >= this.max) return;
-    const i = this.n++, [P, N, C, S] = this.attrs;
-    P.array[i * 3] = x; P.array[i * 3 + 1] = y; P.array[i * 3 + 2] = z;
-    N.array[i * 3] = nx; N.array[i * 3 + 1] = ny; N.array[i * 3 + 2] = nz;
-    C.array[i * 4] = r; C.array[i * 4 + 1] = g; C.array[i * 4 + 2] = b; C.array[i * 4 + 3] = seed;
-    S.array[i * 3] = hw; S.array[i * 3 + 1] = len; S.array[i * 3 + 2] = up;
+    const i = this.n++, T = this.attrs, P = T[0].array, N = T[1].array, C = T[2].array, S = T[3].array;
+    P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z;
+    N[i * 3] = nx; N[i * 3 + 1] = ny; N[i * 3 + 2] = nz;
+    C[i * 4] = r; C[i * 4 + 1] = g; C[i * 4 + 2] = b; C[i * 4 + 3] = seed;
+    S[i * 3] = hw; S[i * 3 + 1] = len; S[i * 3 + 2] = up;
   }
 }
 
@@ -566,7 +566,7 @@ export class BikeGlow {
           uColor: { value: new THREE.Color(hc[0], hc[1], hc[2]) }, uCam: { value: new THREE.Vector3() }, uInt: { value: 0 }, uInside: { value: 0 },
           uPlane: { value: new THREE.Vector4(0, 1, 0, 0) }, uFogDensity: this.fogU,
         },
-        vertexShader: BEAM_VS, fragmentShader: BEAM_FS, side: THREE.DoubleSide,
+        vertexShader: BEAM_VS, fragmentShader: BEAM_FS, side: THREE.DoubleSide, defines: { STEPS: this.tier ? 7 : 4 },
       });
       const mesh = new THREE.Mesh(this._beamGeo, mat);
       const mb = new THREE.Matrix4().compose(new THREE.Vector3(h.pos[0] + 0.03, h.pos[1], h.pos[2] ?? 0),
@@ -587,7 +587,8 @@ export class BikeGlow {
     if (b.phys.electric) {
       const mc = spec.design === 'electric' ? [-0.06, 0.38, 0.112, 0.085] : [ctx.pivot[0] + 0.12, ctx.pivot[1] - 0.04, 0.13, 0.07];
       const c = new THREE.Color(lv.accent);
-      s.arcs = { x: mc[0], y: mc[1], z: mc[2], r: mc[3], c: [0.45 + c.r * 0.55, 0.75 + c.g * 0.25, 0.9 + c.b * 0.1] };
+      // electric blue-white with a hint of the livery accent
+      s.arcs = { x: mc[0], y: mc[1], z: mc[2], r: mc[3], c: [0.35 + c.r * 0.3, 0.8 + c.g * 0.2, 1] };
     }
     return s;
   }
@@ -676,7 +677,7 @@ export class BikeGlow {
     const hl = Math.hypot(fx, fz) || 1, hx = fx / hl, hz = fz / hl;
     const near = dist < 95;
     // the player's own lamps right under a chase camera are toned down
-    const own = b.isPlayer && dist < 9 ? 0.45 : 1;
+    const own = b.isPlayer && dist < 9 ? 0.6 : 1;
     const refl = this.wet > 0 && dist < Tq.reflDist;
 
     // ---- lens glare: headlights
@@ -761,7 +762,7 @@ export class BikeGlow {
     }
     // ---- neon underglow
     if (s.neon && near) {
-      const k = (0.25 + 0.95 * night) * (1 + this.wet * 0.5) * (0.9 + 0.1 * Math.sin(this.time * 2.7 + s.seed));
+      const k = (0.18 + 0.7 * night) * (1 + this.wet * 0.4) * (0.9 + 0.1 * Math.sin(this.time * 2.7 + s.seed));
       const c = s.neon;
       this.decals.add(gx + hx * 0.05, gy, gz + hz * 0.05, n.x, n.y, n.z, hx, hz, m.wb * 0.8, 0.62, c[0] * k, c[1] * k, c[2] * k, 0);
     }
@@ -797,8 +798,8 @@ export class BikeGlow {
       else gl.add(x, y, z, c[0] * si, c[1] * si, c[2] * si, 2, L * mpp, h * mpp, 0, pull);
     }
     // six-point star (aperture diffraction) on bright lamps
-    if (this.T.star && G > 0.35 && (head || brake > 0.5) && S > 12) {
-      const ss = Math.min(S * (head ? 1.8 : 1.2), this.maxS * 1.5), si = ci * (head ? 0.2 : 0.12) * G;
+    if (this.T.star && G > 0.35 && (head || brake > 0.5) && S > (head ? 12 : 16)) {
+      const ss = Math.min(S * (head ? 1.8 : 1.1), this.maxS * 1.5), si = ci * (head ? 0.2 : 0.08) * G;
       gl.add(x, y, z, c[0] * si, c[1] * si, c[2] * si, 1, ss * mpp, ss * mpp, 0.21, pull);
     }
   }
