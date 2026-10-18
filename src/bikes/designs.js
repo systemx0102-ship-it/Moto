@@ -74,6 +74,7 @@ function sportBody(ctx, P) {
   const k = P.k ?? 1;
   const nx = P.nose ?? 0.97;
   const S = (x, ...pts) => ({ x, pts: pts.map(([z, y]) => [z * k, y]) });
+  const soft = !!P.smooth; // 90s two-stroke: rounded panels, no hard creases
   // nose cowl: bottom centre, chin flank, headlight crease, shoulder crease, top centre
   const cowl = loftProfile([
     S(nx, [0, 0.822], [0.012, 0.826], [0.022, 0.835], [0.012, 0.845], [0, 0.848]),
@@ -83,7 +84,7 @@ function sportBody(ctx, P) {
     S(nx - 0.37, [0, 0.69], [0.118, 0.7], [0.198, 0.8], [0.178, 0.922], [0, 0.958]),
     S(nx - 0.47, [0, 0.7], [0.12, 0.7], [0.19, 0.78], [0.17, 0.89], [0, 0.93]),
     S(nx - 0.53, [0, 0.72], [0.1, 0.72], [0.15, 0.77], [0.13, 0.86], [0, 0.88]),
-  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
+  ], { sub: 6, around: 4, creases: soft ? [] : [2, 3], capStart: true, capEnd: true });
   A.add('chassis', cowl, mats.paintPlain);
   // side panels: lower edge rakes back to clear the front wheel; hard flank crease
   const side = loftProfile([
@@ -94,7 +95,7 @@ function sportBody(ctx, P) {
     S(0.2, [0, 0.37], [0.13, 0.39], [0.207, 0.56], [0.192, 0.78], [0, 0.83]),
     S(0.06, [0, 0.43], [0.12, 0.45], [0.182, 0.57], [0.172, 0.76], [0, 0.8]),
     S(-0.04, [0, 0.56], [0.08, 0.57], [0.122, 0.62], [0.112, 0.73], [0, 0.75]),
-  ], { sub: 6, around: 4, creases: [2], capStart: true, capEnd: true });
+  ], { sub: 6, around: 4, creases: soft ? [] : [2], capStart: true, capEnd: true });
   A.add('chassis', side, mats.paint);
   // V-section belly pan
   const belly = loftProfile([
@@ -123,15 +124,14 @@ function sportBody(ctx, P) {
     S((-0.3 + tx) / 2 - 0.05, [0, 0.8], [0.05, 0.81], [0.1, 0.87], [0.08, 0.875 + hump], [0, 0.885 + hump]),
     S(tx + 0.12, [0, 0.86], [0.03, 0.87], [0.06, 0.92], [0.045, 0.955], [0, 0.962]),
     S(tx, [0, 0.92], [0.008, 0.925], [0.015, 0.945], [0.01, 0.958], [0, 0.96]),
-  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
+  ], { sub: 6, around: 4, creases: soft ? [] : [2, 3], capStart: true, capEnd: true });
   A.add('chassis', tail, mats.paintPlain);
   // dark undertray beneath the tail
-  const under = loft([
+  if (!P.noUnder) A.add('chassis', loft([
     { x: -0.2, y: 0.71, w: 0.09 * k, ht: 0.03, hb: 0.03, n: 2.4 },
     { x: -0.55, y: 0.79, w: 0.07 * k, ht: 0.03, hb: 0.03, n: 2.4 },
     { x: -0.76, y: 0.85, w: 0.035 * k, ht: 0.02, hb: 0.02, n: 2.2 },
-  ], { radial: 18, sub: 4, capStart: true, capEnd: true });
-  A.add('chassis', under, M.plastic(0x101012));
+  ], { radial: 18, sub: 4, capStart: true, capEnd: true }), M.plastic(0x101012));
   seatLoft(ctx, -0.12, -0.44, 0.868, 0.125 * k, 0.03);
   // windscreen: bottom edges sit on the cowl shoulder crease
   const screen = loft([
@@ -142,7 +142,7 @@ function sportBody(ctx, P) {
   ], { radial: 22, sub: 6, t0: 0.02, t1: Math.PI - 0.02 });
   A.add('chassis', screen, mats.glass);
   // side vent: recessed black opening with three carbon gills
-  for (const s of [-1, 1]) {
+  for (const s of soft ? [] : [-1, 1]) {
     const vent = box(0.15, 0.1, 0.012, 0.008);
     place(vent, { p: [0.36, 0.66, s * 0.2 * k], r: [0, 0, 0.5] });
     A.add('chassis', vent, M.black());
@@ -184,60 +184,6 @@ function sportFace(ctx, o = {}) {
     A.add('chassis', cover, M.lens());
   }
   ctx.headlights.push({ pos: [nx - 0.05, 0.83, 0], group: 'chassis', r: 0.05 });
-}
-
-// Rounded one-piece fairing of the classic two-stroke GP era.
-// P scales: k (overall width), nose (nose tip x), tailX (tail tip x), round (retro roundness)
-function sportBodyRetro(ctx, P) {
-  const { A, mats } = ctx;
-  const k = P.k ?? 1;
-  const nx = P.nose ?? 0.92;
-  const n0 = P.round ? 2.1 : 2.4;
-  const fair = loft([
-    { x: nx, y: 0.84, w: 0.03 * k, ht: 0.018, hb: 0.022, n: 2 },
-    { x: nx - 0.06, y: 0.845, w: 0.11 * k, ht: 0.06, hb: 0.075, n: n0 },
-    { x: nx - 0.18, y: 0.84, w: 0.18 * k, ht: 0.105, hb: 0.13, n: n0 + 0.1 },
-    { x: nx - 0.32, y: 0.8, w: 0.22 * k, ht: 0.155, hb: 0.13, n: n0 + 0.3 },
-    { x: 0.46, y: 0.72, w: 0.245 * k, ht: 0.235, hb: 0.23, n: 2.9 },
-    { x: 0.39, y: 0.6, w: 0.25 * k, ht: 0.36, hb: 0.38, n: 3.1 },
-    { x: 0.2, y: 0.57, w: 0.25 * k, ht: 0.35, hb: 0.39, n: 3.2 },
-    { x: 0.0, y: 0.54, w: 0.225 * k, ht: 0.29, hb: 0.36, n: 3.0 },
-    { x: -0.1, y: 0.52, w: 0.17 * k, ht: 0.2, hb: 0.27, n: 2.8 },
-    { x: -0.17, y: 0.56, w: 0.08 * k, ht: 0.08, hb: 0.1, n: 2.4 },
-  ], { radial: 40, sub: 7, capStart: true, capEnd: true });
-  A.add('chassis', fair, mats.paint);
-  const tank = loft([
-    { x: 0.45, y: 0.92, w: 0.1 * k, ht: 0.045, hb: 0.06, n: 2.6 },
-    { x: 0.3, y: 0.935, w: 0.175 * k, ht: 0.085, hb: 0.1, n: 2.9 },
-    { x: 0.08, y: 0.935, w: 0.185 * k, ht: 0.085, hb: 0.1, n: 2.9 },
-    { x: -0.08, y: 0.885, w: 0.15 * k, ht: 0.05, hb: 0.08, n: 2.7 },
-    { x: -0.15, y: 0.86, w: 0.1 * k, ht: 0.02, hb: 0.05, n: 2.4 },
-  ], { radial: 30, sub: 6, capStart: true, capEnd: true });
-  A.add('chassis', tank, mats.paint);
-  const tx = P.tailX ?? -0.8;
-  const tail = loft([
-    { x: -0.06, y: 0.72, w: 0.16 * k, ht: 0.11, hb: 0.08, n: 2.8 },
-    { x: -0.3, y: 0.79, w: 0.14 * k, ht: 0.075, hb: 0.1, n: 2.9 },
-    { x: (-0.3 + tx) / 2 - 0.02, y: 0.87, w: 0.095 * k, ht: P.hump ?? 0.06, hb: 0.065, n: 2.7 },
-    { x: tx, y: 0.95, w: 0.03, ht: 0.024, hb: 0.022, n: 2.2 },
-  ], { radial: 28, sub: 6, capStart: true, capEnd: true });
-  A.add('chassis', tail, mats.paint);
-  seatLoft(ctx, -0.12, -0.44, 0.865, 0.125 * k, 0.03);
-  const screen = loft([
-    { x: nx - 0.07, y: 0.905, w: 0.085 * k, ht: 0.025, n: 2 },
-    { x: nx - 0.22, y: 0.985, w: 0.16 * k, ht: 0.04, n: 2.2 },
-    { x: nx - 0.36, y: 1.02, w: 0.18 * k, ht: 0.03, n: 2.2 },
-  ], { radial: 18, sub: 6, t0: 0.12, t1: Math.PI - 0.12 });
-  A.add('chassis', screen, mats.glass);
-  // dark vents on fairing sides
-  for (const s of [-1, 1]) {
-    const v = box(0.16, 0.05, 0.01, 0.004);
-    place(v, { p: [0.28, 0.52, s * 0.25 * k], r: [0, 0, 0.35] });
-    A.add('chassis', v, M.black());
-    const v2 = box(0.12, 0.035, 0.01, 0.004);
-    place(v2, { p: [0.22, 0.44, s * 0.248 * k], r: [0, 0, 0.35] });
-    A.add('chassis', v2, M.black());
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -433,19 +379,31 @@ function electric(ctx) {
     A.add(grp, cal, mats.paint2Solid);
   }
   swingarm(ctx, { style: 'single', mat: mats.paint2Solid, side: 0.13 });
-  // monocoque body: one long sculpted shell
-  const S = [
-    { x: 0.95, y: 0.845, w: 0.02, ht: 0.012, hb: 0.016, n: 2 },
-    { x: 0.86, y: 0.835, w: 0.085, ht: 0.06, hb: 0.06, n: 2.6 },
-    { x: 0.64, y: 0.79, w: 0.165, ht: 0.11, hb: 0.15, n: 3.2 },
-    { x: 0.4, y: 0.66, w: 0.2, ht: 0.235, hb: 0.25, n: 3.8 },
-    { x: 0.12, y: 0.68, w: 0.19, ht: 0.31, hb: 0.3, n: 3.8 },
-    { x: -0.15, y: 0.71, w: 0.15, ht: 0.16, hb: 0.2, n: 3.4 },
-    { x: -0.45, y: 0.85, w: 0.1, ht: 0.065, hb: 0.07, n: 3 },
-    { x: -0.82, y: 0.97, w: 0.025, ht: 0.015, hb: 0.015, n: 2.2 },
-  ];
-  const body = loft(S, { radial: 40, sub: 7, capStart: true, capEnd: true });
+  // monocoque body: one long faceted shell with a sharp shoulder and flank crease
+  const P = (x, ...pts) => ({ x, pts });
+  const body = loftProfile([
+    P(0.97, [0, 0.835], [0.01, 0.836], [0.018, 0.842], [0.015, 0.85], [0.008, 0.855], [0, 0.856]),
+    P(0.88, [0, 0.79], [0.04, 0.795], [0.075, 0.82], [0.085, 0.85], [0.05, 0.875], [0, 0.88]),
+    P(0.72, [0, 0.74], [0.08, 0.745], [0.14, 0.78], [0.16, 0.84], [0.1, 0.89], [0, 0.9]),
+    P(0.56, [0, 0.665], [0.11, 0.672], [0.18, 0.72], [0.2, 0.82], [0.13, 0.885], [0, 0.9]),
+    P(0.4, [0, 0.43], [0.12, 0.445], [0.2, 0.56], [0.21, 0.8], [0.15, 0.9], [0, 0.92]),
+    P(0.15, [0, 0.38], [0.12, 0.4], [0.2, 0.52], [0.205, 0.8], [0.15, 0.97], [0, 1.0]),
+    P(-0.12, [0, 0.5], [0.1, 0.52], [0.15, 0.6], [0.155, 0.78], [0.11, 0.88], [0, 0.9]),
+    P(-0.4, [0, 0.76], [0.06, 0.77], [0.1, 0.8], [0.1, 0.86], [0.07, 0.9], [0, 0.905]),
+    P(-0.65, [0, 0.86], [0.035, 0.865], [0.06, 0.89], [0.06, 0.93], [0.04, 0.955], [0, 0.96]),
+    P(-0.84, [0, 0.94], [0.008, 0.942], [0.014, 0.952], [0.014, 0.962], [0.008, 0.968], [0, 0.97]),
+  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
   A.add('chassis', body, mats.paint);
+  // gloss-black lower side inserts over the battery bay
+  for (const s of [-1, 1]) {
+    const ins = loft([
+      { x: 0.42, y: 0.52, w: 0.006, ht: 0.03, hb: 0.03, n: 3, z: s * 0.2 },
+      { x: 0.3, y: 0.5, w: 0.008, ht: 0.06, hb: 0.06, n: 5, z: s * 0.204 },
+      { x: 0.02, y: 0.5, w: 0.008, ht: 0.06, hb: 0.06, n: 5, z: s * 0.2 },
+      { x: -0.1, y: 0.56, w: 0.006, ht: 0.03, hb: 0.03, n: 3, z: s * 0.156 },
+    ], { radial: 20, sub: 5, capStart: true, capEnd: true });
+    A.add('chassis', ins, M.paint(0x0a0b0d, { metal: 0.3, rough: 0.15 }));
+  }
   // battery pack visible underneath with glowing cells
   const pack = box(0.46, 0.16, 0.24, 0.04); place(pack, { p: [0.14, 0.3, 0] }); A.add('chassis', pack, M.anodized(0x1b1d20));
   for (const s of [-1, 1]) {
@@ -455,7 +413,7 @@ function electric(ctx) {
       A.add('chassis', cell, mats.neon);
     }
     // neon line hugging the body surface
-    const line = [[0.8, 0.82, 0.115], [0.62, 0.78, 0.172], [0.4, 0.67, 0.205], [0.12, 0.69, 0.196], [-0.15, 0.73, 0.155], [-0.45, 0.86, 0.104], [-0.72, 0.94, 0.05]];
+    const line = [[0.86, 0.849, 0.1], [0.72, 0.842, 0.163], [0.56, 0.821, 0.203], [0.4, 0.8, 0.213], [0.15, 0.8, 0.208], [-0.12, 0.78, 0.158], [-0.4, 0.86, 0.103], [-0.65, 0.93, 0.063]];
     A.add('chassis', tube(line.map(([x, y, z]) => [x, y, s * z]), 0.0065, { radial: 6 }), mats.neon);
     // dark side intake
     const vent = box(0.22, 0.09, 0.01, 0.01);
@@ -483,7 +441,7 @@ function electric(ctx) {
   ], { radial: 14, sub: 5, t0: 0.2, t1: Math.PI - 0.2 });
   A.add('chassis', screen, mats.glass);
   handlebar(ctx, { type: 'clipon' });
-  dash(ctx, [0.42, 0.95, 0], 0.14, 0.07, { tilt: -1.05 });
+  dash(ctx, [0.44, 0.965, 0], 0.14, 0.07, { tilt: -1.05 });
   footpegs(ctx, -0.2, 0.42, 0.18);
   frontFender(ctx, { from: 1.8, len: 1.6, w: 0.13, mat: mats.paint2Solid });
   details(ctx, { plate: { pos: [-0.86, 0.84, 0], tilt: 0.35 }, signalsF: [[0.8, 0.78, 0.16], [0.8, 0.78, -0.16]] });
@@ -649,11 +607,20 @@ function cafe(ctx) {
   ], { radial: 28, sub: 6, capStart: true, capEnd: true });
   A.add('chassis', tank, mats.paint);
   // side covers / oil tank under the seat + seat pan
-  const sc = box(0.28, 0.2, 0.2, 0.05); place(sc, { p: [-0.2, 0.63, 0] }); A.add('chassis', sc, mats.paint2Solid);
+  const bat = box(0.2, 0.16, 0.15, 0.02); place(bat, { p: [-0.2, 0.64, 0] }); A.add('chassis', bat, M.black());
+  for (const s of [-1, 1]) {
+    const sc = loft([
+      { x: -0.05, y: 0.64, w: 0.01, ht: 0.1, hb: 0.11, n: 4, z: s * 0.1 },
+      { x: -0.2, y: 0.67, w: 0.012, ht: 0.075, hb: 0.07, n: 4, z: s * 0.104 },
+      { x: -0.35, y: 0.725, w: 0.01, ht: 0.035, hb: 0.025, n: 3.5, z: s * 0.098 },
+    ], { radial: 20, sub: 5, capStart: true, capEnd: true });
+    A.add('chassis', sc, mats.paint2Solid);
+    const badge = sphere(0.025, 14, 8); badge.scale(1, 1, 0.25); badge.translate(-0.12, 0.66, s * 0.112); A.add('chassis', badge, M.chrome());
+  }
   const pan = box(0.36, 0.02, 0.2, 0.008); place(pan, { p: [-0.3, 0.775, 0] }); A.add('chassis', pan, M.black());
   // knee pads
   for (const s of [-1, 1]) {
-    const kp = sphere(0.05, 14, 10); kp.scale(1.2, 0.8, 0.2); kp.translate(0.12, 0.86, s * 0.13); A.add('chassis', kp, M.rubber());
+    const kp = sphere(0.045, 16, 10); kp.scale(1.3, 0.75, 0.12); kp.translate(0.1, 0.86, s * 0.131); A.add('chassis', kp, M.rubber());
   }
   // seat + humped cowl
   seatLoft(ctx, -0.12, -0.46, 0.8, 0.12, 0.035);
@@ -887,37 +854,58 @@ function adventure(ctx) {
   // exhaust right high
   header(ctx, [[0.2, 0.36, 0.34], [0.28, 0.24, 0.24], [0.05, 0.16, 0.14], [-0.22, 0.28, 0.16], [-0.35, 0.48, 0.2]], 0.024, M.aluminum());
   muffler(ctx, [-0.35, 0.48, 0.2], [-0.68, 0.62, 0.2], { type: 'hex', r: 0.06, mat: M.aluminum(), endcap: M.black() });
-  // big tank
-  const tank = loft([
-    { x: 0.42, y: 0.92, w: 0.12, ht: 0.05, hb: 0.08, n: 2.8 },
-    { x: 0.26, y: 0.98, w: 0.21, ht: 0.09, hb: 0.15, n: 3 },
-    { x: 0.04, y: 0.97, w: 0.2, ht: 0.08, hb: 0.15, n: 3 },
-    { x: -0.12, y: 0.9, w: 0.13, ht: 0.05, hb: 0.1, n: 2.6 },
-  ], { radial: 28, sub: 6, capStart: true, capEnd: true });
+  // faceted tank with crease lines
+  const tank = loftProfile([
+    { x: 0.47, pts: [[0, 0.88], [0.1, 0.89], [0.13, 0.95], [0.1, 1.02], [0, 1.035]] },
+    { x: 0.3, pts: [[0, 0.86], [0.17, 0.87], [0.21, 0.96], [0.16, 1.06], [0, 1.08]] },
+    { x: 0.1, pts: [[0, 0.86], [0.17, 0.87], [0.2, 0.95], [0.15, 1.05], [0, 1.07]] },
+    { x: -0.06, pts: [[0, 0.88], [0.12, 0.89], [0.14, 0.93], [0.1, 0.98], [0, 0.995]] },
+    { x: -0.14, pts: [[0, 0.9], [0.06, 0.905], [0.07, 0.92], [0.05, 0.94], [0, 0.945]] },
+  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
   A.add('chassis', tank, mats.paint);
-  // fairing with headlight, beak and tall screen
-  const fair = loft([
-    { x: 0.82, y: 1.03, w: 0.06, ht: 0.05, hb: 0.06, n: 2.6 },
-    { x: 0.72, y: 1.05, w: 0.15, ht: 0.09, hb: 0.12, n: 2.8 },
-    { x: 0.55, y: 1.02, w: 0.21, ht: 0.1, hb: 0.17, n: 3 },
-    { x: 0.42, y: 0.96, w: 0.22, ht: 0.06, hb: 0.15, n: 3 },
-  ], { radial: 28, sub: 6, capStart: true });
-  A.add('chassis', fair, mats.paint);
-  const beak = loft([
-    { x: 0.62, y: 0.88, w: 0.1, ht: 0.03, hb: 0.01, n: 2.6 },
-    { x: 0.8, y: 0.86, w: 0.08, ht: 0.025, hb: 0.01, n: 2.6 },
-    { x: 0.94, y: 0.8, w: 0.04, ht: 0.015, hb: 0.008, n: 2.4 },
-  ], { radial: 16, sub: 5, capStart: true, capEnd: true });
-  A.add('chassis', beak, mats.paint2Solid);
+  // tank shrouds sweeping down over the radiators
   for (const s of [-1, 1]) {
-    const hl = sphere(0.05, 16, 10); hl.scale(0.4, 0.75, 1); hl.translate(0.83, 1.02, s * 0.05); A.add('chassis', hl, ctx.mats.head);
+    const sh = loft([
+      { x: 0.53, y: 0.9, w: 0.012, ht: 0.03, hb: 0.04, n: 3, z: s * 0.19 },
+      { x: 0.42, y: 0.87, w: 0.016, ht: 0.075, hb: 0.11, n: 6, z: s * 0.222 },
+      { x: 0.26, y: 0.87, w: 0.016, ht: 0.08, hb: 0.07, n: 6, z: s * 0.224 },
+      { x: 0.12, y: 0.89, w: 0.012, ht: 0.05, hb: 0.03, n: 3, z: s * 0.205 },
+    ], { radial: 24, sub: 5, capStart: true, capEnd: true });
+    A.add('chassis', sh, mats.paint2Solid);
   }
-  ctx.headlights.push({ pos: [0.85, 1.02, 0], group: 'chassis', r: 0.05 });
+  // headlight mask: angular, wraps the LED unit, carries the tall screen
+  const mask = loftProfile([
+    { x: 0.885, pts: [[0, 0.92], [0.05, 0.925], [0.09, 0.99], [0.06, 1.06], [0, 1.07]] },
+    { x: 0.82, pts: [[0, 0.9], [0.09, 0.905], [0.15, 0.985], [0.11, 1.08], [0, 1.095]] },
+    { x: 0.7, pts: [[0, 0.88], [0.12, 0.885], [0.2, 0.97], [0.16, 1.08], [0, 1.1]] },
+    { x: 0.58, pts: [[0, 0.87], [0.13, 0.875], [0.215, 0.95], [0.175, 1.05], [0, 1.07]] },
+    { x: 0.5, pts: [[0, 0.88], [0.12, 0.885], [0.19, 0.93], [0.15, 1.0], [0, 1.02]] },
+  ], { sub: 6, around: 4, creases: [2, 3], capStart: true, capEnd: true });
+  A.add('chassis', mask, mats.paint);
+  // high beak below the mask
+  const beak = loftProfile([
+    { x: 0.6, pts: [[0, 0.86], [0.07, 0.865], [0.11, 0.885], [0.09, 0.9], [0, 0.905]] },
+    { x: 0.8, pts: [[0, 0.84], [0.06, 0.845], [0.095, 0.866], [0.075, 0.88], [0, 0.888]] },
+    { x: 0.99, pts: [[0, 0.79], [0.02, 0.792], [0.035, 0.8], [0.025, 0.81], [0, 0.812]] },
+  ], { sub: 6, around: 3, creases: [2], capStart: true, capEnd: true });
+  A.add('chassis', beak, mats.paint2Solid);
+  // LED headlight: dark housing, twin projectors, DRL brow
+  const hous = sphere(1, 20, 12); hous.scale(0.03, 0.055, 0.08); hous.translate(0.884, 0.99, 0);
+  A.add('chassis', hous, M.darkChrome());
+  for (const s of [-1, 1]) {
+    const pj = sphere(0.024, 14, 10); pj.scale(0.6, 1, 1); pj.translate(0.902, 0.985, s * 0.036);
+    A.add('chassis', pj, ctx.mats.head);
+    const drl = box(0.012, 0.01, 0.07, 0.004); place(drl, { p: [0.9, 1.035, s * 0.04], r: [s * 0.25, 0, 0] });
+    A.add('chassis', drl, ctx.mats.head);
+  }
+  const lensC = sphere(1, 20, 12); lensC.scale(0.034, 0.058, 0.083); lensC.translate(0.886, 0.99, 0);
+  A.add('chassis', lensC, M.lens());
+  ctx.headlights.push({ pos: [0.9, 0.99, 0], group: 'chassis', r: 0.05 });
   const screen = loft([
-    { x: 0.76, y: 1.12, w: 0.13, ht: 0.03, n: 2 },
-    { x: 0.66, y: 1.26, w: 0.17, ht: 0.03, n: 2 },
-    { x: 0.6, y: 1.36, w: 0.16, ht: 0.02, n: 2 },
-  ], { radial: 16, sub: 6, t0: 0.25, t1: Math.PI - 0.25 });
+    { x: 0.8, y: 1.075, w: 0.1, ht: 0.03, n: 2.1 },
+    { x: 0.7, y: 1.095, w: 0.15, ht: 0.13, n: 2.1 },
+    { x: 0.62, y: 1.09, w: 0.16, ht: 0.27, n: 2.1 },
+  ], { radial: 18, sub: 6, t0: 0.03, t1: Math.PI - 0.03 });
   A.add('chassis', screen, mats.glass);
   seatLoft(ctx, -0.1, -0.5, 0.92, 0.15, 0.05, { frontRise: -0.02 });
   seatLoft(ctx, -0.5, -0.74, 0.96, 0.12, 0.04);
@@ -966,11 +954,13 @@ function twostroke(ctx) {
     expansionChamber(ctx, [[0.26, 0.42, s * 0.06], [0.36, 0.3, s * 0.08], [0.32, 0.16, s * 0.1], [0.12, 0.11, s * 0.1], [-0.12, 0.13, s * 0.12], [-0.28, 0.2, s * 0.14], [-0.38, 0.26, s * 0.15]], 0.05);
     expansionChamber(ctx, [[0.0, 0.56, s * 0.05], [-0.06, 0.48, s * 0.1], [-0.15, 0.5, s * 0.13], [-0.32, 0.6, s * 0.1], [-0.48, 0.7, s * 0.05], [-0.62, 0.78, s * 0.04]], 0.045);
   }
-  sportBodyRetro(ctx, { k: 0.9, round: true, nose: 0.9, tailX: -0.7, hump: 0.09 });
-  const board = sphere(0.1, 20, 12); board.scale(0.08, 0.6, 0.85); board.translate(0.895, 0.84, 0); A.add('chassis', board, mats.plateSolid);
-  numberPlate(ctx, [0.905, 0.84, 0], [0.12, 0.09], mats.plate, { r: [0, Math.PI / 2, 0] });
+  sportBody(ctx, { k: 0.9, nose: 0.94, tailX: -0.8, hump: 0.09, smooth: true, noUnder: true });
+  sportFace(ctx, { k: 0.9, nose: 0.94, lights: false });
+  // oval number board on the nose
+  const board = sphere(0.1, 22, 14); board.scale(0.1, 0.5, 0.75); place(board, { p: [0.905, 0.835, 0], r: [0, 0, 0.35] }); A.add('chassis', board, mats.plateSolid);
+  numberPlate(ctx, [0.915, 0.838, 0], [0.11, 0.08], mats.plate, { r: [0, Math.PI / 2, 0.35] });
   ctx.headlights.push({ pos: [0.88, 0.8, 0], group: 'chassis', r: 0, none: true });
-  tailLight(ctx, [-0.68, 0.86, 0], 0.03, 0.015);
+  tailLight(ctx, [-0.79, 0.93, 0], 0.03, 0.015, { tilt: 0.4 });
   handlebar(ctx, { type: 'clipon' });
   dash(ctx, [0.5, 0.93, 0], 0.07, 0.06, { tilt: -1.0 });
   footpegs(ctx, -0.22, 0.42, 0.15, { plates: true });
