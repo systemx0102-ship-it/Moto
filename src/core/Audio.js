@@ -295,7 +295,7 @@ function dspKit() {
       }
       dcLoop(inn, fs);
       if (!over) { const ir = rms(inn) || 1, ip = peakAbs(inn) || 1; inScale = Math.min(0.2 / ir, 0.95 / ip); }
-      scale(inn, inScale);
+      scale(inn, Math.min(inScale, 0.95 / (peakAbs(inn) || 1)));
       out[over ? 'over' : 'load'] = [ex, inn];
     }
     return out;
@@ -588,7 +588,7 @@ class EngineVoice {
     const brap = t < this._brapEnd ? 1 : 0;
     const bright = clamp(0.3 * r + 0.7 * m * (0.35 + 0.65 * r), 0, 1);
     let fc = lerp(P.lp[0], P.lp[1], bright) * (o.onboard ? 0.78 : 1) * (o.nitro ? 1.15 : 1) * (1 + 0.3 * brap);
-    const dist = o.dist || 0, far = dist > 7 ? 7 / dist : 1; // TV camera: distance + air absorption
+    const dist = o.dist || 0, far = dist > 11 ? 11 / dist : 1; // TV camera: distance + air absorption
     if (far < 1) fc = Math.min(fc, 1500 + 16000 * far);
     this.exLP.frequency.setTargetAtTime(fc, t, 0.03);
     let g = P.gain * this.vol * (0.34 + 0.66 * Math.pow(Math.min(r, 1), 0.85));
@@ -626,7 +626,7 @@ class EngineVoice {
     const P = this.P, r = clamp(rpm / this.redline, 0, 1.05);
     const thr = clamp(throttle || 0, 0, 1) * clamp(o.load ?? 1, 0, 1.2);
     const fm = (rpm / 60) * dopp, tq = thr * (r < 0.35 ? 1 : 1 - (r - 0.35) * 0.9);
-    const far = (o.dist || 0) > 7 ? 7 / o.dist : 1;
+    const far = (o.dist || 0) > 11 ? 11 / o.dist : 1;
     this.out.gain.setTargetAtTime(P.gain * this.vol * smooth(60, 1400, rpm) * Math.pow(far, 0.9), t, 0.03);
     this.mO.frequency.setTargetAtTime(fm, t, 0.015);
     this.geO.frequency.setTargetAtTime(fm * P.gear, t, 0.015);
