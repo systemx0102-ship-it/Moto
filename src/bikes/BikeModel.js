@@ -3,14 +3,16 @@ import * as THREE from 'three';
 import { Assembly } from './Assembly.js';
 import { DESIGNS } from './designs.js';
 import { M } from '../core/materials.js';
-import { liveryTexture, numberPlateTexture, makeCanvas, toTexture, licensePlateTexture } from '../core/textures.js';
+import { liveryTexture, numberPlateTexture, makeCanvas, toTexture, licensePlateTexture, flakeNormalTexture } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
 
 function liveryMaterials(spec, livery, opts) {
   const matte = !!livery.matte;
   const tex = liveryTexture(livery, spec.short, livery.number || '');
+  const flakes = matte ? null : flakeNormalTexture();
   const P = (params) => new THREE.MeshPhysicalMaterial({
-    metalness: matte ? 0.2 : 0.45, roughness: matte ? 0.62 : 0.28, clearcoat: matte ? 0 : 1, clearcoatRoughness: 0.05, ...params,
+    metalness: matte ? 0.2 : 0.5, roughness: matte ? 0.62 : 0.3, clearcoat: matte ? 0 : 1, clearcoatRoughness: 0.03,
+    normalMap: flakes, normalScale: new THREE.Vector2(0.35, 0.35), ...params,
   });
   const mats = {
     paint: P({ map: tex }),

@@ -980,14 +980,26 @@ function textDecal(ctx, text, pos, size, side, o = {}) {
 // Thin panel lying on a face of a loftProfile body (between profile points i and j),
 // spanning authored x stations with per-station fractions [lo, hi] across the face,
 // pushed `off` along the face normal. Used for lamps and inserts that sit on bodywork.
+function profileAt(secs, x) {
+  let k = 0;
+  while (k < secs.length - 2 && secs[k + 1].x > x) k++;
+  const a = secs[k], b = secs[k + 1];
+  const t = Math.min(1, Math.max(0, (a.x - x) / (a.x - b.x)));
+  return a.pts.map((p, n) => [p[0] + (b.pts[n][0] - p[0]) * t, p[1] + (b.pts[n][1] - p[1]) * t]);
+}
+
+// Point on face i->j of a loftProfile body at station x and fraction f, pushed off along
+// the face normal; returns [x, y, z] for side +1.
+function facePoint(secs, i, j, x, f, off = 0) {
+  const pr = profileAt(secs, x), P0 = pr[i], P1 = pr[j];
+  const dz = P1[0] - P0[0], dy = P1[1] - P0[1], l = Math.hypot(dz, dy) || 1;
+  let nz = dy / l, ny = -dz / l;
+  if (nz < 0 || (nz === 0 && ny < 0)) { nz = -nz; ny = -ny; }
+  return [x, P0[1] + dy * f + ny * off, P0[0] + dz * f + nz * off];
+}
+
 function facePatch(A, secs, i, j, xs, lo, hi, off, side, mat, group = 'chassis') {
-  const at = (x) => {
-    let k = 0;
-    while (k < secs.length - 2 && secs[k + 1].x > x) k++;
-    const a = secs[k], b = secs[k + 1];
-    const t = Math.min(1, Math.max(0, (a.x - x) / (a.x - b.x)));
-    return a.pts.map((p, n) => [p[0] + (b.pts[n][0] - p[0]) * t, p[1] + (b.pts[n][1] - p[1]) * t]);
-  };
+  const at = (x) => profileAt(secs, x);
   const pos = [];
   xs.forEach((x, k) => {
     const pr = at(x), P0 = pr[i], P1 = pr[j];
@@ -1170,6 +1182,30 @@ function sporttourer(ctx) {
   const hanger = box(0.31, 0.012, 0.15, 0.006); place(hanger, { p: [-0.92, 0.74, 0], r: [0, 0, 0.876] }); A.add('chassis', hanger, M.plastic(0x101012));
   rearFender(ctx, { from: 1.9, len: 1.4, mat: M.black(), w: 0.21 });
   frontFender(ctx, { from: 1.75, len: 1.75, w: 0.13, mat: mats.paintSolid });
+  // panel shut lines and dome-head fasteners on the fairing
+  for (const s of [-1, 1]) {
+    facePatch(A, FAIR, 2, 3, [0.74, 0.66, 0.58, 0.52], [0.86, 0.6, 0.32, 0.12], [0.9, 0.64, 0.36, 0.16], 0.0015, s, M.black());
+    facePatch(A, FAIR, 1, 2, [0.5, 0.42, 0.34, 0.26], [0.75, 0.5, 0.42, 0.4], [0.79, 0.54, 0.46, 0.44], 0.0015, s, M.black());
+    for (const [i, j, x, f] of [[2, 3, 0.7, 0.55], [2, 3, 0.55, 0.62], [3, 4, 0.5, 0.55], [1, 2, 0.4, 0.75], [1, 2, 0.22, 0.6], [3, 4, 0.66, 0.85]]) {
+      const [px, py, pz] = facePoint(FAIR, i, j, x, f, 0.001);
+      const sc = sphere(0.0062, 10, 6); sc.scale(1, 1, 0.45); sc.translate(px, py, s * pz);
+      A.add('chassis', sc, M.black());
+    }
+  }
+  // flush fuel cap with its bolt ring
+  { const fc = cyl(0.045, 0.047, 0.008, 28, 'y'); fc.translate(0.3, 1.047, 0); A.add('chassis', fc, M.aluminum());
+    const fi = cyl(0.032, 0.032, 0.01, 24, 'y'); fi.translate(0.3, 1.05, 0); A.add('chassis', fi, M.black());
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; const b = cyl(0.004, 0.004, 0.006, 6, 'y'); b.translate(0.3 + Math.cos(a) * 0.039, 1.052, Math.sin(a) * 0.039); A.add('chassis', b, M.chrome()); } }
+  // seat stitching along the upper edges
+  for (const s of [-1, 1]) {
+    A.add('chassis', tube([[-0.1, 0.862, s * 0.11], [-0.25, 0.872, s * 0.155], [-0.42, 0.872, s * 0.13]], 0.0018, { radial: 4 }), M.plastic(0x55575c));
+    A.add('chassis', tube([[-0.49, 0.958, s * 0.1], [-0.6, 0.966, s * 0.118], [-0.73, 0.962, s * 0.09]], 0.0018, { radial: 4 }), M.plastic(0x55575c));
+  }
+  // weld beads where the headers meet the collector, collector band clamp
+  for (const [x, y, z] of [[-0.02, 0.14, 0.05], [-0.1, 0.2, 0.12]]) {
+    const w = torus(0.036, 0.004, 16, 6); w.rotateY(Math.PI / 2 - 0.6); w.translate(x, y, z); A.add('chassis', w, M.aluminum());
+  }
+  { const cl = torus(0.054, 0.006, 20, 6); cl.rotateY(Math.PI / 2); cl.rotateZ(0.44); cl.translate(-0.205, 0.31, 0.178); A.add('chassis', cl, M.black()); }
   // cockpit
   handlebar(ctx, { type: 'wide', rise: 0.07, back: 0.12, half: 0.33 });
   dash(ctx, [0.56, 1.0, 0], 0.15, 0.09, { tilt: -1.0 });

@@ -173,7 +173,7 @@ export function engineUnit(ctx, o) {
     A.add('chassis', tube([[top[0], top[1], -0.04], [top[0] + 0.04, top[1] + 0.02, -0.08], [r.c[0] - 0.04, r.c[1] + r.h / 2 - 0.04, -rz]], 0.012, { radial: 8 }), M.rubber());
     A.add('chassis', tube([[cx + 0.03 * s, cy - 0.1 * s, -W / 2 - 0.03], [cx + 0.1 * s, cy - 0.08 * s, -W / 2 - 0.02], [r.c[0] - 0.04, r.c[1] - r.h / 2 + 0.04, -rz]], 0.012, { radial: 8 }), M.rubber());
   }
-  ctx.engine = { ports, intakes, width: W };
+  ctx.engine = { ports, intakes, width: W, shift: [cx - 0.13 * s, cy - 0.08 * s, zl - 0.02] };
   return ctx.engine;
 }
 

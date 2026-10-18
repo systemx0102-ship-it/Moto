@@ -252,6 +252,22 @@ export function concreteTexture(stripe = null, seed = 2) {
   });
 }
 
+// Metallic-paint flake normals: every texel tilts a little in a random direction, so the
+// base coat sparkles under the clear coat when light sweeps across it.
+export function flakeNormalTexture() {
+  return cached('flakes', () => {
+    const W = 256;
+    const r = rng(4242);
+    const { c } = fillPixels(W, W, (x, y, o) => {
+      const a = r() * Math.PI * 2, t = Math.pow(r(), 1.5) * 0.55;
+      o[0] = 128 + Math.cos(a) * t * 127; o[1] = 128 + Math.sin(a) * t * 127; o[2] = 255 * Math.sqrt(1 - t * t * 0.5); o[3] = 255;
+    });
+    const tex = toTexture(c, { srgb: false });
+    tex.repeat.set(14, 14);
+    return tex;
+  });
+}
+
 // Polished studio concrete: trowel mottling, aggregate specks, saw-cut joints + roughness map
 export function polishedConcreteTexture(seed = 4) {
   return cached(`pconc:${seed}`, () => {

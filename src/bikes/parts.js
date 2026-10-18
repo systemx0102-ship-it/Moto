@@ -157,6 +157,15 @@ export function wheel(ctx, group, w) {
       const g = ring(d.r * 0.3, d.r, 64);
       g.translate(0, 0, d.z);
       A.add(group, g, mat, { local: true });
+      // floating-disc buttons where the rotor meets the carrier
+      if (d.style !== 'plain') {
+        for (let k = 0; k < 10; k++) {
+          const a = (k / 10) * Math.PI * 2 + 0.31;
+          const b = cyl(0.0058, 0.0058, 0.011, 10, 'z');
+          b.translate(Math.cos(a) * d.r * 0.66, Math.sin(a) * d.r * 0.66, d.z);
+          A.add(group, b, M.aluminum(), { local: true });
+        }
+      }
     }
   }
   if (w.sprocket) {
@@ -210,24 +219,41 @@ function spokeGeo(r0, r1, width, thick, a0, sweep, splitBend) {
 export function caliper(ctx, group, axle, discR, z, angleDeg, color = 0xc81e1e, size = 1) {
   const a = angleDeg * DEG;
   const r = discR * 0.86;
-  const g = box(0.05 * size, 0.1 * size, 0.034, 0.012);
-  place(g, { p: [axle[0] + Math.cos(a) * r, axle[1] + Math.sin(a) * r, z + Math.sign(z || 1) * 0.008], r: [0, 0, a + Math.PI / 2] });
-  ctx.A.add(group, g, M.anodized(color));
-  const g2 = box(0.03 * size, 0.07 * size, 0.04, 0.006);
-  place(g2, { p: [axle[0] + Math.cos(a) * (r + 0.02), axle[1] + Math.sin(a) * (r + 0.02), z], r: [0, 0, a + Math.PI / 2] });
-  ctx.A.add(group, g2, M.anodized(color));
-  // mounting bolts + brand window
-  const zs = z + Math.sign(z || 1) * 0.027;
-  for (const k of [-1, 1]) {
-    const ab = a + k * 0.16;
-    const b = cyl(0.0065, 0.0065, 0.012, 6, 'z');
-    b.translate(axle[0] + Math.cos(ab) * (r + 0.005), axle[1] + Math.sin(ab) * (r + 0.005), zs);
-    ctx.A.add(group, b, M.chrome());
+  const sg = Math.sign(z || 1);
+  const mat = M.anodized(color);
+  const P = (rr, da = 0) => [axle[0] + Math.cos(a + da) * rr, axle[1] + Math.sin(a + da) * rr];
+  const rot = [0, 0, a + Math.PI / 2];
+  // outer and inner halves either side of the rotor, joined by the bridge over its edge
+  for (const side of [1, -1]) {
+    const half = box(0.052 * size, 0.108 * size, 0.022, 0.01);
+    place(half, { p: [...P(r), z + side * sg * 0.017], r: rot });
+    ctx.A.add(group, half, mat);
   }
-  const win = box(0.012, 0.05 * size, 0.004, 0.002);
-  place(win, { p: [axle[0] + Math.cos(a) * r, axle[1] + Math.sin(a) * r, zs + Math.sign(z || 1) * 0.002], r: [0, 0, a + Math.PI / 2] });
+  const bridge = box(0.028 * size, 0.09 * size, 0.056, 0.008);
+  place(bridge, { p: [...P(r + 0.024), z], r: rot });
+  ctx.A.add(group, bridge, mat);
+  // piston bores showing as round bosses on the outer face
+  for (const k of [-1, 1]) {
+    const pb = cyl(0.0125 * size, 0.0125 * size, 0.006, 16, 'z');
+    pb.translate(...P(r - 0.002, k * 0.024 / r), z + sg * 0.03);
+    ctx.A.add(group, pb, mat);
+  }
+  // radial mounting bolts, pad pin, bleed nipple, logo window
+  const zs = z + sg * 0.028;
+  for (const k of [-1, 1]) {
+    const lug = cyl(0.009, 0.009, 0.03, 8, 'x');
+    place(lug, { p: [...P(r + 0.032, k * 0.042 / r), z + sg * 0.012], r: [0, 0, a] });
+    ctx.A.add(group, lug, M.chrome());
+  }
+  const pin = rod([...P(r + 0.016, -0.03 / r), z - 0.03], [...P(r + 0.016, -0.03 / r), z + 0.03], 0.0035, 6);
+  ctx.A.add(group, pin, M.chrome());
+  const bleed = cyl(0.004, 0.004, 0.014, 6, 'z');
+  bleed.translate(...P(r + 0.022, 0.05 / r), zs);
+  ctx.A.add(group, bleed, M.chrome());
+  const win = box(0.012, 0.05 * size, 0.003, 0.0015);
+  place(win, { p: [...P(r + 0.006), zs + sg * 0.004], r: rot });
   ctx.A.add(group, win, M.plastic(0xf2f2f2));
-  (ctx.calipers || (ctx.calipers = [])).push({ group, pos: [axle[0] + Math.cos(a) * (r + 0.03), axle[1] + Math.sin(a) * (r + 0.03), z], a });
+  (ctx.calipers || (ctx.calipers = [])).push({ group, pos: [...P(r + 0.03), z], a });
 }
 
 // ---------------------------------------------------------------------------
@@ -680,6 +706,7 @@ export function dash(ctx, c, w = 0.13, h = 0.08, o = {}) {
 }
 
 export function footpegs(ctx, x, y, zHalf = 0.17, o = {}) {
+  ctx.pegs = { x, y, z: zHalf };
   for (const s of [-1, 1]) {
     const p = rod([x, y, s * (zHalf - 0.05)], [x, y, s * zHalf], 0.011, 8);
     ctx.A.add('chassis', p, M.aluminum());
@@ -774,6 +801,20 @@ export function details(ctx, o = {}) {
     face.translate(pl.pos[0] - 0.006, pl.pos[1], pl.pos[2]);
     A.add(pl.group || 'chassis', face, ctx.mats.license);
     for (const s of [-1, 1]) signal(pl.group || 'chassis', [pl.pos[0] + 0.03, pl.pos[1] + 0.07, s * 0.12], -1);
+  }
+  // gear lever (left) with linkage to the shift shaft, brake pedal + master cylinder (right)
+  if (ctx.pegs && o.pedals !== false) {
+    const { x, y, z } = ctx.pegs;
+    const zl = -(z - 0.03), zr = z - 0.03;
+    A.add('chassis', rod([x, y, zl], [x + 0.19, y - 0.005, zl - 0.005], 0.007, 8), M.anodized(0x1c1c1e));
+    A.add('chassis', rod([x + 0.19, y - 0.005, zl - 0.005], [x + 0.19, y - 0.005, zl - 0.045], 0.008, 8), M.rubber());
+    const sh = ctx.engine && ctx.engine.shift;
+    if (sh) A.add('chassis', rod([x + 0.08, y + 0.01, zl - 0.004], [sh[0], sh[1], zl - 0.004], 0.0045, 6), M.chrome());
+    A.add('chassis', rod([x, y, zr], [x + 0.18, y - 0.03, zr + 0.005], 0.007, 8), M.anodized(0x1c1c1e));
+    const pad = box(0.04, 0.008, 0.03, 0.003); place(pad, { p: [x + 0.19, y - 0.028, zr + 0.01] }); A.add('chassis', pad, M.anodized(0x2a2a2a));
+    const mc = cyl(0.009, 0.009, 0.06, 10, 'y'); mc.translate(x + 0.025, y + 0.04, zr - 0.01); A.add('chassis', mc, M.aluminum());
+    const res = cyl(0.014, 0.014, 0.035, 12, 'y'); res.translate(x - 0.03, y + 0.13, zr - 0.02); A.add('chassis', res, M.plastic(0x2a2a2c));
+    A.add('chassis', tube([[x + 0.025, y + 0.07, zr - 0.01], [x, y + 0.11, zr - 0.012], [x - 0.03, y + 0.112, zr - 0.02]], 0.004, { radial: 5 }), M.rubber());
   }
   // folded kickstand (left side)
   if (o.kickstand !== false) {
