@@ -191,8 +191,8 @@ const DISC_FS = /* glsl */`
     float band = smoothstep(0.0, 0.3, vR) * smoothstep(1.0, 0.84, vR);
     float h = uHeat * band * (0.8 + 0.2 * smoothstep(0.25, 0.75, vR));
     // incandescence: dull cherry red -> orange -> yellow, radiance rising steeply
-    vec3 c = mix(vec3(1.0, 0.1, 0.012), vec3(1.0, 0.3, 0.04), smoothstep(0.4, 0.8, h));
-    c = mix(c, vec3(1.0, 0.58, 0.2), smoothstep(0.85, 1.2, h));
+    vec3 c = mix(vec3(1.0, 0.08, 0.01), vec3(1.0, 0.26, 0.03), smoothstep(0.35, 0.85, h));
+    c = mix(c, vec3(1.0, 0.5, 0.16), smoothstep(0.95, 1.25, h));
     float I = smoothstep(0.1, 0.35, h) * h * h * (0.6 + 1.6 * h);
     gl_FragColor = vec4(c * I * uGain * vFog, 1.0);
     ${OUT}
@@ -650,7 +650,7 @@ export class BikeGlow {
     // (a jump well beyond the camera's own motion, or a sudden swing)
     const move = this._lastCam.distanceTo(cam);
     this._camCut = this._camCut || move > 2.5 + 1.5 * this._lastMove || this._lastDir.dot(this._cf) < 0.94;
-    this._lastMove = move;
+    this._lastMove = this._camCut ? 0 : move;
     this._lastCam.copy(cam);
     this._lastDir.copy(this._cf);
     this._vm = camera.matrixWorldInverse.elements; // fresh: getWorldDirection updated it
@@ -745,7 +745,7 @@ export class BikeGlow {
       const d = s.discs[i];
       const heat = d.front ? s.heatF : s.heatR;
       d.mesh.visible = discOn && heat > 0.12;
-      if (d.mesh.visible) { d.mat.uniforms.uHeat.value = heat; d.mat.uniforms.uGain.value = 0.15 + 1.4 * night; }
+      if (d.mesh.visible) { d.mat.uniforms.uHeat.value = heat; d.mat.uniforms.uGain.value = 0.15 + 0.95 * night; }
     }
 
     // ---- exhaust backfire flames / electric arcs
