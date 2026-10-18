@@ -159,10 +159,11 @@
 .lh-rdet { padding: 14px 18px; overflow-y: auto; scrollbar-width: thin; }
 .lh-rname { font-family: var(--font-h); font-weight: 700; font-size: clamp(24px, 2.5vw, 34px); line-height: 1; letter-spacing: .03em; text-transform: uppercase; margin-top: 4px; }
 .lh-rsub { color: #c4c9cf; font-size: 14px; margin-top: 4px; }
-.lh-rthumb { position: relative; margin-top: 12px; border: 1px solid var(--line); }
-.lh-rthumb canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 3; }
-.lh-rthumb span { position: absolute; left: 10px; bottom: 8px; font-family: var(--font-h); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; padding: 2px 8px; background: rgba(10, 11, 13, .7); border: 1px solid var(--line2); }
-.lh-rstats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.lh-rmid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: center; margin-top: 12px; }
+.lh-rthumb { position: relative; border: 1px solid var(--line); }
+.lh-rthumb canvas { display: block; width: 100%; height: auto; aspect-ratio: 22 / 15; }
+.lh-rthumb span { position: absolute; left: 8px; bottom: 6px; font-family: var(--font-h); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; padding: 2px 8px; background: rgba(10, 11, 13, .7); border: 1px solid var(--line2); }
+.lh-rstats { display: grid; gap: 12px; }
 .lh-rstats > div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; }
 .lh-rstats span { font-family: var(--font-h); font-size: 11px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
 .lh-rstats b { font-family: var(--font-h); font-size: 18px; font-weight: 700; }
@@ -173,7 +174,7 @@
 .lh-rboss .k { font-family: var(--font-h); font-size: 11px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
 .lh-rboss .n { font-family: var(--font-h); font-size: 20px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; line-height: 1.05; }
 .lh-rboss .m { font-size: 12.5px; color: #c4c9cf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lh-rboss .stt { font-family: var(--font-h); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; text-align: right; max-width: 120px; }
+.lh-rboss .stt { margin-top: 5px; font-family: var(--font-h); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #fff; }
 .lh-rboss .stt span { display: inline-flex; align-items: center; gap: 5px; }
 .lh-rboss .stt .rpg-ico { width: 14px; height: 14px; }
 .lh-rboss .ok { color: var(--green); }
@@ -400,7 +401,7 @@
 .lh-rw .rpg-bar.mastery .ghost { background: linear-gradient(90deg, #3f8cff, #8fd8ff); }
 .lh-rw-bans { display: grid; gap: 4px; }
 .lh-ban { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; padding: 5px 10px; background: rgba(255, 211, 106, .09); border-left: 3px solid #ffd36a; animation: lhBan .6s var(--ease) both; }
-.lh-ban b { font-family: var(--font-h); font-size: 16px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #ffd36a; }
+.lh-ban b { font-family: var(--font-h); font-size: 16px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #ffd36a; white-space: nowrap; }
 .lh-ban span { font-size: 13px; color: #e6e9ec; }
 .lh-ban.m { background: rgba(143, 216, 255, .08); border-left-color: #8fd8ff; }
 .lh-ban.m b { color: #8fd8ff; }
@@ -451,9 +452,10 @@
 @keyframes lhSheen { 0% { opacity: 1; background-position: 120% 0; } 100% { opacity: 0; background-position: -40% 0; } }
 .lh-flip.inst .lh-flip-in, .lh-flip.inst::after { transition: none; }
 .lh-flip.salv::after { opacity: .25; animation: none; }
-.lh-salv { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px; text-align: center; background: rgba(10, 11, 13, .8); }
+.lh-salv { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 10px; text-align: center; background: rgba(10, 11, 13, .9); }
 .lh-salv b { font-family: var(--font-h); font-size: 17px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: #fff; }
-.lh-salv span { font-size: 12px; color: var(--dim); }
+.lh-salv span { font-family: var(--font-h); font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--amber); }
+.lh-salv em { font-style: normal; font-size: 12px; color: #c4c9cf; }
 .lh-flip .rpg-card-flags .nw { display: none; }
 
 /* ---------------- smaller screens ---------------- */
@@ -495,12 +497,28 @@
   .lh-reg .bs { display: none; }
   .lh-mapbody { top: calc(var(--lh-top) + 114px); }
   .lh-rthumb { display: none; }
+  .lh-rmid { grid-template-columns: minmax(0, 1fr); margin-top: 8px; }
+  .lh-rstats { gap: 3px; }
+  .lh-rstats .rpg-bar { display: none; }
+  .lh-rstats b { font-size: 16px; }
+  .lh-rboss { margin-top: 10px; padding: 8px 10px; }
+  .lh-rboss .n { font-size: 18px; }
+  .lh-ev .tt .sb { display: none; }
+  .lh-ev .c { width: 28px; height: 28px; }
+  .lh-ev .c .rpg-ico { width: 15px; height: 15px; }
+  .lh-ev.boss .c { width: 32px; height: 32px; }
+  .lh-ev .lv b { font-size: 16px; }
+  .lh-path { padding: 10px 12px; }
+  .lh-path-h { margin-bottom: 8px; }
+  .lh-perks { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lh-perk span { display: none; }
+  .lh-perk b { font-size: 12px; }
   .lh-rdet { padding: 12px 14px; }
   .lh-ev { padding-top: 5px; padding-bottom: 5px; margin-bottom: 6px; }
   .lh-ev .tt .nm { font-size: 15px; }
   .lh-ev.boss .tt .nm { font-size: 18px; }
   .lh-ev.boss { padding-top: 7px; padding-bottom: 7px; }
-  .lh-ev + .lh-ev .c::before { height: 20px; }
+  .lh-ev + .lh-ev .c::before { height: 16px; }
   .lh-brief { padding: 12px 16px; }
   .lh-bdesc { font-size: 13px; }
   .lh-pcmp .v b { font-size: 21px; }

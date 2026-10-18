@@ -50,6 +50,10 @@ const put = (el, ...kids) => { el.append(...kids.flat().filter((k) => k !== null
 // catalogue track names are upper case; sentence lines want 'Costa Dorada'
 const SMALL = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y']);
 const tc = (str) => str.toLowerCase().split(' ').map((w, i) => (i && SMALL.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+// '1 pruebas' -> '1 prueba' in generated contract texts; decimal comma for Spanish
+const ONE = { pruebas: 'prueba', podios: 'podio', estrellas: 'estrella', rivales: 'rival' };
+const sing = (t) => t.replace(/\b1 (pruebas|podios|estrellas|rivales)\b/, (m, w) => `1 ${ONE[w]}`);
+const comma = (t) => t.replace(/(\d)\.(\d)/g, '$1,$2');
 const keys = (list) => h('div', { class: 'lh-keys' }, ...list.map(([k, t]) => h('span', {}, ...k.split(' ').map((x) => h('span', { class: 'keycap' }, x)), h('em', {}, t))));
 
 // the six core ratings: solid base + lighter bonus from parts, mastery and talents
@@ -107,7 +111,7 @@ function flipCard(it, opts = {}) {
   return h('div', { class: `lh-flip r-${R.id}` + (it.rar >= 3 ? ' big' : '') + (it.salvaged ? ' salv' : '') },
     h('div', { class: 'lh-flip-in' },
       h('div', { class: 'lh-front' }, front,
-        v ? h('div', { class: 'lh-salv' }, h('b', {}, 'Desguazada'), h('span', {}, `Inventario lleno · +${fmtN(v.frags)} fragmentos · +${fmtN(v.credits)} créditos`)) : null),
+        v ? h('div', { class: 'lh-salv' }, h('b', {}, 'Desguazada'), h('span', {}, 'Inventario lleno'), h('em', {}, `+${fmtN(v.frags)} fragmentos · +${fmtN(v.credits)} créditos`)) : null),
       h('div', { class: 'lh-back' }, h('div', { class: 'lh-back-mark' }, icon(ICO.part), h('span', {}, 'Pieza')))));
 }
 
@@ -334,20 +338,22 @@ export const hubScreens = {
       const prevBoss = ri > 0 ? D.BOSSES[regs[ri - 1].boss] : null;
       const passed = r.events.filter((e) => e.state.passed).length;
       const tracks = [...new Set(r.events.map((e) => e.track))];
-      const th = trackThumb(TRACK_BY_ID[r.track], 400, 150);
+      const th = trackThumb(TRACK_BY_ID[r.track], 220, 150);
       put(clear(detail),
         h('div', { class: 'kicker' }, `Región ${ri + 1} de ${regs.length} · Nivel ${r.levels[0]}–${r.levels[1]}`),
         h('div', { class: 'lh-rname' }, r.name),
         h('div', { class: 'lh-rsub' }, r.sub),
-        h('div', { class: 'lh-rthumb' }, th, h('span', {}, tracks.length > 1 ? `${tracks.length} circuitos` : tc(TRACK_BY_ID[r.track].name))),
+        h('div', { class: 'lh-rmid' },
+          h('div', { class: 'lh-rthumb' }, th, h('span', {}, tracks.length > 1 ? `${tracks.length} circuitos` : tc(TRACK_BY_ID[r.track].name))),
+          h('div', { class: 'lh-rstats' },
+            h('div', {}, h('span', {}, 'Estrellas'), h('b', {}, `${r.stars}/${r.maxStars}`), bar(r.stars / r.maxStars)),
+            h('div', {}, h('span', {}, 'Pruebas superadas'), h('b', {}, `${passed}/${r.events.length}`), bar(passed / r.events.length)),
+            h('div', {}, h('span', {}, 'Poder recomendado'), h('b', {}, `${fmtN(D.recommendedPower(r.events[0].level))}–${fmtN(D.recommendedPower(r.events[4].level))}`)))),
         r.unlocked ? null : h('div', { class: 'lh-req' }, icon(RICON.lock), h('span', {}, `Derrota a ${prevBoss.name} para desbloquear`)),
-        h('div', { class: 'lh-rstats' },
-          h('div', {}, h('span', {}, 'Estrellas'), h('b', {}, `${r.stars}/${r.maxStars}`), bar(r.stars / r.maxStars)),
-          h('div', {}, h('span', {}, 'Pruebas superadas'), h('b', {}, `${passed}/${r.events.length}`), bar(passed / r.events.length))),
         h('div', { class: 'lh-rboss' + (r.done ? ' done' : '') },
           icon(RICON.boss, 'cr'),
-          h('div', { class: 'tt' }, h('div', { class: 'k' }, boss.title), h('div', { class: 'n' }, boss.name), h('div', { class: 'm' }, `${bb.name} · ${bb.klass}`)),
-          h('div', { class: 'stt' }, r.done ? h('span', { class: 'ok' }, icon(RICON.check), 'Derrotado') : r.unlocked ? h('span', {}, 'Recompensa: su moto') : h('span', { class: 'lk' }, icon(RICON.lock), 'Bloqueado'))));
+          h('div', { class: 'tt' }, h('div', { class: 'k' }, boss.title), h('div', { class: 'n' }, boss.name), h('div', { class: 'm' }, `${bb.name} · ${bb.klass}`),
+            h('div', { class: 'stt' }, r.done ? h('span', { class: 'ok' }, icon(RICON.check), 'Derrotado') : r.unlocked ? h('span', {}, 'Recompensa: su moto') : h('span', { class: 'lk' }, icon(RICON.lock), 'Bloqueado')))));
       nodes = r.events.map((e, k) => {
         const state = e.state.passed ? 'done' : !e.unlocked ? 'lock' : e.id === next.id ? 'next' : 'open';
         const tag = { done: 'Superada', lock: 'Bloqueada', next: 'Siguiente', open: 'Disponible' }[state];
@@ -505,7 +511,7 @@ export const hubScreens = {
       const cards = list.map((c) => {
         const r = c.reward;
         const btn = c.done
-          ? this.btn('Cobrar', RICON.check, () => claim(c.i), 'primary')
+          ? this.btn('Cobrar', RICON.check, () => claim(c.i, sing(c.text)), 'primary')
           : this.btn(`Cambiar contrato · ${fmtN(cost)}`, ICO.retry, () => {
             if (Rpg.rerollContract(c.i)) { Audio.select(); render(nav.indexOf(btn)); } else Audio.warn();
           }, 'small');
@@ -513,7 +519,7 @@ export const hubScreens = {
         else nav.push(btn);
         return h('div', { class: 'lh-con glass' + (c.done ? ' done' : '') },
           h('div', { class: 'kicker' }, `Contrato ${c.i + 1}`, c.done ? badge('Completado', 'ok') : null),
-          h('div', { class: 'lh-con-t' }, c.text),
+          h('div', { class: 'lh-con-t' }, sing(c.text)),
           h('div', { class: 'lh-con-p' }, h('span', {}, 'Progreso'), h('b', {}, `${fmtDec(c.prog)} / ${fmtN(c.n)}`)),
           bar(c.frac, c.done ? 'done' : ''),
           head('Recompensa'),
@@ -535,7 +541,7 @@ export const hubScreens = {
       this._setNav(nav, Math.min(focus, nav.length - 1));
       this.onBack = () => this.rpgHub();
     };
-    const claim = (i) => {
+    const claim = (i, text) => {
       const r = Rpg.claim(i);
       if (!r) return;
       Audio.fanfare();
@@ -545,7 +551,7 @@ export const hubScreens = {
       const eq = this.btn('Ver equipamiento', RICON.gear, () => { this.closeModal(); this.rpgGear?.(); }, 'small');
       const box = h('div', { class: 'modal glass lh-claim' },
         h('div', { class: 'kicker acc' }, 'Contrato cobrado'),
-        h('h2', {}, 'Recompensa'),
+        h('h2', {}, text),
         h('div', { class: 'lh-claim-r' },
           h('div', {}, icon(RICON.credits), h('b', {}, `+${fmtN(r.credits)}`), h('span', {}, 'créditos')),
           h('div', {}, icon(ICO.xp), h('b', {}, `+${fmtN(r.xp)}`), h('span', {}, 'XP'))),
@@ -602,7 +608,7 @@ export const hubScreens = {
         const active = b.id === Rpg.s.active;
         const mi = Rpg.masteryInfo(b.id);
         status = h('div', { class: 'lh-own' }, icon(RICON.check), h('span', {}, active ? 'Moto activa' : 'En propiedad'), h('em', {}, `Maestría ${mi.level} · Poder ${fmtN(Rpg.power(b.id))}`));
-        if (!active) action = this.btn('Usar esta moto', ICO.play, () => { Rpg.setActive(b.id); Audio.select(); buildList(); pick(idx); this._lhToast(s, `${b.name} es ahora tu moto activa`); }, 'primary');
+        if (!active) action = this.btn('Usar esta moto', ICO.play, () => { Rpg.setActive(b.id); Audio.select(); refresh(); this._lhToast(s, `${b.name} es ahora tu moto activa`); }, 'primary');
       } else if (!avail) {
         const bs = bossOf(b.id);
         const ri = D.REGIONS.findIndex((r) => D.BOSSES[r.boss] === bs);
@@ -613,8 +619,7 @@ export const hubScreens = {
         action = this.btn(`Comprar · ${fmtN(price)}`, RICON.credits, () => {
           if (!Rpg.buyBike(b.id)) { Audio.warn(); return; }
           Audio.fanfare();
-          put(clear(top), rpgTopBar('Concesionario', 'Motos del Modo Leyenda'));
-          buildList(); pick(idx);
+          refresh();
           this._lhToast(s, `Compra realizada: ${b.name}`);
         }, 'primary');
         if (short > 0) action.disabled = true;
@@ -645,13 +650,13 @@ export const hubScreens = {
     };
     const back = this.btn('Volver', ICO.back, () => this.rpgHub(), 'small');
     const arrow = (d, txt) => { const a = h('div', { class: 'arrow-btn lh-arrow ' + (d < 0 ? 'l' : 'r') }, txt); a.addEventListener('click', () => { Audio.select(); pick(idx + d); }); return a; };
-    put(top, rpgTopBar('Concesionario', 'Motos del Modo Leyenda'));
+    // wallet, power and list states change after a purchase or a switch
+    const refresh = () => { put(clear(top), rpgTopBar('Concesionario', `${Rpg.s.owned.length} de ${BIKES.length} motos en tu garaje`)); buildList(); pick(idx); };
     put(s,
       h('div', { class: 'lh-scrim' }),
       top, list, arrow(-1, '‹'), arrow(1, '›'), panel,
       h('div', { class: 'bottom-bar' }, keys([['← →', 'Moto'], ['↑ ↓', 'Navegar'], ['Esc', 'Volver']]), h('span', { class: 'grow' }), back));
-    buildList();
-    pick(idx);
+    refresh();
     this.onLeftRight = (d) => { Audio.select(); pick(idx + d); };
     this.onBack = () => this.rpgHub();
   },
@@ -697,9 +702,10 @@ export const hubScreens = {
       icon(RICON.star, 'st'),
       h('span', { class: 't' }, o.text),
       o.ok && !o.had ? h('em', { class: 'new' }, 'Nueva') : o.ok ? h('em', {}, 'Conseguida') : o.had ? h('em', {}, 'Ya conseguida') : h('em', { class: 'no' }, 'No conseguida')));
-    const xpRows = rw.xpLines.map((l) => {
+    const xpRows = rw.xpLines.map((l, i) => {
       const v = h('b', {}, '+0');
-      return { row: h('div', { class: 'lh-rw-xl lh-a' }, h('span', {}, l.label), v), v, xp: l.xp };
+      const label = i === 0 && rw.passed ? 'Prueba superada' : comma(l.label);
+      return { row: h('div', { class: 'lh-rw-xl lh-a' }, h('span', {}, label), v), v, xp: l.xp };
     });
     const xpTot = h('b', {}, '0');
     const xpTotRow = h('div', { class: 'lh-rw-xt lh-a' }, h('span', {}, 'Experiencia total'), xpTot);
@@ -707,7 +713,7 @@ export const hubScreens = {
       head('Objetivos'), h('div', { class: 'lh-rw-objs' }, ...objRows),
       head('Experiencia'), h('div', { class: 'lh-rw-xls' }, ...xpRows.map((x) => x.row), xpTotRow));
 
-    // column B: level, mastery, credits, contracts
+    // column B: level, mastery, credits, unlocks, contracts
     const mkProg = (label, sub, cls) => {
       const lab = h('span', { class: 'l' }, label);
       const val = h('span', { class: 'v' }, '');
@@ -727,13 +733,10 @@ export const hubScreens = {
       const f = b.querySelector('.fill');
       f.style.transition = 'none';
       const v = h('b', {}, `${fmtDec(c.from)} / ${fmtN(c.n)}`);
-      return { c, f, v, row: h('div', { class: 'lh-rw-con lh-a' + (c.done ? ' done' : '') }, h('div', { class: 'k' }, h('span', {}, c.text), v), b, c.done ? h('em', {}, 'Completado · cóbralo en Contratos') : null) };
+      return { c, f, v, row: h('div', { class: 'lh-rw-con lh-a' + (c.done ? ' done' : '') }, h('div', { class: 'k' }, h('span', {}, sing(c.text)), v), b, c.done ? h('em', {}, 'Completado · cóbralo en Contratos') : null) };
     });
-    const colB = h('div', { class: 'lh-rw-col glass' },
-      head('Progreso'), lvl.el, mast.el, crRow,
-      conRows.length ? head('Contratos') : null, ...conRows.map((x) => x.row));
 
-    // column C: loot, boss bike, unlocks
+    // column C: boss bike and loot
     const cards = rw.items.map((it) => flipCard(it, { compare: Rpg.s.active }));
     const won = rw.bikeWon ? BIKE_BY_ID[rw.bikeWon] : null;
     const wonEl = won ? h('div', { class: 'lh-rw-won lh-a' }, icon(RICON.boss), h('div', {}, h('span', {}, 'La moto del jefe es tuya'), h('b', {}, won.name))) : null;
@@ -745,8 +748,17 @@ export const hubScreens = {
       head('Piezas', h('span', { class: 'n' }, cards.length ? plural(cards.length, 'pieza', 'piezas') : '')),
       wonEl,
       cards.length ? loot : h('div', { class: 'lh-none' }, 'Sin piezas: termina la prueba para conseguir botín.'),
-      rw.salvaged.n ? h('div', { class: 'lh-note' }, `Inventario lleno: ${plural(rw.salvaged.n, 'pieza desguazada', 'piezas desguazadas')} automáticamente. Libera espacio en Equipamiento.`) : null,
-      unl.length ? head('Desbloqueado') : null, ...unl);
+      rw.salvaged.n ? h('div', { class: 'lh-note' }, `Inventario lleno: ${plural(rw.salvaged.n, 'pieza desguazada', 'piezas desguazadas')} automáticamente. Libera espacio en Equipamiento.`) : null);
+
+    // these headings appear together with their first line
+    const unlHead = unl.length ? head('Desbloqueado') : null;
+    const conHead = conRows.length ? head('Contratos') : null;
+    for (const hd of [unlHead, conHead]) if (hd) hd.classList.add('lh-a');
+    const colB = h('div', { class: 'lh-rw-col glass' },
+      head('Progreso'), lvl.el, mast.el, crRow,
+      unlHead, ...unl,
+      conHead, ...conRows.map((x) => x.row));
+    const body = h('div', { class: 'lh-rw-body' }, colA, colB, colC);
 
     // buttons + skip hint
     const btns = [
@@ -756,7 +768,6 @@ export const hubScreens = {
       this.btn('Ver repetición', ICO.replay, () => this.game.watchReplay()),
     ];
     const skipEl = h('div', { class: 'lh-skip' }, h('span', { class: 'keycap' }, 'Enter'), h('em', {}, 'Saltar'));
-    const body = h('div', { class: 'lh-rw-body' }, colA, colB, colC);
     put(s, h('div', { class: 'lh-scrim rw' }), header, body, h('div', { class: 'bottom-bar lh-rw-bar' }, skipEl, h('span', { class: 'grow' }), ...btns));
 
     // ---- the sequence (each step: instant? -> ms to wait before the next)
@@ -768,15 +779,15 @@ export const hubScreens = {
       const got = o.ok || o.had;
       if (got) { hstars[i].classList.add('on'); if (o.ok && !o.had) hstars[i].classList.add('pop'); }
       if (!inst && o.ok) Audio.select();
-      return o.ok ? 420 : 260;
+      return o.ok ? 380 : 240;
     }));
     let xpSum = 0;
     xpRows.forEach((x) => step((inst) => {
       show(x.row);
       xpSum += x.xp;
       if (inst) { x.v.textContent = `+${fmtN(x.xp)}`; return 0; }
-      count(x.v, x.xp, 300);
-      return 260;
+      count(x.v, x.xp, 260);
+      return 210;
     }));
     step((inst) => {
       show(xpTotRow);
@@ -809,7 +820,7 @@ export const hubScreens = {
           P.fill.style.width = '0%'; P.ghost.style.width = '0%';
           P.lab.textContent = label(g.L + 1);
           if (!inst) Audio.fanfare();
-          return 900;
+          return 750;
         });
       });
     };
@@ -818,7 +829,7 @@ export const hubScreens = {
       (L) => h('div', { class: 'lh-ban lh-a in' }, h('b', {}, `Nivel ${L}`), h('span', {}, '+1 punto de talento')));
     const M = rw.mastery;
     runBar(mast, segments(M.before, M.mxpBefore, M.ups, M.mxpAfter, D.masteryToNext, maxM), (m) => `Maestría ${m}`, 'XP', D.masteryToNext, maxM,
-      (m) => h('div', { class: 'lh-ban lh-a in m' }, h('b', {}, `Maestría ${m}`), h('span', {}, `+${D.MASTERY_POINTS_PER_LEVEL} puntos de maestría`)));
+      (m) => h('div', { class: 'lh-ban lh-a in m' }, h('b', {}, `Maestría ${m}`), h('span', {}, `+${D.MASTERY_POINTS_PER_LEVEL} puntos`)));
     step((inst) => {
       show(crRow);
       if (inst) { crV.textContent = `+${fmtN(rw.credits)}`; return 0; }
@@ -834,10 +845,11 @@ export const hubScreens = {
         c.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         if (rw.items[i].rar >= 3) Audio.fanfare(); else Audio.select();
       }
-      return rw.items[i].rar >= 3 ? 1100 : 650;
+      return rw.items[i].rar >= 3 ? 1000 : 600;
     }));
-    unl.forEach((u) => step((inst) => { show(u); if (!inst) Audio.lap(); return 380; }));
+    unl.forEach((u) => step((inst) => { show(unlHead); show(u); if (!inst) Audio.lap(); return 380; }));
     conRows.forEach((x) => step((inst) => {
+      show(conHead);
       show(x.row);
       const val = (k) => { const v = x.c.from + (x.c.to - x.c.from) * k; x.f.style.width = pct(v / x.c.n * 100); x.v.textContent = `${fmtDec(v)} / ${fmtN(x.c.n)}`; };
       if (inst) { val(1); return 0; }
