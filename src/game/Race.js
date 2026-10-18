@@ -8,6 +8,7 @@ import { BikePhysics } from './BikePhysics.js';
 import { AIController } from './AIController.js';
 import { CameraController, CAM_NAMES } from './CameraController.js';
 import { Effects } from './Effects.js';
+import { BikeGlow } from './BikeGlow.js';
 import { Recorder, GhostTrack } from './Replay.js';
 import { HUD } from '../ui/HUD.js';
 import { Input } from '../core/Input.js';
@@ -109,6 +110,7 @@ export class Race {
       if (e.player) this.player = bike;
     });
     this.order = this.bikes.slice();
+    this.glow = new BikeGlow(this.scene, Save.quality, this.ts.env, this.bikes);
 
     // headlight for the player at night / dusk / storm
     const T = this.ts.env.T;
@@ -258,6 +260,7 @@ export class Race {
     this._audio(dt);
     this.ts.update(dt, this.game.engine.camera, new THREE.Vector3(P.phys.x, P.phys.y, P.phys.z));
     this.effects.update(dt, this.game.engine.camera, this.game.engine.renderer, this.scene.fog);
+    this.glow.update(dt, this.game.engine.camera);
     this._postFx(dt);
     this.hud.update(dt);
     // player dash
@@ -729,6 +732,7 @@ export class Race {
     this._audio(dt);
     this.ts.update(dt, this.game.engine.camera, this.replayFocus.model.root.position);
     this.effects.update(dt, this.game.engine.camera, this.game.engine.renderer, this.scene.fog);
+    this.glow.update(dt, this.game.engine.camera);
     const fx = this.game.engine.fx;
     if (fx) { fx.uBlur.value = 0; fx.uTintAmt.value = 0.12; fx.uTint.value.setRGB(1.05, 1, 0.92); fx.uDamage.value = 0; }
   }
@@ -741,6 +745,7 @@ export class Race {
     for (const [, v] of this.voices || []) v.stop();
     this.voices?.clear();
     this.hud?.dispose();
+    this.glow?.dispose();
     this.effects?.dispose();
     for (const b of this.bikes) b.model.dispose();
     this.ghostModel?.dispose();
