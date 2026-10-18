@@ -176,6 +176,23 @@ const RAYS = /* glsl */`
   }
 `;
 
+// How much of the sun disk is unoccluded: 12 taps of the sky mask in a small disk,
+// rendered into a persistent 1x1 target with alpha blending, so it eases in and out
+// (no flicker when poles, leaves or bikes cross the sun)
+const OCC = /* glsl */`
+  uniform sampler2D tSrc;
+  uniform vec2 uSun;
+  uniform float uR, uAspect, uBlend;
+  void main(){
+    float acc = 0.0;
+    for (int i = 0; i < 12; i++) {
+      float a = float(i) * 2.39996, r = uR * sqrt((float(i) + 0.5) / 12.0);
+      acc += texture2D(tSrc, uSun + vec2(cos(a) / uAspect, sin(a)) * r).a;
+    }
+    gl_FragColor = vec4(vec3(acc / 12.0), uBlend);
+  }
+`;
+
 // Full-res composite + tone mapping + sRGB (same chunks as three's OutputPass)
 const COMPOSITE_VS = /* glsl */`
   precision highp float;
@@ -188,7 +205,7 @@ const COMPOSITE_VS = /* glsl */`
 `;
 const COMPOSITE_FS = /* glsl */`
   precision highp float;
-  uniform sampler2D tDiffuse, tStreak, tFlare, tGlow, tDirt, tRays;
+  uniform sampler2D tDiffuse, tStreak, tFlare, tGlow, tDirt, tRays, tOcc;
   uniform vec3 uStreakTint, uRayColor, uSunGlare, uSunLine;
   uniform vec2 uSunPos;
   uniform float uStreak, uFlare, uDirt, uRays, uSunOn, uInvExposure, uAspect;
@@ -206,7 +223,7 @@ const COMPOSITE_FS = /* glsl */`
       float ry = texture2D(tRays, vUv).r;
       lens += ry * ry * 1.8 * uRayColor * uRays;
       // how much of the sun disk is unoccluded drives its glare and streak
-      float open = texture2D(tRays, uSunPos).r;
+      float open = texture2D(tOcc, vec2(0.5)).r;
       vec2 d = (vUv - uSunPos) * vec2(uAspect, 1.0);
       float r = length(d);
       lens += uSunGlare * open * (dot(dirt, vec3(0.333)) * exp(-r * 3.5) + exp(-r * 2.0) * 0.02);
@@ -266,7 +283,7 @@ class LensComposite extends Pass {
     super();
     this.fx = fx;
     this.uniforms = {
-      tDiffuse: tex(), tStreak: tex(), tFlare: tex(), tGlow: tex(), tDirt: { value: lensDirtTexture() }, tRays: tex(),
+      tDiffuse: tex(), tStreak: tex(), tFlare: tex(), tGlow: tex(), tDirt: { value: lensDirtTexture() }, tRays: tex(), tOcc: tex(),
       uStreakTint: { value: new THREE.Color() }, uRayColor: { value: new THREE.Color() }, uSunGlare: { value: new THREE.Color() }, uSunLine: { value: new THREE.Color() },
       uSunPos: { value: new THREE.Vector2(0.5, 0.5) }, uStreak: f(), uFlare: f(), uDirt: f(), uRays: f(), uSunOn: f(), uInvExposure: f(1), uAspect: f(1.7),
       toneMappingExposure: f(1),
@@ -322,10 +339,16 @@ export class LensFX {
     this.mSDown = mat(STREAK_DOWN, { tSrc: tex(), uTexel: v2() });
     this.mSUp = mat(STREAK_UP, { tLow: tex(), tHigh: tex(), uTexel: v2(), uStretch: f(0.86) });
     this.mRays = mat(RAYS, { tSrc: tex(), uSun: v2(), uStep: f(0.1), uAlpha: f() });
+    this.mOcc = mat(OCC, { tSrc: tex(), uSun: v2(), uR: f(0.022), uAspect: f(1.7), uBlend: f(1) });
+    this.mOcc.blending = THREE.NormalBlending; this.mOcc.transparent = true;
+    // 1x1, kept across frames and resizes (eased sun visibility)
+    this.occ = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
+    this._occFresh = true;
     this.rts = [];
     this.down = []; this.up = [];
     this.prepass = new LensPrepass(this);
     this.composite = new LensComposite(this);
+    this.composite.uniforms.tOcc.value = this.occ.texture;
     this._w = 0; this._h = 0;
   }
 
@@ -350,8 +373,10 @@ export class LensFX {
     this.q16 = this._rt(bw / 4, bh / 4);
     this.glow = this._rt(bw / 4, bh / 4);
     this.flare = this._rt(bw / 2, bh / 2);
-    this.raysA = this._rt(bw, bh);
-    this.raysB = this._rt(bw, bh);
+    // shafts are soft: 1/8 res is plenty on medio
+    const rd = this.tier >= 2 ? 1 : 2;
+    this.raysA = this._rt(bw / rd, bh / rd);
+    this.raysB = this._rt(bw / rd, bh / rd);
     // streak pyramid: widths halve, height stays at 1/4 so the lines stay thin
     const levels = Math.max(2, Math.min(this.maxLevels, Math.floor(Math.log2(bw / 6))));
     this.down = [this._rt(bw, bh)];
@@ -461,23 +486,34 @@ export class LensFX {
     }
 
     if (doRays) {
-      // three passes, each 8 taps with an 8x finer step: 512 effective samples
+      // eased sun openness (blends over the previous frame's value)
+      m = this.mOcc; U = m.uniforms;
+      U.tSrc.value = this.bright.texture; U.uSun.value.copy(this.sunPos); U.uAspect.value = this.aspect;
+      U.uBlend.value = this._occFresh ? 1 : 0.3;
+      this._occFresh = false;
+      const ac = renderer.autoClear;
+      renderer.autoClear = false;
+      this._draw(renderer, m, this.occ);
+      renderer.autoClear = ac;
+      // radial blur toward the sun: passes of 8 taps, each with an 8x finer step
+      // (512 effective samples on alto/ultra, 64 at 1/8 res on medio); ends in raysA
       m = this.mRays; U = m.uniforms;
       U.uSun.value.copy(this.sunPos);
-      const L = p.rayLen;
+      const L = p.rayLen, three = this.tier >= 2;
       U.tSrc.value = this.bright.texture; U.uAlpha.value = 1; U.uStep.value = L / 8;
+      this._draw(renderer, m, three ? this.raysA : this.raysB);
+      U.uAlpha.value = 0;
+      if (three) { U.tSrc.value = this.raysA.texture; U.uStep.value = L / 64; this._draw(renderer, m, this.raysB); }
+      U.tSrc.value = this.raysB.texture; U.uStep.value = three ? L / 512 : L / 64;
       this._draw(renderer, m, this.raysA);
-      U.tSrc.value = this.raysA.texture; U.uAlpha.value = 0; U.uStep.value = L / 64;
-      this._draw(renderer, m, this.raysB);
-      U.tSrc.value = this.raysB.texture; U.uStep.value = L / 512;
-      this._draw(renderer, m, this.raysA);
-    }
+    } else this._occFresh = true;
   }
 
   dispose() {
     for (const rt of this.rts) rt.dispose();
     this.rts = [];
-    for (const m of [this.mBright, this.mDown, this.mBlur, this.mGhost, this.mSPre, this.mSDown, this.mSUp, this.mRays]) m.dispose();
+    this.occ.dispose();
+    for (const m of [this.mBright, this.mDown, this.mBlur, this.mGhost, this.mSPre, this.mSDown, this.mSUp, this.mRays, this.mOcc]) m.dispose();
     this.composite.dispose();
   }
 }
