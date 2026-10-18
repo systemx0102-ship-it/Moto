@@ -54,6 +54,7 @@ class Game {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     window.__game = this;
+    window.__rpg = Rpg;
     window.__ready = true;
   }
 

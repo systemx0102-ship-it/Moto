@@ -52,7 +52,7 @@ const TIPS = [
   'En contrarreloj compites contra tu propio fantasma: tu mejor vuelta queda guardada.',
 ];
 
-function trackThumb(def, w = 300, hh = 200, bare = false) {
+export function trackThumb(def, w = 300, hh = 200, bare = false) {
   const c = canvas(w, hh);
   const g = c.getContext('2d');
   const W = c.width, H = c.height;
