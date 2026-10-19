@@ -6,6 +6,7 @@
 // pegs. It hangs off into corners, tucks behind the screen on the straights, sits
 // up under braking, dabs a foot at a standstill and slides off in a crash.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, toTexture } from '../core/textures.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -14,7 +15,7 @@ const V = () => new THREE.Vector3();
 
 // body dimensions (m)
 const B = {
-  hipW: 0.095, pelvis: 0.15, chest: 0.37, shoulderW: 0.19, neck: 0.085,
+  hipW: 0.095, pelvis: 0.15, chest: 0.37, shoulderW: 0.19, neck: 0.06,
   upper: 0.29, fore: 0.27, thigh: 0.43, shin: 0.43, foot: 0.2,
 };
 // riding styles: tuck = how far the rider folds onto the tank at speed, hang = hang-off,
@@ -36,10 +37,11 @@ export const DESIGN_STYLE = {
 // rings: [t (0..1 of len), rx (front/back half size), rz (side half size), ox, oz]
 // UV: u round the ring (0 = -Z side, .25 back, .5 +Z side, .75 front), v along
 function segment(len, rings, { radial = 20, n = 2.2, caps = true, v0 = 0, v1 = 1 } = {}) {
-  const pos = [], uv = [], idx = [];
+  const pos = [], uv = [], idx = [], tv = [];
   const cols = radial + 1;
   for (const [t, rx, rz, ox = 0, oz = 0] of rings) {
     for (let j = 0; j <= radial; j++) {
+      tv.push(t);
       const a = -Math.PI / 2 - (j / radial) * Math.PI * 2;
       const c = Math.cos(a), s = Math.sin(a), e = 2 / n;
       pos.push(ox + rx * Math.sign(c) * Math.abs(c) ** e, t * len, oz + rz * Math.sign(s) * Math.abs(s) ** e);
@@ -56,7 +58,7 @@ function segment(len, rings, { radial = 20, n = 2.2, caps = true, v0 = 0, v1 = 1
     for (const [ri, flip] of [[0, true], [rings.length - 1, false]]) {
       const [t, , , ox = 0, oz = 0] = rings[ri];
       const ci = pos.length / 3;
-      pos.push(ox, t * len, oz); uv.push(0.5, t);
+      pos.push(ox, t * len, oz); uv.push(0.5, t); tv.push(t);
       for (let j = 0; j < radial; j++) {
         const a = ri * cols + j;
         if (flip) idx.push(ci, a + 1, a); else idx.push(ci, a, a + 1);
@@ -76,6 +78,7 @@ function segment(len, rings, { radial = 20, n = 2.2, caps = true, v0 = 0, v1 = 1
     const l = Math.hypot(x, y, z) || 1;
     nm.setXYZ(a, x / l, y / l, z / l); nm.setXYZ(b, x / l, y / l, z / l);
   }
+  g.userData.tv = tv;
   return g;
 }
 
@@ -210,60 +213,161 @@ function riderMaterials(livery, number) {
 }
 
 // ---------------------------------------------------------------------------
+// Skeleton. Bones are all children of the rider root and are placed absolutely
+// every frame from the IK joints; the suit is one skinned surface over them so
+// waist, hips, shoulders, elbows and knees bend without seams.
+const BONE = { pelvis: 0, chest: 1, neck: 2, head: 3 };
+const LIMB = ['upper', 'fore', 'hand', 'thigh', 'shin', 'foot'];
+const boneIndex = (s, name) => 4 + (s < 0 ? 0 : 6) + LIMB.indexOf(name);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+// rest pose (rider standing, arms down): joint positions + bone frames in root space
+function restPose() {
+  const P = new THREE.Vector3(0, 0, 0), lumb = new THREE.Vector3(0, B.pelvis, 0);
+  const neckBase = new THREE.Vector3(0, B.pelvis + B.chest, 0), headP = new THREE.Vector3(0, B.pelvis + B.chest + B.neck, 0);
+  const up = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
+  const frames = [];
+  const put = (i, a, b, hint) => { const o = new THREE.Object3D(); placeSeg(o, a, b, hint); o.updateMatrix(); frames[i] = o.matrix.clone(); };
+  put(BONE.pelvis, P, lumb, Z);
+  put(BONE.chest, lumb, neckBase, Z);
+  put(BONE.neck, neckBase, headP, Z);
+  put(BONE.head, headP, headP.clone().add(up), Z);
+  for (const s of [-1, 1]) {
+    const sh = new THREE.Vector3(0, B.pelvis + B.chest * 0.88, s * B.shoulderW);
+    const el = sh.clone().add(new THREE.Vector3(0, -B.upper, 0)), wr = el.clone().add(new THREE.Vector3(0, -B.fore, 0));
+    const hp = new THREE.Vector3(0, 0.02, s * B.hipW), kn = hp.clone().add(new THREE.Vector3(0, -B.thigh, 0)), an = kn.clone().add(new THREE.Vector3(0, -B.shin, 0));
+    put(boneIndex(s, 'upper'), sh, el, Z);
+    put(boneIndex(s, 'fore'), el, wr, Z);
+    put(boneIndex(s, 'hand'), wr, wr.clone().add(new THREE.Vector3(0, -0.1, 0)), Z);
+    put(boneIndex(s, 'thigh'), hp, kn, Z);
+    put(boneIndex(s, 'shin'), kn, an, Z);
+    put(boneIndex(s, 'foot'), an, an.clone().add(new THREE.Vector3(B.foot, 0, 0)), up);
+  }
+  return frames;
+}
+
+// tube geometry along a bone, moved into rest space and weighted to the bone and its
+// neighbours: w(t) -> [boneA, weightA, boneB, weightB]
+function skinned(geo, rest, w) {
+  const g = geo.clone();
+  g.applyMatrix4(rest);
+  const tv = geo.userData.tv;
+  const n = g.attributes.position.count;
+  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const [a, wa, b, wb] = w(tv[i]);
+    si[i * 4] = a; si[i * 4 + 1] = b; sw[i * 4] = wa; sw[i * 4 + 1] = wb;
+  }
+  g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+  g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  return g;
+}
+// blend from bone `own` toward `prev` below t0 and toward `next` above t1 (50 % at the joint)
+const blend = (own, prev, next, t0 = 0.2, t1 = 0.82) => (t) => {
+  if (prev !== null && t < t0) { const k = clamp(0.5 - 0.5 * (t / t0), 0, 1); return [own, 1 - k, prev, k]; }
+  if (next !== null && t > t1) { const k = clamp(0.5 + 0.5 * ((t - 1) / (1 - t1)), 0, 1); return [own, 1 - k, next, k]; }
+  return [own, 1, own, 0];
+};
+
 // static geometry (shared by every rider)
 let GEO = null;
 function geometry() {
   if (GEO) return GEO;
-  GEO = {
-    // pelvis: seat contact (t<0) to the waist; +X is the front. The lumbar spine bends
-    // so the pelvis rotates far less than the chest in a tuck.
-    pelvis: segment(B.pelvis, [
-      [-0.32, 0.085, 0.12, -0.01], [-0.12, 0.118, 0.152, -0.02], [0.25, 0.13, 0.166, -0.03], [0.65, 0.115, 0.155, -0.015], [1.05, 0.1, 0.145, 0.0],
-    ], { radial: 28, n: 2.3, v0: 0, v1: 0.32 }),
-    // chest: waist to the base of the neck
-    chest: segment(B.chest, [
-      [-0.05, 0.095, 0.145, 0.0], [0.3, 0.104, 0.16, 0.006], [0.58, 0.113, 0.185, 0.004], [0.8, 0.108, 0.2, -0.008], [0.93, 0.082, 0.165, -0.02], [1.03, 0.05, 0.07, -0.01],
-    ], { radial: 28, n: 2.3, v0: 0.32, v1: 1 }),
-    // aero hump on the back, flowing into the helmet
-    hump: segment(0.24, [[0, 0.015, 0.06, -0.09], [0.3, 0.045, 0.09, -0.11], [0.7, 0.058, 0.085, -0.115], [1, 0.025, 0.04, -0.09]], { radial: 18, n: 2.4 }),
-    shoulder: ellipsoid(0.075, 0.07, 0.08),
-    upper: segment(B.upper, [[-0.05, 0.06, 0.065], [0.15, 0.062, 0.066], [0.6, 0.053, 0.055], [1.0, 0.046, 0.048]], { radial: 16 }),
-    elbow: ellipsoid(0.05, 0.05, 0.05),
-    elbowPuck: rbox(0.06, 0.012, 0.05, [0, 0, 0]),
-    fore: segment(B.fore, [[-0.02, 0.047, 0.05], [0.3, 0.05, 0.052], [0.8, 0.038, 0.042], [1.0, 0.035, 0.04]], { radial: 16 }),
-    // gauntlet glove: cuff + fist wrapped round the grip; knuckle armour on top
-    cuff: segment(0.07, [[0, 0.05, 0.052], [1, 0.043, 0.047]], { radial: 14 }).translate(0, -0.065, 0),
-    fist: rbox(0.06, 0.1, 0.085, [0, 0.055, 0]),
-    knuckle: rbox(0.022, 0.06, 0.07, [0.03, 0.06, 0]),
-    hip: ellipsoid(0.085, 0.085, 0.085),
-    thigh: segment(B.thigh, [[-0.04, 0.085, 0.085], [0.2, 0.09, 0.088], [0.7, 0.068, 0.07], [1.0, 0.056, 0.058]], { radial: 18 }),
-    knee: ellipsoid(0.062, 0.062, 0.062),
-    kneeSlider: rbox(0.075, 0.02, 0.055, [0, 0, 0]),
-    shin: segment(B.shin, [[-0.02, 0.058, 0.058], [0.25, 0.06, 0.056], [0.45, 0.055, 0.052]], { radial: 16 }),
-    // race boot: shaft over the lower shin with a calf brace, then the foot
-    shaft: segment(B.shin, [[0.42, 0.064, 0.06], [0.7, 0.058, 0.054], [1.0, 0.052, 0.05], [1.06, 0.05, 0.05]], { radial: 16 }),
-    // foot frame: +Y heel->toe, +Z up, +X = the bike's +z
-    foot: segment(B.foot, [[-0.1, 0.045, 0.05, 0, 0.005], [0.08, 0.05, 0.052], [0.6, 0.045, 0.04, 0, -0.005], [0.93, 0.033, 0.028, 0, -0.012], [1.0, 0.02, 0.016, 0, -0.016]], { radial: 16, n: 2.6 }),
-    sole: rbox(0.09, 0.24, 0.016, [0, 0.085, -0.046]),
-    toeSlider: rbox(0.016, 0.06, 0.03, [0, 0.15, -0.025]),
-    calfBrace: rbox(0.03, 0.16, 0.05, [0.05, 0.75 * B.shin, 0]),
-    neck: segment(0.11, [[0, 0.05, 0.055], [1, 0.05, 0.055]], { radial: 14 }),
+  const rest = restPose();
+  const T = B.pelvis + B.chest;
+  // torso as one surface from the seat to the neck, pelvis + chest bones blended at the waist
+  const torso = segment(T, [
+    [-0.09, 0.085, 0.118, 0.0], [0.0, 0.11, 0.148, -0.02], [0.14, 0.124, 0.164, -0.03], [0.27, 0.112, 0.152, -0.012],
+    [0.4, 0.104, 0.15, 0.004], [0.55, 0.112, 0.168, 0.01], [0.7, 0.118, 0.188, 0.006], [0.82, 0.112, 0.2, -0.004],
+    [0.9, 0.098, 0.19, -0.014], [0.96, 0.075, 0.14, -0.02], [1.01, 0.052, 0.068, -0.012],
+  ], { radial: 32, n: 2.3 });
+  const tl = B.pelvis / T;
+  const torsoW = (t) => { const k = smooth(tl - 0.12, tl + 0.1, t); return [BONE.pelvis, 1 - k, BONE.chest, k]; };
+  const suitParts = [skinned(torso, rest[BONE.pelvis], torsoW)];
+  const limbParts = [];
+  for (const s of [-1, 1]) {
+    const bi = (n) => boneIndex(s, n);
+    // upper arm from inside the deltoid to the elbow
+    const up = segment(B.upper, [[-0.16, 0.05, 0.058], [-0.04, 0.064, 0.068], [0.12, 0.062, 0.064], [0.45, 0.052, 0.054], [0.8, 0.045, 0.047], [1.0, 0.046, 0.048], [1.08, 0.044, 0.046]], { radial: 18 });
+    limbParts.push(skinned(up, rest[bi('upper')], blend(bi('upper'), BONE.chest, bi('fore'), 0.22, 0.85)));
+    const fo = segment(B.fore, [[-0.06, 0.045, 0.047], [0.08, 0.047, 0.05], [0.3, 0.049, 0.052], [0.7, 0.039, 0.042], [1.0, 0.034, 0.037], [1.06, 0.035, 0.037]], { radial: 18 });
+    limbParts.push(skinned(fo, rest[bi('fore')], blend(bi('fore'), bi('upper'), bi('hand'), 0.16, 0.95)));
+    // thigh from inside the hip to the knee, shin down into the boot
+    const th = segment(B.thigh, [[-0.16, 0.072, 0.07], [-0.02, 0.088, 0.086], [0.2, 0.087, 0.082], [0.55, 0.073, 0.068], [0.88, 0.06, 0.058], [1.0, 0.06, 0.058], [1.07, 0.058, 0.056]], { radial: 20 });
+    limbParts.push(skinned(th, rest[bi('thigh')], blend(bi('thigh'), BONE.pelvis, bi('shin'), 0.26, 0.85)));
+    const sh = segment(B.shin, [[-0.06, 0.058, 0.056], [0.06, 0.06, 0.057], [0.22, 0.058, 0.053, 0.008], [0.45, 0.052, 0.049]], { radial: 18 });
+    limbParts.push(skinned(sh, rest[bi('shin')], blend(bi('shin'), bi('thigh'), null, 0.16, 1)));
+  }
+  GEO = { rest, suit: mergeGeometries(suitParts), limbs: mergeGeometries(limbParts) };
+  // aero hump on the back, flowing into the helmet (rigid on the chest)
+  GEO.hump = segment(0.24, [[0, 0.015, 0.06, -0.09], [0.3, 0.045, 0.09, -0.112], [0.7, 0.058, 0.084, -0.118], [1, 0.025, 0.04, -0.092]], { radial: 18, n: 2.4 });
+  // armour shells (rigid on their bones)
+  GEO.shoulderPad = rbox(0.06, 0.08, 0.035, [0, 0.02, 0]);
+  GEO.elbowPuck = rbox(0.05, 0.012, 0.045, [0, 0, 0]);
+  GEO.kneeCap = rbox(0.05, 0.085, 0.07, [0, 0.0, 0]);
+  GEO.kneeSlider = rbox(0.07, 0.02, 0.055, [0, 0, 0]);
+  GEO.neck = segment(0.07, [[-0.1, 0.05, 0.055], [0.6, 0.042, 0.046], [1, 0.044, 0.048]], { radial: 16 });
+  // gauntlet glove: cuff + fist wrapped round the grip; knuckle armour on top
+  GEO.cuff = segment(0.07, [[0, 0.05, 0.052], [1, 0.043, 0.047]], { radial: 16 }).translate(0, -0.065, 0);
+  GEO.fist = rbox(0.06, 0.1, 0.085, [0, 0.055, 0]);
+  GEO.knuckle = rbox(0.022, 0.06, 0.07, [0.03, 0.06, 0]);
+  GEO.thumb = rbox(0.025, 0.05, 0.025, [-0.01, 0.05, 0.045]);
+  // race boot: shaft over the lower shin with a calf brace, then the foot (foot frame: +Y heel->toe, +Z up)
+  GEO.shaft = segment(B.shin, [[0.42, 0.064, 0.06], [0.7, 0.058, 0.054], [1.0, 0.052, 0.05], [1.06, 0.05, 0.05]], { radial: 18 });
+  GEO.calfBrace = rbox(0.03, 0.16, 0.05, [0.05, 0.75 * B.shin, 0]);
+  GEO.buckles = [rbox(0.012, 0.03, 0.045, [-0.058, 0.62 * B.shin, 0]), rbox(0.012, 0.03, 0.045, [-0.054, 0.82 * B.shin, 0])];
+  GEO.foot = segment(B.foot, [[-0.1, 0.045, 0.05, 0, 0.005], [0.08, 0.05, 0.052], [0.6, 0.045, 0.04, 0, -0.005], [0.93, 0.033, 0.028, 0, -0.012], [1.0, 0.02, 0.016, 0, -0.016]], { radial: 16, n: 2.6 });
+  GEO.sole = rbox(0.09, 0.24, 0.016, [0, 0.085, -0.046]);
+  GEO.toeSlider = rbox(0.016, 0.06, 0.03, [0, 0.15, -0.025]);
+  // helmet in head space: origin at the top of the neck, +Y up, +X forward.
+  // One parametric shell (crown, cheeks, integrated chin bar, open base); the visor and
+  // its seal are offsets of the same surface over the eye port, so they fit exactly.
+  const HC = [0.012, 0.118, 0];
+  const helmR = (dx, dy, dz) => {
+    const ax = dx > 0 ? 0.142 : 0.152, ay = dy > 0 ? 0.138 : 0.128, az = 0.122;
+    let r = 1 / Math.sqrt((dx / ax) ** 2 + (dy / ay) ** 2 + (dz / az) ** 2);
+    // chin bar: forward and down
+    r += 0.05 * Math.max(0, dx) ** 2 * Math.max(0, -dy - 0.05) ** 0.8;
+    // swept tail toward the neck roll
+    r += 0.012 * Math.max(0, -dx) ** 3 * Math.max(0, 0.4 - Math.abs(dy));
+    return r;
   };
-  // helmet in head space: origin at the top of the neck, +Y up, +X forward
-  const shell = new THREE.SphereGeometry(1, 34, 22);
-  shell.scale(0.148, 0.136, 0.124); shell.translate(0.015, 0.12, 0);
-  const chin = ellipsoid(0.08, 0.064, 0.105, [0.092, 0.046, 0], 24, 14);
-  const visor = new THREE.SphereGeometry(1, 30, 12, Math.PI - 0.82, 1.64, 1.2, 0.55);
-  visor.scale(0.152, 0.14, 0.128); visor.translate(0.015, 0.12, 0);
-  const port = new THREE.SphereGeometry(1, 30, 12, Math.PI - 0.86, 1.72, 1.16, 0.63);
-  port.scale(0.15, 0.138, 0.126); port.translate(0.015, 0.12, 0);
-  const spoiler = rbox(0.085, 0.02, 0.12, [-0.122, 0.2, 0], [0, 0, -0.35]);
-  const lip = rbox(0.065, 0.015, 0.095, [-0.145, 0.155, 0], [0, 0, -0.9]);
-  const vents = [rbox(0.05, 0.015, 0.028, [0.085, 0.237, 0.033], [0, 0, 0.5]), rbox(0.05, 0.015, 0.028, [0.085, 0.237, -0.033], [0, 0, 0.5])];
-  const chinVent = rbox(0.016, 0.03, 0.05, [0.17, 0.042, 0], [0, 0, 0.3]);
-  const pivots = [ellipsoid(0.02, 0.02, 0.008, [0.03, 0.12, 0.128]), ellipsoid(0.02, 0.02, 0.008, [0.03, 0.12, -0.128])];
-  const rim = segment(0.03, [[0, 0.108, 0.094, -0.01], [1, 0.122, 0.105, 0.0]], { radial: 24, caps: false });
-  rim.translate(0, -0.005, 0);
+  const surf = (th0, th1, ph0, ph1, nth, nph, off, uvFull) => {
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= nth; i++) {
+      const th = th0 + (th1 - th0) * (i / nth);
+      for (let j = 0; j <= nph; j++) {
+        const ph = ph0 + (ph1 - ph0) * (j / nph);
+        const dx = Math.sin(th) * Math.cos(ph), dy = Math.cos(th), dz = Math.sin(th) * Math.sin(ph);
+        const r = helmR(dx, dy, dz) + off;
+        pos.push(HC[0] + dx * r, HC[1] + dy * r, HC[2] + dz * r);
+        uv.push(uvFull ? ((ph / (Math.PI * 2)) + 0.5) % 1 : j / nph, uvFull ? 1 - th / Math.PI : 1 - i / nth);
+      }
+    }
+    for (let i = 0; i < nth; i++) for (let j = 0; j < nph; j++) {
+      const a = i * (nph + 1) + j, b = a + 1, c = a + nph + 1, d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  };
+  // shell: phi from the back (-PI) round to the back again so the texture seam sits behind
+  const shell = surf(0.001, 2.32, -Math.PI, Math.PI, 30, 48, 0, true);
+  const EYE = [1.12, 1.72, -0.9, 0.9];
+  const port = surf(EYE[0] - 0.035, EYE[1] + 0.03, EYE[2] - 0.05, EYE[3] + 0.05, 8, 24, 0.0015, false);
+  const visor = surf(EYE[0], EYE[1], EYE[2], EYE[3], 10, 28, 0.0045, false);
+  const chin = surf(1.95, 2.25, -0.32, 0.32, 4, 8, 0.002, false); // chin vent grille
+  const spoiler = rbox(0.085, 0.018, 0.12, [-0.128, 0.205, 0], [0, 0, -0.32]);
+  const lip = rbox(0.06, 0.014, 0.09, [-0.15, 0.15, 0], [0, 0, -0.95]);
+  const vents = [rbox(0.05, 0.014, 0.026, [0.08, 0.247, 0.034], [0, 0, 0.45]), rbox(0.05, 0.014, 0.026, [0.08, 0.247, -0.034], [0, 0, 0.45])];
+  const chinVent = rbox(0.012, 0.022, 0.05, [0.165, 0.035, 0], [0, 0, 0.4]);
+  const pivots = [ellipsoid(0.02, 0.02, 0.006, [0.04, 0.12, 0.124]), ellipsoid(0.02, 0.02, 0.006, [0.04, 0.12, -0.124])];
+  // neck roll round the open base
+  const rim = surf(2.28, 2.36, -Math.PI, Math.PI, 2, 40, -0.004, false);
   GEO.helmet = { shell, chin, visor, port, spoiler, lip, vents, chinVent, pivots, rim };
   return GEO;
 }
@@ -271,16 +375,16 @@ function geometry() {
 // ---------------------------------------------------------------------------
 const _a = V(), _b = V(), _c = V(), _d = V(), _x = V(), _y = V(), _z = V(), _m = new THREE.Matrix4();
 
-// orient a segment mesh from joint a toward joint b; z hint = side axis of the bend plane
-function placeSeg(mesh, a, b, zHint) {
+// orient a bone/segment from joint a toward joint b; z hint = side axis of the bend plane
+function placeSeg(obj, a, b, zHint) {
   _y.subVectors(b, a).normalize();
   _z.copy(zHint).addScaledVector(_y, -_y.dot(zHint));
   if (_z.lengthSq() < 1e-6) _z.set(0, 0, 1).addScaledVector(_y, -_y.z);
   _z.normalize();
   _x.crossVectors(_y, _z).normalize();
   _m.makeBasis(_x, _y, _z);
-  mesh.quaternion.setFromRotationMatrix(_m);
-  mesh.position.copy(a);
+  obj.quaternion.setFromRotationMatrix(_m);
+  obj.position.copy(a);
 }
 
 // two-bone IK: root r, target t, lengths a/b, pole direction p -> writes joint into out
@@ -310,61 +414,72 @@ export class Rider {
     this.steer = groups.steer;
     this.root = new THREE.Group();
     this.root.name = 'rider';
-    const mk = (geo, mat, parent = this.root) => {
+    const cast = opts.castShadow !== false;
+    const mk = (geo, mat, parent) => {
       const m = new THREE.Mesh(geo, mat);
-      m.castShadow = opts.castShadow !== false; m.receiveShadow = true;
+      m.castShadow = cast; m.receiveShadow = true;
       parent.add(m);
       return m;
     };
+    // skeleton in the rest pose, then bind the skinned suit to it
+    this.bones = G.rest.map((mx) => {
+      const b = new THREE.Bone();
+      mx.decompose(b.position, b.quaternion, b.scale);
+      this.root.add(b);
+      return b;
+    });
+    this.root.updateMatrixWorld(true);
+    const skeleton = new THREE.Skeleton(this.bones);
+    for (const [geo, mat] of [[G.suit, mats.suit], [G.limbs, mats.limb]]) {
+      const sm = new THREE.SkinnedMesh(geo, mat);
+      sm.castShadow = cast; sm.receiveShadow = true; sm.frustumCulled = false;
+      this.root.add(sm);
+      sm.bind(skeleton);
+    }
+    const bn = this.bones;
+    // rigid gear on the bones
+    mk(G.hump, mats.suit, bn[BONE.chest]).position.set(0, B.chest * 0.6, 0);
+    mk(G.neck, mats.black, bn[BONE.neck]);
+    const H = G.helmet, head = bn[BONE.head];
+    for (const g of [H.shell, H.chin]) mk(g, mats.helmet, head);
+    mk(H.port, mats.trim, head);
+    mk(H.visor, mats.visor, head);
+    for (const g of [H.spoiler, H.lip, ...H.vents, H.chinVent, ...H.pivots, H.rim]) mk(g, mats.trim, head);
+    for (const s of [-1, 1]) {
+      const b = (n) => bn[boneIndex(s, n)];
+      // local frames: limb bones have +Y down the limb and +Z = the bike's +z, so the
+      // outside of a left limb is -Z and of a right limb +Z
+      mk(G.shoulderPad, mats.slider, b('upper')).position.set(-0.005, 0.05, s * 0.058);
+      const puck = mk(G.elbowPuck, mats.slider, b('fore'));
+      puck.position.set(0.02, 0.01, s * 0.04); puck.rotation.x = s * 0.6;
+      mk(G.kneeCap, mats.limb, b('shin')).position.set(-0.05, 0.04, 0);
+      const ks = mk(G.kneeSlider, mats.slider, b('shin'));
+      ks.position.set(-0.02, 0.03, s * 0.062); ks.rotation.x = Math.PI / 2;
+      mk(G.cuff, mats.glove, b('hand')); mk(G.fist, mats.glove, b('hand')); mk(G.knuckle, mats.knuckle, b('hand'));
+      mk(G.thumb, mats.glove, b('hand')).position.z = s > 0 ? -0.09 : 0;
+      mk(G.shaft, mats.boot, b('shin')); mk(G.calfBrace, mats.bootTrim, b('shin'));
+      for (const g of G.buckles) mk(g, mats.slider, b('shin'));
+      mk(G.foot, mats.boot, b('foot')); mk(G.sole, mats.black, b('foot'));
+      mk(G.toeSlider, mats.slider, b('foot')).position.x = s * 0.048;
+    }
     // skeleton targets from the bike
     const seat = ctx.seat || { x: (ctx.pegs?.x ?? -0.2) + 0.05, y: 0.82 };
     this.seat = new THREE.Vector3(seat.x, seat.y, 0);
-    const pegs = ctx.pegs || { x: -0.2, y: 0.4, z: 0.17 };
-    this.pegs = pegs;
+    this.pegs = ctx.pegs || { x: -0.2, y: 0.4, z: 0.17 };
     // grips in steering-group space (so they follow the bars)
     const grips = ctx.grips || [[0.45, 0.95, -0.33], [0.45, 0.95, 0.33]];
     this.steer.updateMatrix();
     const inv = this.steer.matrix.clone().invert();
     this.gripLocal = grips.map((p) => new THREE.Vector3(...p).applyMatrix4(inv));
-
-    // meshes
-    this.pelvisMesh = mk(G.pelvis, mats.suit);
-    this.torso = mk(G.chest, mats.suit);
-    this.hump = mk(G.hump, mats.suit, this.torso);
-    this.hump.position.set(0, B.chest * 0.6, 0);
-    this.neck = mk(G.neck, mats.black);
-    this.head = new THREE.Group(); this.root.add(this.head);
-    const H = G.helmet;
-    for (const g of [H.shell, H.chin]) mk(g, mats.helmet, this.head);
-    mk(H.port, mats.trim, this.head);
-    mk(H.visor, mats.visor, this.head);
-    for (const g of [H.spoiler, H.lip, ...H.vents, H.chinVent, ...H.pivots, H.rim]) mk(g, mats.trim, this.head);
-    this.limbs = [];
-    for (const s of [-1, 1]) {
-      const L = {
-        s,
-        shoulder: mk(G.shoulder, mats.limb), upper: mk(G.upper, mats.limb), elbow: mk(G.elbow, mats.limb),
-        puck: mk(G.elbowPuck, mats.slider), fore: mk(G.fore, mats.limb),
-        hand: new THREE.Group(),
-        hip: mk(G.hip, mats.suit), thigh: mk(G.thigh, mats.limb), knee: mk(G.knee, mats.limb), slider: mk(G.kneeSlider, mats.slider),
-        shin: mk(G.shin, mats.limb), shaft: mk(G.shaft, mats.boot), foot: new THREE.Group(),
-        sh: V(), el: V(), wr: V(), hp: V(), kn: V(), an: V(), toe: V(),
-      };
-      this.root.add(L.hand, L.foot);
-      mk(G.cuff, mats.glove, L.hand); mk(G.fist, mats.glove, L.hand); mk(G.knuckle, mats.knuckle, L.hand);
-      mk(G.foot, mats.boot, L.foot); mk(G.sole, mats.black, L.foot);
-      mk(G.toeSlider, mats.slider, L.foot).position.x = s * 0.048;
-      mk(G.calfBrace, mats.bootTrim, L.shaft);
-      this.limbs.push(L);
-    }
+    this.limbs = [-1, 1].map((s) => ({ s, sh: V(), el: V(), wr: V(), hp: V(), kn: V(), an: V(), toe: V() }));
     // smoothed pose state
     this.st = { hang: 0, tuck: 0, brake: 0, stop: 1, crash: 0, air: 0 };
-    this._p = V(); this._spine = V(); this._pdir = V(); this._lumb = V(); this._lat = V(); this._neck = V(); this._g = [V(), V()];
+    this._p = V(); this._spine = V(); this._pdir = V(); this._lumb = V(); this._lat = V(); this._neck = V(); this._g = [V(), V()]; this._nb = V();
     this.update({ speed: 0 }, 1);
   }
 
   update(s, dt) {
-    const st = this.st, S = this.style;
+    const st = this.st, S = this.style, bn = this.bones;
     const lean = s.lean || 0, speed = Math.abs(s.speed || 0);
     st.hang = damp(st.hang, clamp(lean / 0.85, -1, 1), 5, dt);
     const tuckT = S.tuck * clamp((speed - 22) / 30, 0, 1) * (s.throttle === undefined || s.throttle > 0.4 ? 1 : 0.35) * (s.braking ? 0.2 : 1);
@@ -373,16 +488,15 @@ export class Rider {
     st.stop = damp(st.stop, speed < 0.7 && !s.crashed ? 1 : 0, 5, dt);
     st.air = damp(st.air, s.airborne ? 1 : 0, 6, dt);
     if (s.crashed) st.crash = damp(st.crash, 1, 4, dt); else st.crash = 0;
-    const h = st.hang * S.hang, ha = Math.abs(h), side = Math.sign(h) || 1;
+    const h = st.hang * S.hang, ha = Math.abs(h);
     const c = st.crash;
 
     // pelvis: on the seat, sliding toward the inside of the corner
     const P = this._p.set(this.seat.x - 0.03 * ha - 0.02 * st.tuck, this.seat.y + 0.075 - 0.02 * ha + 0.03 * st.air * (S === STYLES.mx ? 2 : 0.5), h * 0.11);
-    // grips follow the steering
+    // grips follow the steering; wrists sit just behind and above them
     this.steer.updateMatrix();
     const gl = this._g[0].copy(this.gripLocal[0]).applyMatrix4(this.steer.matrix);
     const gr = this._g[1].copy(this.gripLocal[1]).applyMatrix4(this.steer.matrix);
-    // wrists sit just behind and above the grips
     for (const g of this._g) g.x -= 0.055, g.y += 0.03;
 
     // torso pitch so the shoulders land at the desired arm reach
@@ -406,65 +520,48 @@ export class Rider {
     const lat = this._lat.set(0, 0, 1).addScaledVector(spine, -spine.z).normalize();
     const lumb = lumbar(th, this._lumb);
     const pdir = this._pdir.subVectors(lumb, P).normalize();
-    placeSeg(this.pelvisMesh, P, lumb, lat);
-    placeSeg(this.torso, lumb, _d.copy(lumb).add(spine), lat);
-    const neckBase = _d.copy(lumb).addScaledVector(spine, B.chest);
+    placeSeg(bn[BONE.pelvis], P, lumb, lat);
+    placeSeg(bn[BONE.chest], lumb, _d.copy(lumb).add(spine), lat);
+    const neckBase = this._nb.copy(lumb).addScaledVector(spine, B.chest);
 
     // head: look ahead (chin up in a tuck), stay closer to level than the bike
     const look = this._neck.set(Math.sin(th) * 0.8 + 0.25, Math.cos(th) * 0.5 + 0.55 - 0.15 * st.tuck, latBend * 0.6 + h * 0.15).normalize();
-    this.neck.position.copy(neckBase);
-    placeSeg(this.neck, neckBase, _c.copy(neckBase).add(look), lat);
-    this.head.position.copy(neckBase).addScaledVector(look, B.neck);
-    // head frame: forward toward the horizon, rolled back toward level
+    placeSeg(bn[BONE.neck], neckBase, _c.copy(neckBase).add(look), lat);
+    const head = bn[BONE.head];
+    head.position.copy(neckBase).addScaledVector(look, B.neck);
     _x.set(1, -0.12 - 0.1 * st.tuck, 0).normalize();
     _y.set(-Math.sin(th) * 0.25, 1, -lean * 0.45 + h * 0.2).normalize();
     _y.addScaledVector(_x, -_y.dot(_x)).normalize();
     _z.crossVectors(_x, _y);
     _m.makeBasis(_x, _y, _z);
-    this.head.quaternion.setFromRotationMatrix(_m);
+    head.quaternion.setFromRotationMatrix(_m);
 
     for (const L of this.limbs) {
       const s0 = L.s;
+      const b = (n) => bn[boneIndex(s0, n)];
       const inside = h !== 0 && Math.sign(h) === s0 ? ha : 0;
-      // arms
+      // arms: elbows out and down
       L.sh.copy(lumb).addScaledVector(spine, B.chest * 0.88).addScaledVector(lat, s0 * B.shoulderW);
       const wrist = L.wr.copy(s0 < 0 ? gl : gr);
       if (c > 0) wrist.lerp(_c.copy(L.sh).add(_b.set(0.15, 0.2, s0 * 0.45)), c);
-      const pole = _a.set(-0.35, -1, s0 * 0.5);
-      ik(L.sh, wrist, B.upper, B.fore, pole, L.el);
-      placeSeg(L.upper, L.sh, L.el, _b.set(0, 0, 1));
-      placeSeg(L.fore, L.el, wrist, _b.set(0, 0, 1));
-      L.shoulder.position.copy(L.sh);
-      L.elbow.position.copy(L.el);
-      L.puck.position.copy(L.el).addScaledVector(_c.subVectors(L.el, L.sh).normalize(), 0.0).add(_b.set(-0.035, -0.02, s0 * 0.03));
-      L.puck.quaternion.copy(L.fore.quaternion);
+      ik(L.sh, wrist, B.upper, B.fore, _a.set(-0.35, -1, s0 * 0.5), L.el);
+      placeSeg(b('upper'), L.sh, L.el, _b.set(0, 0, 1));
+      placeSeg(b('fore'), L.el, wrist, _b.set(0, 0, 1));
       // hand: from the wrist toward the grip, palm round it
-      L.hand.position.copy(wrist);
-      placeSeg(L.hand, wrist, _c.set(wrist.x + 0.07, wrist.y - 0.035, wrist.z), _b.set(0, 0, 1));
-      L.hand.position.copy(wrist);
+      placeSeg(b('hand'), wrist, _c.set(wrist.x + 0.07, wrist.y - 0.035, wrist.z), _b.set(0, 0, 1));
 
-      // legs
+      // legs: knees forward and against the tank, the inside one out in a corner
       L.hp.copy(P).addScaledVector(lat, s0 * B.hipW).addScaledVector(pdir, 0.02);
       const pg = this.pegs;
       const ankle = L.an.set(pg.x + S.foot[0], pg.y + S.foot[1], s0 * (pg.z + 0.035));
-      // foot down when stopped (left side), legs dangle a little in the air
       if (s0 < 0 && st.stop > 0.01) ankle.lerp(_c.set(pg.x + 0.12, 0.09, -(pg.z + 0.2)), st.stop);
       if (c > 0) ankle.lerp(_c.copy(L.hp).add(_b.set(0.1, -0.78, s0 * 0.22)), c);
-      const kneePole = _a.set(0.9, 0.3 - 0.5 * inside, s0 * (0.12 + 1.4 * inside));
-      ik(L.hp, ankle, B.thigh, B.shin, kneePole, L.kn);
-      placeSeg(L.thigh, L.hp, L.kn, _b.set(0, 0, 1));
-      placeSeg(L.shin, L.kn, ankle, _b.set(0, 0, 1));
-      placeSeg(L.shaft, L.kn, ankle, _b.set(0, 0, 1));
-      L.hip.position.copy(L.hp);
-      L.knee.position.copy(L.kn);
-      // knee slider on the outside of the knee, puck facing out
-      _c.subVectors(L.kn, L.hp).normalize();
-      _b.set(0, 0, s0).addScaledVector(_c, -_c.z * s0).normalize();
-      _a.copy(L.kn).addScaledVector(_b, 0.058);
-      placeSeg(L.slider, _a, _d.copy(_a).add(_b), _c);
+      ik(L.hp, ankle, B.thigh, B.shin, _a.set(0.9, 0.3 - 0.5 * inside, s0 * (0.12 + 1.4 * inside)), L.kn);
+      placeSeg(b('thigh'), L.hp, L.kn, _b.set(0, 0, 1));
+      placeSeg(b('shin'), L.kn, ankle, _b.set(0, 0, 1));
       // foot points forward along the bike, toes slightly down onto the peg
       const toe = L.toe.set(ankle.x + B.foot * 0.98, ankle.y - 0.05 - (s0 < 0 ? 0.03 * st.stop : 0), ankle.z + s0 * 0.01);
-      placeSeg(L.foot, ankle, toe, _b.set(0, 1, 0));
+      placeSeg(b('foot'), ankle, toe, _b.set(0, 1, 0));
     }
 
     // crash: the rider is flung clear and slides beside the bike, limbs loose

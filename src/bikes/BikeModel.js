@@ -18,6 +18,7 @@ function liveryMaterials(spec, livery, opts) {
   const mats = {
     paint: P({ map: tex }),
     paintPlain: P({ map: liveryTexture(livery, '', '') }),
+    makePaint: (map) => P({ map }),
     paintSolid: P({ color: livery.base }),
     paint2Solid: P({ color: livery.second }),
     accentSolid: P({ color: livery.accent }),
@@ -73,7 +74,7 @@ export class BikeModel {
     this.livery = spec.liveries[this.liveryIndex];
     const A = new Assembly();
     const mats = liveryMaterials(spec, this.livery, opts);
-    const ctx = { A, m: spec.model, mats, spec };
+    const ctx = { A, m: spec.model, mats, spec, livery: this.livery };
     DESIGNS[spec.design](ctx);
     this.meshes = A.finalize({ castShadow: opts.castShadow !== false });
     this.ctx = ctx;
@@ -166,7 +167,7 @@ export class BikeModel {
   dispose() {
     this.rider?.dispose(); // shared rider geometry stays alive for the next race
     this.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-    for (const k of ['paint', 'paintPlain', 'paintSolid', 'paint2Solid', 'accentSolid', 'frame', 'wheel', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'dash']) this.mats[k]?.dispose?.();
+    for (const k of ['side', 'paint', 'paintPlain', 'paintSolid', 'paint2Solid', 'accentSolid', 'frame', 'wheel', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'dash']) this.mats[k]?.dispose?.();
     this.mats.dashTex?.dispose();
     this.root.removeFromParent();
   }

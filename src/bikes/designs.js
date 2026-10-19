@@ -7,6 +7,8 @@ import {
   loft, loftProfile, tube, taperTube, lathe, box, cyl, sphere, place, rod, spring, torus, mirrorZ, V, DEG,
 } from './parts.js';
 import { engineUnit } from './engine.js';
+import { coons, shell, mirrorPanel, sideUV, sideUVLeft, onPanel } from './panel.js';
+import { sideLiveryTexture } from '../core/textures.js';
 import { M } from '../core/materials.js';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,7 @@ function sportBody(ctx, P) {
   const nx = P.nose ?? 0.97;
   const S = (x, ...pts) => ({ x, pts: pts.map(([z, y]) => [z * k, y]) });
   const soft = !!P.smooth; // 90s two-stroke: rounded panels, no hard creases
+  if (P.panels) return sportPanels(ctx, P);
   // nose cowl: bottom centre, chin flank, headlight crease, shoulder crease, top centre
   const cowl = loftProfile([
     S(nx, [0, 0.822], [0.012, 0.826], [0.022, 0.835], [0.012, 0.845], [0, 0.848]),
@@ -126,6 +129,16 @@ function sportBody(ctx, P) {
     S(-0.14, [0, 0.32], [0.02, 0.325], [0.04, 0.35], [0.04, 0.38], [0, 0.39]),
   ], { sub: 6, around: 3, creases: [2], capStart: true, capEnd: true });
   A.add('chassis', belly, P.bellyMat || mats.paint2Solid);
+  return sportRest(ctx, P);
+}
+
+// Tank, tail, seat and screen shared by the classic and the panelled sport bodies.
+function sportRest(ctx, P) {
+  const { A, mats } = ctx;
+  const k = P.k ?? 1;
+  const nx = P.nose ?? 0.97;
+  const S = (x, ...pts) => ({ x, pts: pts.map(([z, y]) => [z * k, y]) });
+  const soft = !!P.smooth;
   // fuel tank with faceted knee recesses
   const tank = loftProfile([
     S(0.47, [0, 0.845], [0.08, 0.85], [0.1, 0.882], [0.082, 0.922], [0, 0.935]),
@@ -134,7 +147,7 @@ function sportBody(ctx, P) {
     S(-0.04, [0, 0.83], [0.115, 0.84], [0.138, 0.875], [0.115, 0.93], [0, 0.948]),
     S(-0.14, [0, 0.845], [0.07, 0.85], [0.08, 0.865], [0.06, 0.888], [0, 0.897]),
   ], { sub: 6, around: 4, creases: [2], capStart: true, capEnd: true });
-  A.add('chassis', tank, mats.paintPlain);
+  if (!P.panels) A.add('chassis', tank, mats.paintPlain);
   // knife-edge tail unit
   const tx = P.tailX ?? -0.9;
   const hump = P.hump ?? 0.055;
@@ -145,7 +158,7 @@ function sportBody(ctx, P) {
     S(tx + 0.12, [0, 0.86], [0.03, 0.87], [0.06, 0.92], [0.045, 0.955], [0, 0.962]),
     S(tx, [0, 0.92], [0.008, 0.925], [0.015, 0.945], [0.01, 0.958], [0, 0.96]),
   ], { sub: 6, around: 4, creases: soft ? [] : [2, 3], capStart: true, capEnd: true });
-  A.add('chassis', tail, mats.paintPlain);
+  if (!P.panels) A.add('chassis', tail, mats.paintPlain);
   // dark undertray beneath the tail
   if (!P.noUnder) A.add('chassis', loft([
     { x: -0.2, y: 0.71, w: 0.09 * k, ht: 0.03, hb: 0.03, n: 2.4 },
@@ -162,7 +175,7 @@ function sportBody(ctx, P) {
   ], { radial: 22, sub: 6, t0: 0.02, t1: Math.PI - 0.02 });
   A.add('chassis', screen, mats.glass);
   // side vent: recessed black opening with three carbon gills
-  for (const s of soft ? [] : [-1, 1]) {
+  for (const s of soft || P.panels ? [] : [-1, 1]) {
     const vent = box(0.15, 0.1, 0.012, 0.008);
     place(vent, { p: [0.36, 0.66, s * 0.2 * k], r: [0, 0, 0.5] });
     A.add('chassis', vent, M.black());
@@ -172,6 +185,159 @@ function sportBody(ctx, P) {
       A.add('chassis', f, M.carbon());
     }
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Panelled superbike bodywork: thin-shell plastics with real outlines and shut lines
+// (nose cowl with LED eyes and ram-air mouth, side fairing with a vented flank, V belly
+// pan), painted with a side-view livery that follows the panel lines.
+function raceLivery(ctx, label) {
+  const L = ctx.livery, num = String(L.number || ctx.spec.short.length * 7 + 2);
+  const frame = [-1.0, 1.05, 0.1, 1.2];
+  const SP = [['NEXOL', '#ffffff', '#111111'], ['VELOX', '#ffd400', '#111111'], ['TURBOMAX', '#111111', '#ffffff'], ['ZENTEK', '#e2231a', '#ffffff'], ['BAYO', '#1a4fd6', '#ffffff']];
+  const map = sideLiveryTexture(`race:${JSON.stringify(L)}:${label}`, frame, (g, X, Y, side) => {
+    const poly = (pts, fill) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); g.fillStyle = fill; g.fill(); };
+    const line = (pts, w, col) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.lineWidth = w; g.strokeStyle = col; g.stroke(); };
+    g.fillStyle = L.base; g.fillRect(0, 0, 4096, 4096);
+    // second colour: a blade from the nose sweeping down the flank into the belly pan
+    const blade = [[1.02, 0.82], [0.86, 0.76], [0.62, 0.69], [0.45, 0.58], [0.26, 0.45], [0.04, 0.36], [-0.05, 0.2], [0.3, 0.2], [0.52, 0.42], [0.7, 0.6], [0.9, 0.7], [1.02, 0.76]];
+    poly(blade, L.second);
+    line([[1.02, 0.835], [0.86, 0.775], [0.62, 0.705], [0.45, 0.595], [0.26, 0.465], [0.04, 0.375]], 7, L.accent);
+    // tail: second colour underside with an accent cut
+    poly([[-0.05, 0.72], [-0.5, 0.8], [-0.95, 0.9], [-0.95, 0.86], [-0.45, 0.75], [-0.05, 0.66]], L.second);
+    line([[-0.05, 0.735], [-0.5, 0.815], [-0.95, 0.915]], 5, L.accent);
+    // model badge and sponsor decals on the side fairing
+    const txt = (t, x, y, size, col, font = 'italic 700', fam = '"Barlow Condensed", Arial, sans-serif') => {
+      g.font = `${font} ${size}px ${fam}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = col; g.fillText(t, X(x), Y(y));
+    };
+    const deco = (x, y, w, h, sp) => {
+      const x0p = Math.min(X(x - w / 2), X(x + w / 2)), wp = Math.abs(X(x + w / 2) - X(x - w / 2)), hp = Math.abs(Y(y + h / 2) - Y(y - h / 2));
+      g.fillStyle = sp[1]; g.fillRect(x0p, Y(y + h / 2), wp, hp);
+      g.fillStyle = sp[2]; g.font = `italic 700 ${Math.round(hp * 0.78)}px "Barlow Condensed", Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(sp[0], X(x), Y(y) + hp * 0.04, wp * 0.88);
+    };
+    const off = label.length % SP.length;
+    txt(label, 0.22, 0.6, 84, L.accent === L.base ? '#ffffff' : L.accent);
+    deco(0.24, 0.715, 0.13, 0.03, SP[off]);
+    deco(0.27, 0.33, 0.16, 0.032, SP[(off + 2) % SP.length]);
+    deco(0.8, 0.79, 0.1, 0.026, SP[(off + 3) % SP.length]);
+    // racing number on the tail
+    g.lineWidth = 10; g.strokeStyle = L.base;
+    g.font = '700 150px "Barlow Condensed", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff'; g.strokeText(num, X(-0.55), Y(0.865)); g.fillText(num, X(-0.55), Y(0.865));
+    // small technical stickers
+    g.font = '600 26px Barlow, Arial, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.fillText('MÍTICO RACING DEPT.', X(0.2), Y(0.5));
+  });
+  return { map, frame };
+}
+
+function sportPanels(ctx, P) {
+  const { A, mats } = ctx;
+  const { map, frame } = raceLivery(ctx, ctx.spec.short);
+  const paint = mats.side || (mats.side = mats.makePaint(map));
+  const uv = sideUV(frame);
+  const both = (geo, mat) => { A.add('chassis', geo, mat); A.add('chassis', mirrorPanel(geo, mat === paint ? sideUVLeft : null), mat); };
+  const T = 0.0045;
+  // ---- nose cowl: pointed beak, shoulders under the screen, chin over the wheel
+  const cowlRows = coons(
+    [[0.6, 0.7, 0.19], [0.74, 0.712, 0.17], [0.87, 0.735, 0.118], [0.95, 0.762, 0.045], [0.975, 0.772, 0.0]],
+    [[0.578, 0.945, 0.158], [0.7, 0.915, 0.138], [0.83, 0.875, 0.092], [0.93, 0.847, 0.034], [0.968, 0.838, 0.0]],
+    [[0.6, 0.7, 0.19], [0.585, 0.83, 0.212], [0.578, 0.945, 0.158]],
+    [[0.975, 0.772, 0.0], [0.993, 0.806, 0.0], [0.968, 0.838, 0.0]],
+    26, 12, { dir: (p) => [(p[0] - 0.5) * 1.6, 0.25, 1], amount: 0.038 },
+  );
+  both(shell(cowlRows, { thick: T, out: [0.5, 0.2, 1], uv }), paint);
+  // LED eyes: black recess with a light bar along the top edge
+  const eye = onPanel(cowlRows, [[0.66, 0.18], [0.9, 0.3], [0.9, 0.56], [0.68, 0.46]], 0.0015, [0.6, 0.1, 1], 12, 5);
+  both(shell(eye, { thick: 0.003, out: [0.6, 0.1, 1] }), M.darkChrome());
+  const led = onPanel(cowlRows, [[0.68, 0.43], [0.9, 0.52], [0.9, 0.57], [0.68, 0.48]], 0.0035, [0.6, 0.1, 1], 12, 2);
+  both(shell(led, { thick: 0.002, out: [0.6, 0.1, 1] }), mats.head);
+  const proj = onPanel(cowlRows, [[0.72, 0.24], [0.84, 0.3], [0.84, 0.42], [0.73, 0.36]], 0.0032, [0.6, 0.1, 1], 8, 4);
+  both(shell(proj, { thick: 0.002, out: [0.6, 0.1, 1] }), M.lens());
+  // ram-air mouth under the beak
+  const mouth = onPanel(cowlRows, [[0.88, 0.0], [1.0, 0.0], [1.0, 0.4], [0.9, 0.3]], 0.001, [0.8, -0.2, 0.6], 8, 4);
+  both(shell(mouth, { thick: 0.003, out: [0.8, -0.2, 0.6] }), M.black());
+  ctx.headlights.push({ pos: [0.9, 0.79, 0], group: 'chassis', r: 0.05 });
+  // ---- side fairing: flank between the cowl and the frame, vented
+  const sideRows = coons(
+    [[0.05, 0.44, 0.185], [0.22, 0.4, 0.2], [0.42, 0.47, 0.198], [0.55, 0.6, 0.18], [0.575, 0.67, 0.172]],
+    [[0.08, 0.745, 0.15], [0.25, 0.795, 0.178], [0.45, 0.83, 0.196], [0.57, 0.845, 0.2]],
+    [[0.05, 0.44, 0.185], [0.03, 0.6, 0.178], [0.08, 0.745, 0.15]],
+    [[0.575, 0.67, 0.172], [0.58, 0.76, 0.205], [0.57, 0.845, 0.2]],
+    28, 14, { dir: [0, 0.1, 1], amount: 0.032 },
+  );
+  both(shell(sideRows, { thick: T, out: [0, 0, 1], uv }), paint);
+  // the vent: dark recess with three gills, a sharp chrome-black rim
+  const vent = onPanel(sideRows, [[0.5, 0.36], [0.88, 0.58], [0.9, 0.86], [0.56, 0.68]], 0.0018, [0, 0.1, 1], 12, 6);
+  both(shell(vent, { thick: 0.003, out: [0, 0, 1] }), M.black());
+  for (let k = 0; k < 3; k++) {
+    const a = 0.2 + k * 0.25;
+    const gill = onPanel(sideRows, [[0.52 + a * 0.06, 0.38 + a * 0.4], [0.88 + a * 0.02, 0.6 + a * 0.24], [0.88 + a * 0.02, 0.63 + a * 0.24], [0.52 + a * 0.06, 0.41 + a * 0.4]], 0.006, [0, 0.1, 1], 8, 1);
+    both(shell(gill, { thick: 0.004, out: [0, 0.4, 1] }), M.carbon());
+  }
+  // ---- V belly pan under the engine
+  const bellyRows = coons(
+    [[0.0, 0.25, 0.0], [0.2, 0.19, 0.0], [0.4, 0.22, 0.0], [0.52, 0.4, 0.0]],
+    [[0.05, 0.425, 0.185], [0.22, 0.385, 0.2], [0.42, 0.455, 0.198], [0.545, 0.585, 0.18]],
+    [[0.0, 0.25, 0.0], [0.025, 0.35, 0.13], [0.05, 0.425, 0.185]],
+    [[0.52, 0.4, 0.0], [0.54, 0.5, 0.13], [0.545, 0.585, 0.18]],
+    24, 10, { dir: [0, -0.5, 1], amount: 0.035 },
+  );
+  // a carbon belly keeps its own (panel) mapping so the weave stays at true scale
+  if (P.bellyMat) both(shell(bellyRows, { thick: T, out: [0, -0.4, 1], uv: (p, u, v) => [u * 0.9, v * 0.45] }), P.bellyMat);
+  else both(shell(bellyRows, { thick: T, out: [0, -0.4, 1], uv }), paint);
+  // ---- inner black trim behind the cowl (dash surround) and the frame covers
+  const inner = coons(
+    [[0.5, 0.8, 0.15], [0.56, 0.78, 0.17]], [[0.47, 0.95, 0.1], [0.56, 0.93, 0.14]],
+    [[0.5, 0.8, 0.15], [0.47, 0.95, 0.1]], [[0.56, 0.78, 0.17], [0.56, 0.93, 0.14]], 6, 6,
+  );
+  both(shell(inner, { thick: 0.004, out: [-0.3, 0.2, 1] }), M.plastic(0x101012));
+  // ---- tail: thin upswept side panels, a pillion cover on top, the seat drops in between
+  const tk = ((P.tailX ?? -0.9) + 0.06) / (-0.9 + 0.06);
+  const tx = (x) => -0.06 + (x + 0.06) * tk;
+  const lift = P.hump ? (P.hump - 0.055) : 0;
+  const tp = (x, y, z) => [tx(x), y + lift * Math.max(0, (-0.3 - x) / 0.6), z];
+  const tailRows = coons(
+    [tp(-0.9, 0.9, 0.024), tp(-0.62, 0.805, 0.088), tp(-0.32, 0.738, 0.122), [-0.06, 0.7, 0.14]],
+    [tp(-0.92, 0.968, 0.02), tp(-0.62, 0.91, 0.09), tp(-0.32, 0.868, 0.118), [-0.1, 0.852, 0.138]],
+    [tp(-0.9, 0.9, 0.024), tp(-0.92, 0.968, 0.02)],
+    [[-0.06, 0.7, 0.14], [-0.08, 0.78, 0.148], [-0.1, 0.852, 0.138]],
+    26, 8, { dir: [0, 0.1, 1], amount: 0.014 },
+  );
+  both(shell(tailRows, { thick: T, out: [0, 0, 1], uv }), paint);
+  const coverRows = coons(
+    [tp(-0.93, 0.978, 0.0), tp(-0.7, 0.935, 0.0), tp(-0.44, 0.902, 0.0)],
+    [tp(-0.92, 0.968, 0.02), tp(-0.7, 0.926, 0.074), tp(-0.44, 0.886, 0.11)],
+    [tp(-0.93, 0.978, 0.0), tp(-0.92, 0.968, 0.02)],
+    [tp(-0.44, 0.902, 0.0), tp(-0.44, 0.898, 0.06), tp(-0.44, 0.886, 0.11)],
+    18, 6, { dir: [0, 1, 0.2], amount: 0.008 },
+  );
+  // ---- fuel tank: faceted side shells with knee recesses under a crowned top cover
+  const tankSide = coons(
+    [[-0.14, 0.846, 0.075], [0.05, 0.836, 0.132], [0.3, 0.84, 0.156], [0.47, 0.852, 0.105]],
+    [[-0.14, 0.892, 0.06], [0.05, 0.942, 0.112], [0.3, 0.976, 0.138], [0.47, 0.93, 0.082]],
+    [[-0.14, 0.846, 0.075], [-0.14, 0.892, 0.06]],
+    [[0.47, 0.852, 0.105], [0.47, 0.93, 0.082]],
+    22, 8, { dir: (p) => [0, 0.25, p[0] < 0.12 ? 0.35 : 1], amount: 0.016 },
+  );
+  both(shell(tankSide, { thick: T, out: [0, 0.2, 1], uv }), paint);
+  const tankTop = coons(
+    [[-0.14, 0.902, 0.0], [0.05, 0.968, 0.0], [0.3, 1.004, 0.0], [0.47, 0.946, 0.0]],
+    [[-0.14, 0.892, 0.06], [0.05, 0.942, 0.112], [0.3, 0.976, 0.138], [0.47, 0.93, 0.082]],
+    [[-0.14, 0.902, 0.0], [-0.14, 0.892, 0.06]],
+    [[0.47, 0.946, 0.0], [0.47, 0.93, 0.082]],
+    22, 8, { dir: [0, 1, 0.15], amount: 0.01 },
+  );
+  both(shell(tankTop, { thick: T, out: [0, 1, 0.1], uv }), paint);
+  // fuel filler cap flush in the top cover
+  const cap = cyl(0.04, 0.04, 0.008, 24, 'y'); place(cap, { p: [0.3, 1.004, 0], r: [0, 0, -0.15] }); A.add('chassis', cap, M.aluminum());
+  both(shell(coverRows, { thick: T, out: [0, 1, 0.1], uv }), paint);
+  // tail-light lens set into the tip, and a slim black seat surround
+  const tl = onPanel(tailRows, [[0.0, 0.3], [0.12, 0.25], [0.12, 0.85], [0.0, 0.9]], 0.002, [-0.4, 0.2, 1], 6, 4);
+  both(shell(tl, { thick: 0.003, out: [-0.4, 0.2, 1] }), mats.tail);
+  return sportRest(ctx, P);
 }
 
 // Modern superbike face: twin recessed LED eyes, central ram-air intake, DRL brows.
@@ -225,8 +391,7 @@ function superbike(ctx) {
   }
   header(ctx, [[-0.02, 0.15, 0.06], [-0.14, 0.2, 0.14], [-0.22, 0.27, 0.17]], 0.03);
   muffler(ctx, [-0.22, 0.27, 0.17], [-0.56, 0.42, 0.17], { type: 'hex', r: 0.06, mat: M.titanium(), endcap: M.carbon() });
-  sportBody(ctx, {});
-  sportFace(ctx, {});
+  sportBody(ctx, { panels: true });
   // small aero winglets on the cowl flanks
   for (const s of [-1, 1]) {
     const w = box(0.1, 0.008, 0.06, 0.004);
@@ -263,17 +428,17 @@ function gp(ctx) {
   });
   muffler(ctx, [-0.42, 0.62, 0.07], [-0.66, 0.72, 0.07], { type: 'round', r: 0.045, mat: M.titanium() });
   muffler(ctx, [-0.42, 0.36, -0.16], [-0.62, 0.44, -0.16], { type: 'round', r: 0.04, mat: M.titanium() });
-  sportBody(ctx, { k: 0.95, tailX: -0.76, hump: 0.085, bellyMat: M.carbon() });
-  sportFace(ctx, { k: 0.95, lights: false });
+  sportBody(ctx, { panels: true, tailX: -0.8, hump: 0.085, bellyMat: M.carbon() });
   // winglets: stacked aero wings with endplates on both sides
   for (const s of [-1, 1]) {
+    // stacked carbon wings off the cowl flank, joined by a thin endplate
     for (let k = 0; k < 2; k++) {
-      const w = box(0.14, 0.012, 0.11, 0.005);
-      place(w, { p: [0.72 - k * 0.04, 0.8 - k * 0.06, s * (0.19 + k * 0.012)], r: [s * -0.1, 0, 0.12] });
-      A.add('chassis', w, M.carbon());
+      const blade = box(0.12, 0.006, 0.075, 0.003);
+      place(blade, { p: [0.66 - k * 0.03, 0.8 - k * 0.05, s * 0.21], r: [0, 0, 0.14] });
+      A.add('chassis', blade, M.carbon());
     }
-    const ep = box(0.16, 0.12, 0.008, 0.004);
-    place(ep, { p: [0.7, 0.77, s * 0.25] });
+    const ep = box(0.11, 0.075, 0.004, 0.002);
+    place(ep, { p: [0.645, 0.78, s * 0.248], r: [0, 0, 0.1] });
     A.add('chassis', ep, M.carbon());
     // side vents / ground-effect fins on lower fairing
     for (let k = 0; k < 3; k++) {

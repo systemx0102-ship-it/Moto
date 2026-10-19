@@ -1013,3 +1013,24 @@ export function checkerTexture(a = '#111', b = '#eee', n = 8) {
     return toTexture(c);
   });
 }
+
+// Livery painted in true side view: the top half of the canvas is the bike's right side
+// (front to the right), the bottom half its left side (front to the left). draw(g, X, Y,
+// side) is called once per half with mappers from bike-space metres to canvas pixels, so
+// graphics land exactly on panel lines and text reads correctly on both sides.
+export function sideLiveryTexture(key, frame, draw) {
+  return cached(`sidelivery:${key}`, () => {
+    const W = 2048, H = 2048;
+    const { c, g } = makeCanvas(W, H);
+    const [x0, x1, y0, y1] = frame;
+    for (const side of ['R', 'L']) {
+      const X = side === 'R' ? (x) => ((x - x0) / (x1 - x0)) * W : (x) => (1 - (x - x0) / (x1 - x0)) * W;
+      const Y = side === 'R' ? (y) => (1 - (y - y0) / (y1 - y0)) * (H / 2) : (y) => H / 2 + (1 - (y - y0) / (y1 - y0)) * (H / 2);
+      g.save();
+      g.beginPath(); g.rect(0, side === 'R' ? 0 : H / 2, W, H / 2); g.clip();
+      draw(g, X, Y, side, W, H);
+      g.restore();
+    }
+    return toTexture(c, { wrap: false });
+  });
+}
