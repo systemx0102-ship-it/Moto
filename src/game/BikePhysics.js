@@ -121,6 +121,8 @@ export class BikePhysics {
   step(dt, env = {}) {
     const inp = this.input;
     const tr = this.track;
+    // anti-crash shield (player, when enabled): never goes down, whatever happens
+    this.shield = !this.ai && !!env.noCrash;
     const P = tr.project(this.x, this.z, this.hint, this.proj);
     this.hint = P.i;
     this.offRoad = P.offRoad; this.onCurb = P.onCurb;
@@ -233,7 +235,7 @@ export class BikePhysics {
       this.steerAngle = damp(this.steerAngle, inp.steer * (0.08 + 0.42 * slowK) * (this.reverse ? -1 : 1), 10, dt);
       yawRate += (-this.v * Math.tan(this.steerAngle) / this.wb) * slowK;
       // over-lean beyond grip -> front washes out (understeer) & risk of lowside
-      if (Math.abs(latAcc) > latMax * 1.25 && this.v > 12 && !env.assist) {
+      if (Math.abs(latAcc) > latMax * 1.25 && this.v > 12 && !env.assist && !this.shield) {
         this.lowsideT = (this.lowsideT || 0) + dt;
         if (this.lowsideT > 0.6 && !this.ai) { this.crash('lowside'); return; }
       } else this.lowsideT = 0;
@@ -242,6 +244,8 @@ export class BikePhysics {
       this.steerAngle = damp(this.steerAngle, 0, 4, dt);
     }
 
+    // shielded wheelie: the rear tyre carries the whole bike, so no spin and no slide
+    if (this.shield && this.pitch > 0.06) { this.wheelspin = 0; this.drifting = false; }
     // drift: a tap of rear brake (or a power-slide) while leaned kicks the rear out;
     // the slide then holds on the throttle, its angle set by lean and steering
     // (countersteer straightens it), and ends when you roll off or slow down
@@ -283,7 +287,7 @@ export class BikePhysics {
     this.slip = wrapAngle(this.h - this.vh);
     const slipMax = this.drifting ? 0.95 : env.assist ? 0.6 : 0.75;
     if (Math.abs(this.slip) > slipMax) {
-      if (this.v > 15 && !this.ai && !env.assist && !this.drifting) { this.crash('highside'); return; }
+      if (this.v > 15 && !this.ai && !env.assist && !this.drifting && !this.shield) { this.crash('highside'); return; }
       this.h = this.vh + Math.sign(this.slip) * slipMax;
       this.slip = Math.sign(this.slip) * slipMax;
     }
@@ -295,12 +299,14 @@ export class BikePhysics {
     let pTarget = 0;
     if (!this.airborne) {
       if (a > this.wheelieA && throttle > 0.6) pTarget = clamp((a - this.wheelieA) * 0.12, 0, this.ai || env.assist ? 0.12 : 0.35);
-      if (wantWheelie) pTarget = Math.max(pTarget, inp.throttle > 0.3 ? 0.62 : 0.3);
+      // the shield holds a wheelie at its balance point instead of letting it loop over
+      if (wantWheelie) pTarget = Math.max(pTarget, inp.throttle > 0.3 ? (this.shield ? 0.52 : 0.62) : 0.3);
       if (brakeIn > 0.85 && this.v > 8 && -a > this.brakeA * 0.85) pTarget = -0.1 * brakeIn;
       const pk = 6;
       const pacc = (pTarget - this.pitch) * pk * pk - this.pitchVel * 2 * pk * 0.9;
       this.pitchVel += pacc * dt;
       this.pitch += this.pitchVel * dt;
+      if (this.shield && this.pitch > 0.72) { this.pitch = 0.72; this.pitchVel = Math.min(0, this.pitchVel); }
       if (this.pitch > 0.9) { if (!this.ai) { this.crash('loop'); return; } this.pitch = 0.9; }
     } else {
       // in the air: throttle lifts the nose, brake drops it
@@ -348,7 +354,11 @@ export class BikePhysics {
         this.events.push({ type: 'land', impact, air: this.airT });
         this.cvF -= impact * 0.35; this.cvR -= impact * 0.35;
         const pitchErr = Math.abs(this.pitch - Math.atan(P2.grade));
-        if ((pitchErr > 0.7 || (impact > 14 && pitchErr > 0.35)) && !this.ai) { this.crash('landing'); return; }
+        if ((pitchErr > 0.7 || (impact > 14 && pitchErr > 0.35)) && !this.ai) {
+          if (!this.shield) { this.crash('landing'); return; }
+          // shielded: the suspension soaks it up, the bike rights itself
+          this.pitch = Math.atan(P2.grade); this.pitchVel = 0; this.v *= 0.9;
+        }
         if (this.airT > 0.4) this.nitro = Math.min(1, this.nitro + (0.05 + this.airT * 0.05) * this.airNitro);
         this.vy = vyGround; this.vyC = vyCenter;
       }
@@ -374,7 +384,7 @@ export class BikePhysics {
         this.vh = th + Math.atan2(vn, vt);
         this.h = this.vh + this.slip * 0.3;
         this.events.push({ type: 'wall', impact, side, x: this.x, y: this.y + 0.6, z: this.z });
-        if (impact > (env.assist ? 22 : 12.5) * this.tough && !this.ai) { this.crash('wall'); return; }
+        if (impact > (env.assist ? 22 : 12.5) * this.tough && !this.ai && !this.shield) { this.crash('wall'); return; }
         if (impact > 15 && this.ai) { this.crash('wall'); return; }
       } else {
         // grinding along the wall
@@ -415,7 +425,7 @@ export class BikePhysics {
   }
 
   crash(kind) {
-    if (this.crashed) return;
+    if (this.crashed || this.shield) return;
     this.crashed = true;
     this.crashT = 0;
     this.drifting = false;

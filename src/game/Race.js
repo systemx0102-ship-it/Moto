@@ -59,7 +59,7 @@ export class Race {
     onProgress(0.82, 'Preparando parrilla…');
     const q = Save.quality;
     this.effects = new Effects(this.scene, q, this.track.theme);
-    this.env = { wet: this.track.wet, snow: def.weather === 'snow', assist: Save.settings.assist };
+    this.env = { wet: this.track.wet, snow: def.weather === 'snow', assist: Save.settings.assist, noCrash: Save.settings.noCrash !== false };
 
     // ---------------- entrants
     const pSpec = BIKE_BY_ID[this.cfg.bikeId] || BIKES[0];
@@ -236,6 +236,8 @@ export class Race {
     if (inp.nitro && !this._nitroWas && P.phys.nitro > 0.05 && canDrive) Audio.nitro();
     this._nitroWas = inp.nitro;
 
+    // ---- stability control (with the anti-crash option): never arrive at a corner too fast
+    if (this.env.noCrash && canDrive && !P.finished) this._stability(P);
     // ---- AI
     if (canDrive) for (const b of this.active) if (b.ai && !(b.finished && b.coast)) b.ai.update(dt, this.active);
     this._rubberBand();
@@ -315,6 +317,35 @@ export class Race {
     cam.fov = 55; cam.updateProjectionMatrix();
   }
 
+  // Stability control: from the speed profile of the player's own machine (upgrades
+  // included) work out the fastest speed that can still be braked down for every
+  // corner ahead; above it, ease the throttle and squeeze the brake just enough.
+  _stability(P) {
+    const prof = this.racingLine && this.racingLine.profile;
+    const ph = P.phys;
+    if (!prof || ph.crashed || ph.airborne || ph.wrongWayT > 0.3) { this._stabOn = false; return; }
+    const t = this.track, N = t.N, ds = t.ds;
+    const i0 = ph.proj && ph.proj.i !== undefined ? ph.proj.i : ph.hint;
+    const a = ph.brakeA * 0.72;
+    const ahead = Math.min(N - 1, Math.ceil(((ph.v * ph.v) / (2 * a) + 25) / ds));
+    let vAllow = Infinity;
+    for (let k = 0; k <= ahead; k += 2) {
+      const j = (i0 + k) % N;
+      const v2 = prof[j] * prof[j] * 1.02 + 2 * a * k * ds;
+      if (v2 < vAllow) vAllow = v2;
+    }
+    vAllow = Math.sqrt(vAllow);
+    const over = ph.v - vAllow;
+    const inp = ph.input;
+    if (over > 0.3) {
+      inp.throttle = Math.min(inp.throttle, over > 2 ? 0 : 0.35);
+      inp.brake = Math.max(inp.brake, clamp(over / 7, 0.12, 1));
+      inp.nitro = false;
+      if (!this._stabOn && this.time - (this._stabMsg || -99) > 8) { this._stabMsg = this.time; this.hud.toast('Control de estabilidad', '#f0a020', 900); }
+      this._stabOn = true;
+    } else this._stabOn = false;
+  }
+
   _rubberBand() {
     if (this.mode !== 'race' && this.mode !== 'champ') return;
     const P = this.player;
@@ -371,7 +402,7 @@ export class Race {
           a.events.push({ type: 'bump', impact, x: (a.x + b.x) / 2, y: a.y + 0.5, z: (a.z + b.z) / 2, other: B[j] });
           b.events.push({ type: 'bump', impact, x: (a.x + b.x) / 2, y: b.y + 0.5, z: (a.z + b.z) / 2, other: B[i] });
           // the loser of the contact goes down unless its toughness (RPG: resistance, Blindaje) absorbs it
-          if (impact > 11) { const v = Math.random() < 0.5 ? a : b; if (impact > 11 * v.tough) v.crash('contact'); }
+          if (impact > 11) { const v = Math.random() < 0.5 ? a : b; if (impact > 11 * v.tough && !v.shield) v.crash('contact'); }
         }
       }
     }
@@ -484,7 +515,7 @@ export class Race {
             if (near) { this.effects.sparks(e.x, e.y, e.z, Math.min(40, 6 + e.impact * 2), 0, 0, 4 + e.impact * 0.5); }
             if (b.isPlayer) {
               this.cam.addShake(clamp(e.impact / 12, 0.2, 1)); Audio.impact(clamp(e.impact / 14, 0.2, 1.2)); Input.rumble(0.8, 0.4, 160);
-              this._damage = Math.min(1, (this._damage || 0) + e.impact / 20);
+              this._damage = Math.min(1, (this._damage || 0) + e.impact / (p.shield ? 60 : 20));
             }
             break;
           case 'scrape':
@@ -568,11 +599,18 @@ export class Race {
         if (Math.random() < n) ef.dust(rear.x, rear.y, rear.z, Math.sin(p.vh) * p.v, Math.cos(p.vh) * p.v, dustCol, clamp(n, 0.4, 1));
       }
       if (this.env.wet && p.v > 12 && !p.offRoad && Math.random() < clamp(p.v / 50, 0, 0.9)) ef.spray(rear.x, rear.y, rear.z, Math.sin(p.vh) * p.v * -0.1, Math.cos(p.vh) * p.v * -0.1, clamp(p.v / 60, 0.3, 1));
-      // exhaust idle puffs & overrun pops
+      // exhaust fire: overrun crackle, flames on the limiter and the upshift, nitro jet,
+      // and on demand (F) a burst of anti-lag fire
       b.popT -= dt;
-      const decel = p.input.throttle < 0.05 && p.rpm > p.redline * 0.55 && !p.electric;
-      if (decel && Math.random() < 0.03) b.popT = 0.06;
-      ef.updateFlames(b, p.nitroOn, b.popT, dt);
+      const decel = p.input.throttle < 0.05 && p.rpm > p.redline * 0.5 && !p.electric;
+      if (decel && Math.random() < (b.isPlayer ? 0.1 : 0.05)) b.popT = 0.05 + Math.random() * 0.06;
+      if (p.limiter && Math.random() < 0.25) b.popT = Math.max(b.popT, 0.05);
+      const fire = b.isPlayer && !p.electric && (this.phase === 'race' || this.phase === 'countdown' || this.phase === 'finished') && Input.state.fire ? 1 : 0;
+      if (fire) {
+        b._fireT = (b._fireT || 0) - dt;
+        if (b._fireT <= 0) { b._fireT = 0.07 + Math.random() * 0.08; Audio.pop(null, 0.9); Input.rumble(0.15, 0.3, 50); }
+      }
+      ef.updateFlames(b, p.nitroOn, b.popT, dt, fire);
       if (!p.electric && m.exhausts.length && Math.random() < 0.08) {
         const e = m.exhausts[0];
         const wp = m.worldPoint(e.pos, ef._w);

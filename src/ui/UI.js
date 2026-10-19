@@ -374,7 +374,7 @@ export class UI {
   }
 
   _controlsHint() {
-    return h('div', {}, 'W/↑ gas  ·  S/↓ freno  ·  A/D inclinar  ·  Espacio derrapar  ·  Shift nitro  ·  X caballito  ·  C cámara  ·  R volver a pista');
+    return h('div', {}, 'W/↑ gas  ·  S/↓ freno  ·  A/D inclinar  ·  Espacio derrapar  ·  Shift nitro  ·  X caballito  ·  F fuego  ·  C cámara  ·  R volver a pista');
   }
 
   // ---------------------------------------------------------------- results
@@ -550,6 +550,7 @@ export class UI {
           row('Unidades', choice('units', [['kmh', 'KM/H'], ['mph', 'MPH']])),
           row('Cambio', choice('transmission', [['auto', 'AUTOMÁTICO'], ['manual', 'MANUAL']])),
           row('Ayudas de pilotaje', toggle('assist')),
+          row('Anticaídas y control de estabilidad', toggle('noCrash')),
           row('Línea de trazada', toggle('racingLine')),
           row('Vibración', toggle('vibration')),
           row('Controles táctiles', toggle('touch')),

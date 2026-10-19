@@ -28,6 +28,7 @@ const DEFAULTS = {
     rivals: 7,
     difficulty: 'normal',
     assist: true,
+    noCrash: true, // anti-crash + stability control: the bike never goes down
     racingLine: true,
     timeSel: 'auto',
     weatherSel: 'auto',

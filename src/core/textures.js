@@ -525,6 +525,34 @@ export function flameTexture() {
   });
 }
 
+// Warm fire body for exhaust flames: yellow-white root, orange body, red ragged tip.
+export function fireTexture() {
+  return cached('fire', () => {
+    const { c, g } = makeCanvas(64, 256);
+    const grd = g.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0, 'rgba(255,250,220,1)');
+    grd.addColorStop(0.12, 'rgba(255,214,110,1)');
+    grd.addColorStop(0.4, 'rgba(255,128,30,0.9)');
+    grd.addColorStop(0.75, 'rgba(230,50,10,0.45)');
+    grd.addColorStop(1, 'rgba(120,20,0,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 64, 256);
+    // ragged tongues
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * 64, y = 90 + Math.random() * 166, w = 3 + Math.random() * 8;
+      const tg = g.createLinearGradient(0, y - 60, 0, y + 20);
+      tg.addColorStop(0, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,0.8)');
+      g.fillStyle = tg; g.fillRect(x - w / 2, y - 60, w, 80);
+    }
+    const side = g.createLinearGradient(0, 0, 64, 0);
+    side.addColorStop(0, 'rgba(0,0,0,1)'); side.addColorStop(0.5, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = side; g.fillRect(0, 0, 64, 256);
+    const t = toTexture(c, { wrap: false, aniso: false });
+    t.flipY = false;
+    return t;
+  });
+}
+
 export function starsTexture() {
   return cached('stars', () => {
     const W = 2048, H = 1024;

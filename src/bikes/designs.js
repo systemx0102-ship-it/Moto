@@ -1303,7 +1303,10 @@ function sporttourer(ctx) {
   const capG = loftProfile([can(-0.505, 0.474, 0.094, 0.064), can(-0.555, 0.5, 0.074, 0.052)], { sub: 3, around: 3, creases: [1, 2, 3, 4], capStart: true, capEnd: true });
   capG.translate(0, 0, 0.178);
   A.add('chassis', capG, M.black());
-  for (const k of [-1, 1]) { const o = cyl(0.018, 0.018, 0.02, 12, 'x'); place(o, { p: [-0.56, 0.5 + k * 0.026, 0.178] }); A.add('chassis', o, M.darkChrome()); }
+  for (const k of [-1, 1]) {
+    const o = cyl(0.018, 0.018, 0.02, 12, 'x'); place(o, { p: [-0.56, 0.5 + k * 0.026, 0.178] }); A.add('chassis', o, M.darkChrome());
+    ctx.exhausts.push({ pos: [-0.568, 0.5 + k * 0.026, 0.178], dir: [-0.88, 0.47, 0], r: 0.02 });
+  }
   A.add('chassis', rod([-0.4, 0.52, 0.17], [-0.42, 0.58, 0.14], 0.012, 8), M.black());
 
   // ---- bodywork

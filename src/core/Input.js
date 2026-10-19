@@ -10,7 +10,7 @@ class InputManager {
     this.pressed = new Set(); // edge-triggered this frame
     this.touch = { throttle: 0, brake: 0, steer: 0, nitro: 0, rear: 0, wheelie: 0 };
     this.state = {
-      throttle: 0, brake: 0, steer: 0, rearBrake: 0, nitro: false, wheelie: false, lookBack: false,
+      throttle: 0, brake: 0, steer: 0, rearBrake: 0, nitro: false, wheelie: false, lookBack: false, fire: false,
     };
     this.edges = { shiftUp: false, shiftDown: false, camera: false, pause: false, reset: false, confirm: false, back: false, up: false, down: false, left: false, right: false, any: false };
     this._kbSteer = 0;
@@ -68,6 +68,7 @@ class InputManager {
     let rear = k('Space') ? 1 : 0;
     let nitro = k('ShiftLeft', 'ShiftRight', 'KeyN');
     let wheelie = k('KeyX');
+    let fire = k('KeyF');
     let lookBack = k('KeyB');
 
     const e = this.edges;
@@ -102,6 +103,7 @@ class InputManager {
         nitro = nitro || b(0) > 0.5;
         wheelie = wheelie || b(2) > 0.5 || ay > 0.75;
         lookBack = lookBack || b(10) > 0.5;
+        fire = fire || b(11) > 0.5;
       }
       e.shiftUp = e.shiftUp || edge(5);
       e.shiftDown = e.shiftDown || edge(4);
@@ -132,6 +134,7 @@ class InputManager {
     s.rearBrake = clamp(rear, 0, 1);
     s.nitro = nitro;
     s.wheelie = wheelie;
+    s.fire = fire || (t.fire || 0) > 0.5;
     s.lookBack = lookBack;
     this.pressed.clear();
   }

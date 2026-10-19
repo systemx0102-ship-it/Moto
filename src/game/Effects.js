@@ -1,6 +1,6 @@
 // Particles (smoke, dust, spray, sparks, flames), skid marks and nitro flames.
 import * as THREE from 'three';
-import { smokeTexture, softCircleTexture, flameTexture } from '../core/textures.js';
+import { smokeTexture, softCircleTexture, flameTexture, fireTexture } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
 
 class ParticlePool {
@@ -156,40 +156,76 @@ export class Effects {
   attachFlames(bike) {
     const ex = bike.model.exhausts;
     if (!ex || !ex.length) return;
-    const tex = flameTexture();
+    const core = flameTexture(), body = fireTexture();
     const list = [];
-    for (const e of ex) {
+    const mk = (tex, r, l) => {
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-      const geo = new THREE.ConeGeometry(Math.max(0.035, e.r * 0.85), 0.7, 12, 1, true);
-      geo.translate(0, 0.35, 0); // base at the outlet, tip 0.7 m out
-      const m = new THREE.Mesh(geo, mat);
+      const geo = new THREE.ConeGeometry(r, l, 14, 1, true);
+      geo.translate(0, l / 2, 0); // base at the outlet
+      return new THREE.Mesh(geo, mat);
+    };
+    for (const e of ex) {
+      // outer fire body (orange, flickering) round a hot blue-white core
+      const g = new THREE.Group();
       const d = new THREE.Vector3(...e.dir).normalize();
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
-      m.position.set(...e.pos);
-      m.visible = false;
-      bike.model.groups.chassis.add(m);
-      list.push({ m, mat, e });
+      g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+      g.position.set(...e.pos);
+      const r = Math.max(0.035, e.r * 0.85);
+      const outer = mk(body, r * 1.35, 0.9), inner = mk(core, r * 0.75, 0.6);
+      g.add(outer, inner);
+      g.visible = false;
+      bike.model.groups.chassis.add(g);
+      list.push({ g, outer, inner, e, k: 0 });
     }
     this.flames.set(bike, list);
   }
 
-  updateFlames(bike, nitro, pop, dt) {
+  // nitro: long jet with a blue core; pop: short bang of flame; fire (0..1): sustained
+  // anti-lag fire with embers. Flames shoot back along each outlet.
+  updateFlames(bike, nitro, pop, dt, fire = 0) {
     const list = this.flames.get(bike);
     if (!list) return;
+    const ph = bike.phys;
     for (const f of list) {
-      const on = nitro || pop > 0;
-      f.m.visible = on;
-      if (!on) continue;
-      const len = nitro ? 0.8 + Math.random() * 0.5 : 0.35 + Math.random() * 0.3;
-      f.m.scale.set(nitro ? 1.2 : 1, len, nitro ? 1.2 : 1);
-      f.mat.opacity = nitro ? 0.95 : 0.8;
-      f.mat.color.setRGB(nitro ? 0.6 : 1, nitro ? 0.8 : 0.7, 1);
+      const want = fire > 0 ? 1 : nitro ? 0.85 : pop > 0 ? 0.6 : 0;
+      f.k = want > f.k ? want : Math.max(0, f.k - dt * 9);
+      f.g.visible = f.k > 0.02;
+      if (!f.g.visible) continue;
+      const flick = 0.75 + Math.random() * 0.5;
+      const len = (fire ? 1.5 : nitro ? 1.25 : 0.7) * f.k * flick;
+      const wid = (fire ? 1.35 : nitro ? 1.15 : 1) * (0.85 + Math.random() * 0.3);
+      f.outer.scale.set(wid, len, wid);
+      f.inner.scale.set(wid * 0.9, len * (nitro ? 1.2 : 0.75), wid * 0.9);
+      f.outer.material.opacity = Math.min(1, f.k * 1.1);
+      f.inner.material.opacity = Math.min(1, f.k * (nitro ? 1 : 0.8));
+      f.outer.material.color.setRGB(1, nitro && !fire ? 0.75 : 0.85, nitro && !fire ? 0.9 : 0.7);
+      f.g.rotation.y = Math.random() * Math.PI * 2; // the cone spins about its axis -> flicker
+      // particles: flames, embers and sparks thrown back from the outlet
+      if (fire || pop > 0 || nitro) {
+        f.g.updateWorldMatrix(true, false);
+        const o = f.g.localToWorld(this._w.set(0, 0.04, 0));
+        const tip = f.g.localToWorld(this._v.set(0, 1, 0));
+        const dx = tip.x - o.x, dy = tip.y - o.y, dz = tip.z - o.z;
+        const bvx = ph ? Math.sin(ph.vh) * ph.v : 0, bvz = ph ? Math.cos(ph.vh) * ph.v : 0;
+        const n = fire ? 4 : nitro ? 2 : 2;
+        for (let i = 0; i < n; i++) {
+          const sp = (fire ? 7 : 5) * (0.6 + Math.random() * 0.8);
+          this.glow.emit(o.x, o.y, o.z, bvx * 0.85 + dx * sp + (Math.random() - 0.5), dy * sp + Math.random() * 0.8, bvz * 0.85 + dz * sp + (Math.random() - 0.5),
+            { life: 0.14 + Math.random() * 0.16, size: (fire ? 0.2 : 0.14) * (0.7 + Math.random() * 0.6), grow: 2.2, r: 1, g: 0.42 + Math.random() * 0.3, b: 0.08, a: 0.85, drag: 3.5, grav: -2 });
+        }
+        if (fire && Math.random() < 0.6) {
+          this.glow.emit(o.x, o.y, o.z, bvx + dx * 9 + (Math.random() - 0.5) * 3, dy * 9 + Math.random() * 2.5, bvz + dz * 9 + (Math.random() - 0.5) * 3,
+            { life: 0.4 + Math.random() * 0.4, size: 0.035, grow: -0.02, r: 1, g: 0.7, b: 0.3, a: 1, drag: 1.2, grav: 6 });
+        }
+        if ((fire || pop > 0) && Math.random() < 0.25) this.smoke.emit(o.x, o.y, o.z, bvx * 0.6 + dx * 2, dy * 2 + 0.5, bvz * 0.6 + dz * 2,
+          { life: 0.9, size: 0.18, grow: 1.4, r: 0.3, g: 0.3, b: 0.32, a: 0.18, drag: 2, grav: -0.4 });
+      }
     }
   }
 
   removeBike(bike) {
     const list = this.flames.get(bike);
-    if (list) for (const f of list) f.m.removeFromParent();
+    if (list) for (const f of list) f.g.removeFromParent();
     this.flames.delete(bike);
   }
 
