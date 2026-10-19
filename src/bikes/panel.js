@@ -40,7 +40,7 @@ export function spline(pts, n) {
  * corners should coincide. Returns rows[v][u] of [x,y,z].
  * crown: { dir:[x,y,z] | fn(p)->[x,y,z], amount } bulges the interior outward.
  */
-export function coons(bottom, top, rear, front, nu = 24, nv = 12, crown = null) {
+export function coons(bottom, top, rear, front, nu = 24, nv = 12, crown = null, dents = null) {
   const B = spline(bottom, nu), T = spline(top, nu), R = spline(rear, nv), F = spline(front, nv);
   const c00 = B[0], c10 = B[nu], c01 = T[0], c11 = T[nu];
   const rows = [];
@@ -54,6 +54,12 @@ export function coons(bottom, top, rear, front, nu = 24, nv = 12, crown = null) 
         const k = crown.amount * Math.sin(Math.PI * u) * Math.sin(Math.PI * v) ** (crown.pv ?? 1);
         const d = typeof crown.dir === 'function' ? crown.dir(p, u, v) : crown.dir;
         const dl = len(d) || 1;
+        for (let c = 0; c < 3; c++) p[c] += (d[c] / dl) * k;
+      }
+      // local dents / bumps: { u, v, ru, rv, amount, dir }
+      if (dents) for (const D of dents) {
+        const k = D.amount * Math.exp(-(((u - D.u) / D.ru) ** 2) - (((v - D.v) / D.rv) ** 2));
+        const d = D.dir, dl = len(d) || 1;
         for (let c = 0; c < 3; c++) p[c] += (d[c] / dl) * k;
       }
       row.push(p);
@@ -91,10 +97,19 @@ export function shell(rows, o = {}) {
   const mid = N[nv >> 1][nu >> 1];
   if (mid[0] * out[0] + mid[1] * out[1] + mid[2] * out[2] < 0) flip = 1;
   if (flip) for (const r of N) for (const n of r) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; }
+  // centreline seam (where the mirrored twin panel joins): normals symmetric, no roll, no band
+  const seam = o.seam || null; // 'top' (j = nv) | 'bottom' (j = 0) | 'front' (i = nu) | 'rear' (i = 0)
+  const onSide = (side, i, j) => (side === 'top' && j === nv) || (side === 'bottom' && j === 0) || (side === 'front' && i === nu) || (side === 'rear' && i === 0);
+  // seam vertices must lie on the centreline (a boundary may run onto it only partly)
+  const onSeam = (i, j) => !!seam && onSide(seam, i, j) && Math.abs(P[j][i][2]) < 2e-3;
+  // crisp edges continue into a neighbouring strip across a hard crease: no roll, no band
+  const crisp = o.crisp || [];
+  const onCrisp = (i, j) => crisp.some((c) => onSide(c, i, j));
+  if (seam) for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) if (onSeam(i, j)) { const n = N[j][i]; P[j][i][2] = 0; n[2] = 0; const l = Math.hypot(n[0], n[1]) || 1; n[0] /= l; n[1] /= l; }
   // rolled edge: pull the outer boundary toward the inside by half the thickness
   const roll = o.roll ?? 0.6;
   for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
-    if (i === 0 || j === 0 || i === nu || j === nv) for (let c = 0; c < 3; c++) P[j][i][c] -= N[j][i][c] * thick * roll;
+    if ((i === 0 || j === 0 || i === nu || j === nv) && !onSeam(i, j) && !onCrisp(i, j)) for (let c = 0; c < 3; c++) P[j][i][c] -= N[j][i][c] * thick * roll;
   }
   const pos = [], uv = [], idx = [];
   const uvf = o.uv || ((p, u, v) => [u, v]);
@@ -122,6 +137,8 @@ export function shell(rows, o = {}) {
   for (let j = nv; j > 0; j--) loop.push([0, j]);
   for (let k = 0; k < loop.length; k++) {
     const [i0, j0] = loop[k], [i1, j1] = loop[(k + 1) % loop.length];
+    if (onSeam(i0, j0) && onSeam(i1, j1)) continue;
+    if (crisp.some((c) => onSide(c, i0, j0) && onSide(c, i1, j1))) continue;
     const a = at(o0, i0, j0), b = at(o0, i1, j1), a1 = at(o1, i0, j0), b1 = at(o1, i1, j1);
     if (flip) idx.push(a, b, a1, b, b1, a1); else idx.push(a, a1, b, b, a1, b1);
   }
@@ -133,7 +150,18 @@ export function shell(rows, o = {}) {
   g.computeVertexNormals();
   // smooth the skins (keep the edge band sharp): re-average normals per position on skins
   smoothSkins(g, (nu + 1) * (nv + 1) * 2);
+  if (seam) fixSeam(g);
+  g.userData.seam = !!seam;
   return g;
+}
+
+// vertices on the centreline: no sideways normal component, so both mirrored halves agree
+function fixSeam(g) {
+  const p = g.attributes.position, n = g.attributes.normal;
+  for (let i = 0; i < p.count; i++) {
+    if (Math.abs(p.getZ(i)) < 1e-5) { const x = n.getX(i), y = n.getY(i); const l = Math.hypot(x, y) || 1; n.setXYZ(i, x / l, y / l, 0); }
+  }
+  n.needsUpdate = true;
 }
 
 // Smooth normals across shared positions (the non-indexed copy split them per face).
@@ -178,6 +206,11 @@ export function mirrorPanel(g, uvLeft = null) {
     }
   }
   if (uvLeft) { const uv = m.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, ...uvLeft(uv.getX(i), uv.getY(i))); }
+  if (g.userData.seam) {
+    // keep the mirrored normals exactly (computing them again would break the seam)
+    m.userData.seam = true;
+    return m;
+  }
   m.computeVertexNormals();
   smoothSkins(m);
   return m;
@@ -218,4 +251,56 @@ export function onPanel(rows, quad, off, out, nu = 10, nv = 6) {
     res.push(row);
   }
   return res;
+}
+
+// ---------------------------------------------------------------------------
+// Section-based panels: cross-sections [{ x, pts: [[z, y], ...] }] (same point count, from
+// the panel's lower / outer edge to its top; a last point at z = 0 lies on the centreline)
+// are interpolated along x (Catmull-Rom) and across each section. `creases` are profile
+// indices where the surface folds sharply: the panel is returned as strips meeting there
+// without a gap, each to be shelled with crisp edges at the crease.
+const cm = (a, b, c, d, t) => { const t2 = t * t, t3 = t2 * t; return 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3); };
+export function sectionStrips(sections, { sub = 6, around = 5, creases = [] } = {}) {
+  const S = sections.slice().sort((a, b) => a.x - b.x); // u runs rear -> front
+  const m = S[0].pts.length;
+  // rings along x
+  const rings = [];
+  for (let i = 0; i < S.length - 1; i++) {
+    const s0 = S[Math.max(0, i - 1)], s1 = S[i], s2 = S[i + 1], s3 = S[Math.min(S.length - 1, i + 2)];
+    const steps = i === S.length - 2 ? sub + 1 : sub;
+    for (let k = 0; k < steps; k++) {
+      const t = k / sub;
+      const pts = [];
+      for (let j = 0; j < m; j++) pts.push([cm(s0.pts[j][0], s1.pts[j][0], s2.pts[j][0], s3.pts[j][0], t), cm(s0.pts[j][1], s1.pts[j][1], s2.pts[j][1], s3.pts[j][1], t)]);
+      rings.push({ x: cm(s0.x, s1.x, s2.x, s3.x, t), pts });
+    }
+  }
+  const cuts = [0, ...creases.filter((c) => c > 0 && c < m - 1).sort((a, b) => a - b), m - 1];
+  const strips = [];
+  for (let q = 0; q < cuts.length - 1; q++) {
+    const a = cuts[q], b = cuts[q + 1];
+    const rows = [];
+    for (let j = a; j < b; j++) {
+      for (let k = 0; k < around; k++) {
+        const t = k / around;
+        rows.push(rings.map((r) => {
+          const P = r.pts, p0 = P[j === a ? j : j - 1], p1 = P[j], p2 = P[j + 1], p3 = P[j + 1 === b ? j + 1 : j + 2];
+          return [r.x, cm(p0[1], p1[1], p2[1], p3[1], t), Math.max(0, cm(p0[0], p1[0], p2[0], p3[0], t))];
+        }));
+      }
+    }
+    rows.push(rings.map((r) => [r.x, r.pts[b][1], r.pts[b][0]]));
+    strips.push({ rows, first: q === 0, last: q === cuts.length - 2 });
+  }
+  return strips;
+}
+
+// shell every strip of a sectioned panel: crisp at inner creases, seam on the centreline
+export function sectionShells(sections, o = {}) {
+  return sectionStrips(sections, o).map((st) => {
+    const crisp = [];
+    if (!st.first) crisp.push('bottom');
+    if (!st.last) crisp.push('top');
+    return shell(st.rows, { thick: o.thick, out: o.out, uv: o.uv, seam: o.seam ?? 'top', crisp, roll: o.roll });
+  });
 }

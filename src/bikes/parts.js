@@ -682,9 +682,12 @@ export function footpegs(ctx, x, y, zHalf = 0.17, o = {}) {
   }
 }
 
+// Number board decal. o.face: 'front' (faces +x, tilted back by o.tilt about z) or
+// Euler o.r for the side boards.
 export function numberPlate(ctx, c, size, mat, o = {}) {
   const g = new THREE.PlaneGeometry(size[0], size[1]);
-  place(g, { p: c, r: o.r ?? [0, 0, 0] });
+  if (o.face === 'front') { g.rotateY(Math.PI / 2); g.rotateZ(o.tilt ?? 0); g.translate(...c); }
+  else place(g, { p: c, r: o.r ?? [0, 0, 0] });
   ctx.A.add(o.group || 'chassis', g, mat);
 }
 
