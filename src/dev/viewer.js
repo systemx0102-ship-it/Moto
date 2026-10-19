@@ -1,6 +1,6 @@
 // Dev-only: renders bikes from fixed angles for visual QA (?bike=id&view=side&livery=0)
 // params: rider=1, speed, lean, steer, pitch, livery, cam=x,y,z, look=x,y,z, fov,
-//         studio=0 (plain grey room instead of the photo studio), w/h via the shooter.
+//         studio=0 (plain grey room instead of the photo studio), riderOnly=1, brake=1.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { BIKES, BIKE_BY_ID } from '../bikes/catalog.js';
@@ -74,7 +74,9 @@ const models = ids.map((id, i) => {
     const cols = Math.ceil(Math.sqrt(ids.length));
     m.root.position.set((i % cols) * 1.2 - (cols - 1) * 0.6, 0, Math.floor(i / cols) * -2.6);
   }
-  m.animate({ speed: +(params.get('speed') || 0), throttle: 1, steerAngle: +(params.get('steer') || 0), lean: +(params.get('lean') || 0), pitch: +(params.get('pitch') || 0) }, 10);
+  m.animate({ speed: +(params.get('speed') || 0), throttle: 1, steerAngle: +(params.get('steer') || 0), lean: +(params.get('lean') || 0), pitch: +(params.get('pitch') || 0), braking: params.get('brake') === '1' }, 10);
+  // riderOnly=1: hide the machine to inspect the rider
+  if (params.get('riderOnly') === '1') for (const mesh of m.meshes) mesh.visible = false;
   return m;
 });
 const buildMs = performance.now() - t0;
