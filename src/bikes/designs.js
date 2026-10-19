@@ -507,7 +507,7 @@ function naked(ctx) {
   radiator(ctx, [0.38, 0.48, 0], 0.3, 0.24, { tilt: -0.15 });
   const eng = engineUnit(ctx, { pos: [0.05, 0.31], cyl: 3, tilt: 0.38, cooling: 'liquid', caseMat: M.engine(0x232528), coverMat: M.engine(0x6a6e75), camMat: mats.accentSolid });
   for (const [x, y, z] of eng.ports) {
-    header(ctx, [[x, y, z], [x + 0.06, y - 0.08, z * 1.05], [0.36, 0.24, z * 0.7], [0.3, 0.14, z * 0.4], [0.1, 0.12, 0.04], [-0.06, 0.18, 0.1]], 0.019, M.titanium());
+    header(ctx, [[x, y, z], [x + 0.06, y - 0.08, z * 1.05], [0.36, 0.24, z * 0.7], [0.3, 0.14, z * 0.4], [0.1, 0.12, 0.04], [-0.06, 0.18, 0.1]], 0.019, M.header());
   }
   muffler(ctx, [-0.06, 0.2, 0.12], [-0.3, 0.3, 0.17], { type: 'cone', r: 0.06, mat: M.darkChrome(), endcap: M.carbon() });
   // angular tank + scoops
@@ -988,10 +988,10 @@ function mxBody(ctx, sm) {
   const [epx, epy] = eng.ports[0];
   // exhaust
   if (sm) {
-    header(ctx, [[epx, epy, 0.0], [epx + 0.07, epy - 0.05, 0.05], [0.22, 0.42, 0.09], [0.2, 0.32, 0.12], [0.0, 0.3, 0.14], [-0.25, 0.48, 0.14]], 0.022, M.titanium());
+    header(ctx, [[epx, epy, 0.0], [epx + 0.07, epy - 0.05, 0.05], [0.22, 0.42, 0.09], [0.2, 0.32, 0.12], [0.0, 0.3, 0.14], [-0.25, 0.48, 0.14]], 0.022, M.header());
     muffler(ctx, [-0.25, 0.48, 0.14], [-0.6, 0.66, 0.14], { type: 'hex', r: 0.05, mat: M.carbon(), endcap: M.titanium() });
   } else {
-    header(ctx, [[epx, epy, 0.0], [epx + 0.07, epy - 0.05, 0.05], [0.2, 0.42, 0.1], [0.18, 0.38, 0.13], [-0.05, 0.5, 0.14], [-0.3, 0.66, 0.13]], 0.022, M.titanium());
+    header(ctx, [[epx, epy, 0.0], [epx + 0.07, epy - 0.05, 0.05], [0.2, 0.42, 0.1], [0.18, 0.38, 0.13], [-0.05, 0.5, 0.14], [-0.3, 0.66, 0.13]], 0.022, M.header());
     muffler(ctx, [-0.3, 0.66, 0.13], [-0.66, 0.8, 0.12], { type: 'round', r: 0.045, mat: M.aluminum(), endcap: M.black() });
   }
   // tank + shrouds (plastics)

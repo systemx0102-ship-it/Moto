@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { loft, loftProfile, tube, taperTube, lathe, box, cyl, sphere, place, rod, between, spring, ring, torus, mirrorZ, flipGeometry } from './geo.js';
 import { M } from '../core/materials.js';
 import { discTexture } from '../core/textures.js';
+import { rotorRoughness } from '../core/pbr.js';
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
 const DEG = Math.PI / 180;
@@ -76,7 +77,7 @@ export function wheel(ctx, group, w) {
     const r = rimR - 0.006 + (R - rimR + 0.006 - (w.knobby ? 0.012 : 0)) * Math.pow(Math.max(Math.cos(th), 0), exp);
     prof.push([r, h]);
   }
-  A.add(group, lathe(prof, 56, 'z'), M.tire(!!w.knobby), { local: true });
+  A.add(group, lathe(prof, 96, 'z'), M.tire(!!w.knobby), { local: true });
   if (w.knobby) {
     const knobs = [];
     const count = Math.round((2 * Math.PI * R) / 0.042);
@@ -101,7 +102,7 @@ export function wheel(ctx, group, w) {
       [rimR - 0.03, -rw * 0.25], [rimR - 0.03, rw * 0.25], [rimR - 0.016, rw / 2 - 0.006],
       [rimR - 0.002, rw / 2 + 0.003], [rimR + 0.008, rw / 2], [rimR + 0.002, rw / 2 - 0.008],
       [rimR - 0.006, 0], [rimR + 0.002, -rw / 2 + 0.008],
-    ], 56), rimMat, { local: true });
+    ], 96), rimMat, { local: true });
     if (w.rimStripe) {
       // pinstripe painted on the outer face of each rim flange (outside the tyre bead)
       for (const sz of [-1, 1]) {
@@ -162,7 +163,7 @@ export function wheel(ctx, group, w) {
   if (w.discs) {
     for (const d of w.discs) {
       const mat = discMaterial(d.style || 'drilled', d.carrier || '#c9a227');
-      const g = ring(d.r * 0.3, d.r, 64);
+      const g = ring(d.r * 0.3, d.r, 96);
       g.translate(0, 0, d.z);
       A.add(group, g, mat, { local: true });
       // floating-disc buttons where the rotor meets the carrier
@@ -231,7 +232,7 @@ function discMaterial(style, carrier) {
   const key = style + carrier;
   if (!discMats.has(key)) {
     discMats.set(key, new THREE.MeshStandardMaterial({
-      map: discTexture(style, carrier), alphaTest: 0.5, side: THREE.DoubleSide, metalness: 0.95, roughness: 0.3,
+      map: discTexture(style, carrier), alphaTest: 0.5, side: THREE.DoubleSide, metalness: 0.95, roughness: 0.38, roughnessMap: rotorRoughness(),
     }));
   }
   return discMats.get(key);
@@ -617,7 +618,7 @@ export function radiator(ctx, c, w, h, o = {}) {
 // ---------------------------------------------------------------------------
 // Exhausts
 export function header(ctx, pts, r = 0.02, mat) {
-  ctx.A.add('chassis', tube(pts, r, { radial: 10 }), mat || M.titanium());
+  ctx.A.add('chassis', tube(pts, r, { radial: 14 }), mat || M.header());
 }
 
 // Muffler can along a direction from p (center of inlet) to q (outlet)

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, toTexture } from '../core/textures.js';
+import { leatherSet, grainSet, rep } from '../core/pbr.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -126,6 +127,15 @@ function suitTexture(main, second, accent, number) {
     const x = u0 * W;
     g.beginPath(); g.moveTo(x + 76, H); g.lineTo(x + 52, H * 0.42); g.lineTo(x + 22, H * 0.08); g.stroke();
   }
+  // stitching: double rows of fine stitches either side of each panel seam
+  g.setLineDash([7, 6]); g.lineWidth = 2;
+  g.strokeStyle = lum(main) > 0.55 ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.32)';
+  for (const u0 of [0.5, 0, 1]) {
+    const x = u0 * W;
+    for (const o of [-10, 12]) { g.beginPath(); g.moveTo(x + 76 + o, H); g.lineTo(x + 52 + o, H * 0.42); g.lineTo(x + 22 + o, H * 0.08); g.stroke(); }
+  }
+  for (const y of [0.45, 0.62, 0.86]) for (const o of [-6, 6]) { g.beginPath(); g.moveTo(0, H * y + o); g.lineTo(W, H * y + o); g.stroke(); }
+  g.setLineDash([]);
   // black leather crotch / seat panel and stretch zones at the waist
   g.fillStyle = '#121214'; g.fillRect(0, H * 0.86, W, H * 0.14);
   g.fillStyle = 'rgba(0,0,0,0.35)';
@@ -159,6 +169,10 @@ function limbTexture(main, second, accent) {
     g.fillStyle = second; g.fillRect(u0 * W - 22, 0, 44, H);
     g.fillStyle = accent; g.fillRect(u0 * W - 26, 0, 4, H); g.fillRect(u0 * W + 22, 0, 4, H);
   }
+  // stitches along the stripe edges
+  g.setLineDash([6, 5]); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,0.3)';
+  for (const u0 of [0, 0.5, 1]) for (const o of [-32, 32]) { g.beginPath(); g.moveTo(u0 * W + o, 0); g.lineTo(u0 * W + o, H); g.stroke(); }
+  g.setLineDash([]);
   // stretch panel and cuff
   g.fillStyle = 'rgba(0,0,0,0.3)';
   for (let i = 0; i < 5; i++) g.fillRect(0, H * (0.48 + i * 0.016), W, 2);
@@ -194,16 +208,22 @@ function riderMaterials(livery, number) {
   let second = livery.second || '#ffffff';
   if (Math.abs(lum(second) - lum(main)) < 0.12) second = lum(main) > 0.5 ? '#16171a' : '#e8e9eb';
   const accent = livery.accent || '#e2231a';
-  const leather = (map) => new THREE.MeshPhysicalMaterial({ map, roughness: 0.42, metalness: 0, clearcoat: 0.35, clearcoatRoughness: 0.4, sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x888888) });
+  // race leather: grain, perforated zones and stitched seams in the normal map, a waxy sheen
+  const L = leatherSet();
+  const leather = (map, k = 4) => new THREE.MeshPhysicalMaterial({
+    map, roughness: 0.5, roughnessMap: rep(L.roughnessMap, k), normalMap: rep(L.normalMap, k), normalScale: new THREE.Vector2(0.45, 0.45),
+    metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.45, sheen: 0.4, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x888888),
+  });
+  const gr = grainSet(19, 128, 2);
   const m = {
     suit: leather(suitTexture(main, second, accent, number)),
     limb: leather(limbTexture(main, second, accent)),
-    black: new THREE.MeshStandardMaterial({ color: 0x151517, roughness: 0.55 }),
-    glove: new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.5 }),
+    black: new THREE.MeshStandardMaterial({ color: 0x151517, roughness: 0.55, normalMap: rep(L.normalMap, 3), normalScale: new THREE.Vector2(0.4, 0.4) }),
+    glove: new THREE.MeshPhysicalMaterial({ color: 0x1b1c1f, roughness: 0.5, normalMap: rep(L.normalMap, 2), normalScale: new THREE.Vector2(0.5, 0.5), sheen: 0.3, sheenColor: new THREE.Color(0x777777) }),
     knuckle: new THREE.MeshStandardMaterial({ color: new THREE.Color(accent), roughness: 0.35, metalness: 0.1 }),
     boot: new THREE.MeshPhysicalMaterial({ color: lum(main) < 0.25 ? 0xe9eaec : 0x161719, roughness: 0.35, clearcoat: 0.6 }),
     bootTrim: new THREE.MeshStandardMaterial({ color: new THREE.Color(second), roughness: 0.4 }),
-    slider: new THREE.MeshStandardMaterial({ color: 0x2a2b2e, roughness: 0.6, metalness: 0.2 }),
+    slider: new THREE.MeshStandardMaterial({ color: 0x2a2b2e, roughness: 0.6, metalness: 0.2, normalMap: rep(gr.normalMap, 2), normalScale: new THREE.Vector2(0.5, 0.5) }),
     helmet: new THREE.MeshPhysicalMaterial({ map: helmetTexture(main, second, accent), roughness: 0.18, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.04 }),
     visor: new THREE.MeshPhysicalMaterial({ color: 0x0b0f18, roughness: 0.04, metalness: 0.9, iridescence: 0.8, iridescenceIOR: 1.8, iridescenceThicknessRange: [250, 620], envMapIntensity: 1.4 }),
     trim: new THREE.MeshStandardMaterial({ color: 0x0f1012, roughness: 0.35, metalness: 0.3 }),

@@ -5,14 +5,18 @@ import { DESIGNS } from './designs.js';
 import { M } from '../core/materials.js';
 import { liveryTexture, numberPlateTexture, makeCanvas, toTexture, licensePlateTexture, flakeNormalTexture } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
+import { orangePeel, rep } from '../core/pbr.js';
 import { Rider } from './Rider.js';
 
 function liveryMaterials(spec, livery, opts) {
   const matte = !!livery.matte;
   const tex = liveryTexture(livery, spec.short, livery.number || '');
   const flakes = matte ? null : flakeNormalTexture();
+  // multi-layer paint: metallic flake base under a deep clearcoat with a hint of orange peel
+  const peel = matte ? null : rep(orangePeel(), 3);
   const P = (params) => new THREE.MeshPhysicalMaterial({
     metalness: matte ? 0.2 : 0.5, roughness: matte ? 0.62 : 0.3, clearcoat: matte ? 0 : 1, clearcoatRoughness: 0.03,
+    clearcoatNormalMap: peel, clearcoatNormalScale: new THREE.Vector2(0.06, 0.06),
     normalMap: flakes, normalScale: new THREE.Vector2(0.35, 0.35), ...params,
   });
   const mats = {
