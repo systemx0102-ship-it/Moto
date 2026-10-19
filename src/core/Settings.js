@@ -32,6 +32,7 @@ const DEFAULTS = {
     racingLine: true,
     timeSel: 'auto',
     weatherSel: 'auto',
+    style: 'anime', // art direction: 'anime' (AAA anime, Genshin-like) or 'real' (photoreal PBR)
   },
   records: {}, // trackId -> { lap, race, bike }
   ghosts: {}, // trackId -> { bike, lap, data(base64) }
@@ -75,4 +76,6 @@ class SaveStore {
 }
 
 export const Save = new SaveStore();
+// true when the AAA anime art direction is active (read at scene/model build time)
+export const isAnime = () => Save.settings.style !== 'real';
 export const IS_MOBILE = isMobile;
