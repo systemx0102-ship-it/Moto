@@ -2,32 +2,63 @@
 import * as THREE from 'three';
 import { Assembly } from './Assembly.js';
 import { DESIGNS } from './designs.js';
-import { M } from '../core/materials.js';
+import { M, tinted } from '../core/materials.js';
 import { liveryTexture, numberPlateTexture, makeCanvas, toTexture, licensePlateTexture, flakeNormalTexture } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
-import { orangePeel, rep } from '../core/pbr.js';
+import { orangePeel, rep1 } from '../core/pbr.js';
 import { Rider } from './Rider.js';
 
+// Paint finish from the livery: explicit `finish`, else matte / pearl (near-white) /
+// solid (saturated racing colours) / metallic (darks, greys, silvers).
+export function paintFinish(livery) {
+  if (livery.finish) return livery.finish;
+  if (livery.matte) return 'matte';
+  const c = new THREE.Color(livery.base);
+  const hsl = {}; c.getHSL(hsl);
+  const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  if (l > 0.6 && hsl.s < 0.2) return 'pearl';
+  if (hsl.s > 0.55 && hsl.l > 0.18) return 'solid';
+  return 'metallic';
+}
+// multi-layer paint: base coat (flakes for metallics) under a deep clear coat with a hint
+// of orange peel; detail maps are metric (uv1)
+const FINISH = {
+  metallic: { metalness: 0.6, roughness: 0.36, clearcoat: 1, clearcoatRoughness: 0.035, flake: 0.3 },
+  solid: { metalness: 0.0, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.03, flake: 0.0 },
+  pearl: { metalness: 0.2, roughness: 0.38, clearcoat: 1, clearcoatRoughness: 0.03, flake: 0.12, iridescence: 0.35 },
+  candy: { metalness: 0.75, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.02, flake: 0.35 },
+  matte: { metalness: 0.25, roughness: 0.6, clearcoat: 0, clearcoatRoughness: 0.5, flake: 0.15 },
+};
+function paintParams(finish) {
+  const f = FINISH[finish] || FINISH.metallic;
+  const p = {
+    metalness: f.metalness, roughness: f.roughness, clearcoat: f.clearcoat, clearcoatRoughness: f.clearcoatRoughness,
+    normalMap: f.flake ? rep1(flakeNormalTexture(), 40) : null, normalScale: new THREE.Vector2(f.flake, f.flake),
+    clearcoatNormalMap: f.clearcoat ? rep1(orangePeel(), 2.5) : null, clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
+  };
+  if (f.iridescence) Object.assign(p, { iridescence: f.iridescence, iridescenceIOR: 1.6, iridescenceThicknessRange: [300, 500] });
+  return p;
+}
+
 function liveryMaterials(spec, livery, opts) {
-  const matte = !!livery.matte;
+  const finish = paintFinish(livery);
   const tex = liveryTexture(livery, spec.short, livery.number || '');
-  const flakes = matte ? null : flakeNormalTexture();
-  // multi-layer paint: metallic flake base under a deep clearcoat with a hint of orange peel
-  const peel = matte ? null : rep(orangePeel(), 3);
-  const P = (params) => new THREE.MeshPhysicalMaterial({
-    metalness: matte ? 0.2 : 0.5, roughness: matte ? 0.62 : 0.3, clearcoat: matte ? 0 : 1, clearcoatRoughness: 0.03,
-    clearcoatNormalMap: peel, clearcoatNormalScale: new THREE.Vector2(0.06, 0.06),
-    normalMap: flakes, normalScale: new THREE.Vector2(0.35, 0.35), ...params,
-  });
+  const P = (params) => new THREE.MeshPhysicalMaterial({ ...paintParams(finish), ...params });
+  // solid colours of every bike share one paint material per finish (vertex-colour tints)
+  const solid = (color) => tinted(`livpaint:${finish}`, color, () => new THREE.MeshPhysicalMaterial(paintParams(finish)));
+  // wheels: painted cast alloy under clear; frames: wet-look powder coat
+  const wheelPaint = (color) => tinted('wheelpaint', color, () => new THREE.MeshPhysicalMaterial({ ...paintParams('metallic'), metalness: 0.5, roughness: 0.32, normalScale: new THREE.Vector2(0.12, 0.12) }));
+  const framePaint = (color) => tinted('framepaint', color, () => new THREE.MeshPhysicalMaterial({ ...paintParams('metallic'), metalness: 0.55, roughness: 0.34, clearcoat: 0.8 }));
   const mats = {
     paint: P({ map: tex }),
     paintPlain: P({ map: liveryTexture(livery, '', '') }),
     makePaint: (map) => P({ map }),
-    paintSolid: P({ color: livery.base }),
-    paint2Solid: P({ color: livery.second }),
-    accentSolid: P({ color: livery.accent }),
-    frame: new THREE.MeshStandardMaterial({ color: livery.frame, metalness: 0.6, roughness: 0.35 }),
-    wheel: new THREE.MeshStandardMaterial({ color: livery.wheel, metalness: 0.65, roughness: 0.32 }),
+    paintSolid: solid(livery.base),
+    paint2Solid: solid(livery.second),
+    accentSolid: solid(livery.accent),
+    solid,
+    frame: framePaint(livery.frame),
+    wheel: wheelPaint(livery.wheel),
     seat: M.leather(livery.seat ?? 0x1c1c1e),
     glass: M.glass(0x1a2a3a, 0.42),
     head: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xfff4e0, emissiveIntensity: 4, roughness: 0.2 }),
@@ -171,7 +202,8 @@ export class BikeModel {
   dispose() {
     this.rider?.dispose(); // shared rider geometry stays alive for the next race
     this.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-    for (const k of ['side', 'paint', 'paintPlain', 'paintSolid', 'paint2Solid', 'accentSolid', 'frame', 'wheel', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'dash']) this.mats[k]?.dispose?.();
+    // shared (cached / tinted) materials stay alive; only this bike's own ones go
+    for (const k of ['side', 'paint', 'paintPlain', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'license', 'dash']) this.mats[k]?.dispose?.();
     this.mats.dashTex?.dispose();
     this.root.removeFromParent();
   }

@@ -1033,6 +1033,76 @@ export function discTexture(style = 'drilled', carrier = '#c9a227') {
   });
 }
 
+// Brake rotor friction band, planar-mapped onto a ring whose outer radius is 1.02 R:
+// machined steel with concentric lathe rings and a fine cross-hatch from the pads, drilled
+// holes / wave outline / slots cut out through alpha. Carbon (GP) rotors are matte black.
+export function rotorTexture(style = 'drilled') {
+  return cached(`rotor:${style}`, () => {
+    const S = 1024, C = S / 2;
+    const Rpx = C / 1.02;
+    const { c, g } = makeCanvas(S, S);
+    g.clearRect(0, 0, S, S);
+    const carbon = style === 'carbon';
+    const inner = Rpx * 0.72, outer = Rpx;
+    g.save();
+    g.beginPath();
+    if (style === 'wave') {
+      const n = 12;
+      for (let i = 0; i <= n * 16; i++) {
+        const a = (i / (n * 16)) * Math.PI * 2;
+        const r = outer * (1.0 - 0.055 * (0.5 + 0.5 * Math.cos(a * n)));
+        const x = C + Math.cos(a) * r, y = C + Math.sin(a) * r;
+        if (i) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+    } else g.arc(C, C, outer, 0, Math.PI * 2);
+    g.arc(C, C, inner * 0.97, 0, Math.PI * 2, true);
+    g.closePath();
+    const grd = g.createRadialGradient(C, C, inner, C, C, outer);
+    if (carbon) { grd.addColorStop(0, '#26272a'); grd.addColorStop(0.5, '#323336'); grd.addColorStop(1, '#222326'); }
+    else { grd.addColorStop(0, '#8b9096'); grd.addColorStop(0.15, '#b9bdc2'); grd.addColorStop(0.55, '#c9cdd1'); grd.addColorStop(0.9, '#aeb2b7'); grd.addColorStop(1, '#7d8288'); }
+    g.fillStyle = grd; g.fill();
+    g.clip();
+    // concentric machining rings + pad polish band
+    const r = rng(style.length * 13 + 5);
+    for (let rr = inner; rr < outer; rr += 1.6) {
+      g.strokeStyle = carbon ? `rgba(0,0,0,${r() * 0.25})` : `rgba(${r() < 0.5 ? '255,255,255' : '40,40,44'},${0.03 + r() * 0.08})`;
+      g.lineWidth = 1; g.beginPath(); g.arc(C, C, rr, 0, Math.PI * 2); g.stroke();
+    }
+    if (!carbon) {
+      // faint heat tint toward the inner edge
+      const ht = g.createRadialGradient(C, C, inner, C, C, inner + (outer - inner) * 0.4);
+      ht.addColorStop(0, 'rgba(120,90,60,0.22)'); ht.addColorStop(1, 'rgba(120,90,60,0)');
+      g.fillStyle = ht; g.fillRect(0, 0, S, S);
+    }
+    g.restore();
+    // holes / slots (cut through)
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = '#000';
+    if (style === 'drilled' || style === 'wave') {
+      // three staggered rows on a swept diagonal, like real cross-drilled rotors
+      const groups = style === 'wave' ? 12 : 18;
+      for (let k = 0; k < groups; k++) {
+        const a0 = (k / groups) * Math.PI * 2;
+        for (let j = 0; j < 3; j++) {
+          const rr = inner + (outer - inner) * (0.24 + j * 0.25);
+          const a = a0 + j * 0.055;
+          g.beginPath(); g.arc(C + Math.cos(a) * rr, C + Math.sin(a) * rr, S * 0.0062, 0, Math.PI * 2); g.fill();
+        }
+      }
+    } else if (style === 'slotted') {
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        g.save(); g.translate(C, C); g.rotate(a);
+        g.beginPath(); g.ellipse(inner + (outer - inner) * 0.5, 0, (outer - inner) * 0.28, S * 0.005, 0.5, 0, Math.PI * 2); g.fill();
+        g.restore();
+      }
+    }
+    g.globalCompositeOperation = 'source-over';
+    // chamfer ring round each hole is implied by the darker edge
+    return toTexture(c, { wrap: false });
+  });
+}
+
 export function checkerTexture(a = '#111', b = '#eee', n = 8) {
   return cached(`checker:${a}:${b}:${n}`, () => {
     const { c, g } = makeCanvas(256, 64);

@@ -275,3 +275,168 @@ export function rep(t, x, y = x) {
   c.needsUpdate = true;
   return c;
 }
+
+// Same, read through the metric box-projected uv1 set the bike assembly writes:
+// x / y = repeats per metre.
+export function rep1(t, x, y = x) {
+  const c = rep(t, x, y);
+  c.channel = 1;
+  return c;
+}
+
+// ---------------------------------------------------------------------------
+// 2x2 twill carbon weave. Each tow is a bundle of fibres: albedo shows the resin-filled
+// gaps and the tow crowns, the normal map the tow curvature, and an anisotropy map points
+// the highlight along the fibres (horizontal tows vs vertical tows), which is what makes
+// real carbon flicker in a checker as it turns in the light.
+export function carbonSet() {
+  return cached('carbon2', () => {
+    const W = 512, N = 8; // tows across the tile
+    const tw = W / N;
+    const h = new Float32Array(W * W);
+    const r = rng(808);
+    const jitter = new Float32Array(N * N).map(() => r());
+    const mc = makeCanvas(W, W), map = mc.c, g = mc.g;
+    const img = g.createImageData(W, W), d = img.data;
+    const an = makeCanvas(W, W), aimg = an.g.createImageData(W, W), ad = aimg.data;
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+      const cx = Math.floor(x / tw), cy = Math.floor(y / tw);
+      // 2x2 twill: over two, under two, stepping one tow per row -> diagonal bands
+      const hz = (((cx + cy) % 4) + 4) % 4 < 2;
+      const fx = (x % tw) / tw, fy = (y % tw) / tw;
+      const across = hz ? fy : fx; // position across the tow
+      const along = hz ? fx : fy;
+      const crown = Math.sin(across * Math.PI);
+      const dip = 0.15 * Math.sin(along * Math.PI * 2 + (hz ? 0 : 1.3));
+      const j = jitter[cy * N + cx];
+      const fib = 0.06 * Math.sin((across * 34 + j * 7) * Math.PI); // fibre striations
+      h[y * W + x] = crown * 0.9 + dip + fib;
+      const edge = Math.min(across, 1 - across);
+      const gap = edge < 0.06 ? 0.45 : 1;
+      const v = (16 + crown * 26 + j * 6 + fib * 30) * gap;
+      const i = (y * W + x) * 4;
+      d[i] = v; d[i + 1] = v; d[i + 2] = v * 1.06 + 1; d[i + 3] = 255;
+      // anisotropy: direction along the fibres, strong on the crowns
+      ad[i] = hz ? 255 : 128; ad[i + 1] = hz ? 128 : 255; ad[i + 2] = 255 * (0.35 + 0.65 * crown); ad[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    an.g.putImageData(aimg, 0, 0);
+    return { map: toTexture(map, { srgb: true }), normalMap: normalFrom(h, W, W, 3.2), anisotropyMap: data(an.c) };
+  });
+}
+
+// Braided stainless brake hose: two families of crossing helices (u along the hose,
+// v round it) for a crisp diamond weave in the normal and roughness maps.
+export function braidSet() {
+  return cached('braid', () => {
+    const W = 256, H = 128;
+    const h = new Float32Array(W * H);
+    const rough = pixels(W, H, (x, y, o) => {
+      const u = x / W, v = y / H;
+      const a = (u * 8 + v * 4) % 1, b = (u * 8 - v * 4 + 8) % 1;
+      const s1 = Math.sin(a * Math.PI), s2 = Math.sin(b * Math.PI);
+      const over = ((Math.floor(u * 8 + v * 4) + Math.floor(u * 8 - v * 4 + 8)) & 1) === 0;
+      const val = over ? s1 * 0.9 + s2 * 0.3 : s2 * 0.9 + s1 * 0.3;
+      // individual wires inside each strand
+      const wires = 0.08 * Math.sin(((over ? a : b) * 6) * Math.PI * 2);
+      h[y * W + x] = val + wires;
+      const k = 70 + (1 - val) * 120;
+      o[0] = k; o[1] = k; o[2] = k;
+    });
+    return { normalMap: normalFrom(h, W, H, 4), roughnessMap: data(rough) };
+  });
+}
+
+// Diamond knurling (footpegs, adjuster knobs): u round, v along
+export function knurlSet() {
+  return cached('knurl', () => {
+    const W = 256;
+    const h = new Float32Array(W * W);
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+      const a = ((x + y) / W) * 24, b = ((x - y + W) / W) * 24;
+      h[y * W + x] = Math.abs((a % 1) - 0.5) + Math.abs((b % 1) - 0.5);
+    }
+    return { normalMap: normalFrom(h, W, W, 6) };
+  });
+}
+
+// Radiator core: dense vertical fins between flat horizontal water tubes, seen face on
+// (u across, v up). Colour, normal and roughness.
+export function radiatorSet() {
+  return cached('radcore', () => {
+    const W = 512, H = 512;
+    const h = new Float32Array(W * H);
+    const col = pixels(W, H, (x, y, o) => {
+      const tube = (y % 32) < 7; // flat tubes every 32 px
+      const fin = Math.sin((x / W) * Math.PI * 2 * 96);
+      const louvre = Math.sin((y / H) * Math.PI * 2 * 64) * 0.3;
+      let v;
+      if (tube) { h[y * W + x] = 1; v = 92; } else { h[y * W + x] = 0.35 + 0.35 * Math.abs(fin) + louvre * 0.1; v = 30 + 46 * Math.abs(fin); }
+      o[0] = v; o[1] = v * 1.01; o[2] = v * 1.04;
+    });
+    return { map: toTexture(col, { srgb: true }), normalMap: normalFrom(h, W, H, 5) };
+  });
+}
+
+// Black protective mesh (radiator guards, intakes): diamond expanded metal, alpha-tested
+export function grilleTexture() {
+  return cached('grille', () => {
+    const W = 256;
+    const { c, g } = makeCanvas(W, W);
+    g.clearRect(0, 0, W, W);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 5;
+    const n = 8, s = W / n;
+    for (let i = -n; i <= 2 * n; i++) {
+      g.beginPath(); g.moveTo(i * s, 0); g.lineTo(i * s + W, W); g.stroke();
+      g.beginPath(); g.moveTo(i * s, W); g.lineTo(i * s + W, 0); g.stroke();
+    }
+    const t = toTexture(c, { srgb: true });
+    return t;
+  });
+}
+
+// Emissive LED array: rows of round LED dots on a black board (tail lights, DRLs)
+export function ledTexture(cols = 12, rows = 2) {
+  return cached(`led:${cols}:${rows}`, () => {
+    const W = 256, H = Math.max(16, Math.round((W / cols) * rows));
+    const { c, g } = makeCanvas(W, H);
+    g.fillStyle = '#060606'; g.fillRect(0, 0, W, H);
+    const s = W / cols;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const x = (i + 0.5) * s, y = (j + 0.5) * (H / rows);
+      const grd = g.createRadialGradient(x, y, 0, x, y, s * 0.48);
+      grd.addColorStop(0, '#ffffff'); grd.addColorStop(0.45, '#f0f0f0'); grd.addColorStop(1, 'rgba(40,40,40,0)');
+      g.fillStyle = grd; g.beginPath(); g.arc(x, y, s * 0.48, 0, Math.PI * 2); g.fill();
+    }
+    return toTexture(c, { wrap: false });
+  });
+}
+
+// Fine moulded grip rubber: waffle pattern (u round, v along)
+export function gripSet() {
+  return cached('grip', () => {
+    const W = 128;
+    const h = new Float32Array(W * W);
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+      const a = Math.abs(((x / W) * 16) % 1 - 0.5), b = Math.abs(((y / W) * 16) % 1 - 0.5);
+      h[y * W + x] = Math.min(a, b) < 0.12 ? 0 : 1;
+    }
+    return { normalMap: normalFrom(h, W, W, 3) };
+  });
+}
+
+// Suede / alcantara for race seats: soft directional nap
+export function suedeSet() {
+  return cached('suede', () => {
+    const W = 256;
+    const n = makeTileFbm(71, 64, 3), m = makeTileFbm(72, 8, 2);
+    const h = new Float32Array(W * W);
+    const rough = pixels(W, W, (x, y, o) => {
+      const v = n(x / W, y / W) * 0.5 + 0.5;
+      h[y * W + x] = v;
+      const k = 215 + (m(x / W, y / W) * 0.5 + 0.5) * 40;
+      o[0] = k; o[1] = k; o[2] = k;
+    });
+    return { normalMap: normalFrom(h, W, W, 1.5), roughnessMap: data(rough) };
+  });
+}
