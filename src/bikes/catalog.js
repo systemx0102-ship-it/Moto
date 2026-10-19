@@ -81,13 +81,13 @@ export const BIKES = [
   },
   {
     id: 'volt', name: 'VOLT PHANTOM X', short: 'VOLT', klass: 'ELÉCTRICA', design: 'electric',
-    blurb: 'Hiper-moto eléctrica con ruedas sin buje, par instantáneo y silencio futurista.',
+    blurb: 'Naked eléctrica de 150 kW: batería de 17 kWh con aletas en un chasis multitubular, motor refrigerado por aceite y transmisión por correa.',
     engine: { label: '150 kW · Motor eléctrico', hp: 204, redline: 13000, idle: 0, curve: T.electric, gears: [1.0], sound: 'electric', electric: true },
     mass: 230, topKmh: 290, maxLean: 56, leanRate: 2.7, brakeG: 1.14, grip: 1.0, offroad: 0.5, wheelieTend: 0.8,
     model: {
-      wb: 1.5, rake: 25, forkLen: 0.56, forkOffset: 0.03, pivot: [-0.1, 0.45],
-      front: { R: 0.31, w: 0.125, rim: 0.226, style: 'hubless' },
-      rear: { R: 0.325, w: 0.2, rim: 0.226, style: 'hubless' },
+      wb: 1.45, rake: 24.5, forkLen: 0.56, forkOffset: 0.03, pivot: [-0.1, 0.45],
+      front: { R: 0.3, w: 0.12, rim: 0.216, style: 'split', spokes: 5, sweep: 0.2 },
+      rear: { R: 0.32, w: 0.19, rim: 0.216, style: 'split', spokes: 5, sweep: 0.2 },
     },
     liveries: [
       { name: 'Cian Plasma', base: '#e9eef2', second: '#0d0f12', accent: '#00f0ff', frame: '#0d0f12', wheel: '#0d0f12', pattern: 'neon' },
