@@ -89,10 +89,10 @@ function bikeFacts(b) {
 }
 
 // rAF tween with ease-out; registers a finisher in `fin` so a skip jumps to the end
-function tween(fin, ms, cb, done) {
+function tween(fin, ms, cb) {
   const t0 = performance.now();
   let raf = 0;
-  const end = () => { cancelAnimationFrame(raf); fin.delete(end); cb(1); if (done) done(); };
+  const end = () => { cancelAnimationFrame(raf); fin.delete(end); cb(1); };
   const tick = (t) => {
     const k = Math.min(1, (t - t0) / ms);
     if (k >= 1) { end(); return; }
@@ -169,7 +169,7 @@ export const hubScreens = {
       entry('forge', 'Taller y forja', RICON.forge, () => this.rpgForge?.()),
       entry('contracts', 'Contratos', RICON.contracts, () => this.rpgContracts(), ready ? `${ready} por cobrar` : null),
       entry('shop', 'Concesionario', RICON.shop, () => this.rpgShop()),
-      entry('menu', 'Menú principal', ICO.exit, () => this.mainMenu()),
+      entry('menu', 'Menú principal', ICO.exit, () => { this._lhHubKey = null; this.mainMenu(); }),
     ];
 
     // right column: the active machine
@@ -220,7 +220,7 @@ export const hubScreens = {
       if (d > 0 && side === 0) { leftI = this.navI; side = 1; this._lhSwapNav(right, 0); Audio.hover(); }
       else if (d < 0 && side === 1) { side = 0; this._lhSwapNav(items, leftI); Audio.hover(); }
     };
-    this.onBack = () => this.mainMenu();
+    this.onBack = () => { this._lhHubKey = null; this.mainMenu(); };
     Audio.playMusic('menu');
   },
 
@@ -497,6 +497,7 @@ export const hubScreens = {
       h('div', { class: 'lh-bside' }, ...side),
       h('div', { class: 'bottom-bar' }, keys([['↑ ↓', 'Navegar'], ['Enter', 'Aceptar'], ['Esc', 'Volver']]), h('span', { class: 'grow' }), bk, gear, run));
     this._setNav(unlocked ? [run, gear, bk] : [gear, bk]);
+    this.onLeftRight = (d) => this._focus(this.navI - d);
     this.onBack = goBack;
   },
 
@@ -539,6 +540,7 @@ export const hubScreens = {
         lifeStrip(),
         h('div', { class: 'bottom-bar' }, keys([['↑ ↓', 'Navegar'], ['Enter', 'Aceptar'], ['Esc', 'Volver']]), h('span', { class: 'grow' }), back));
       this._setNav(nav, Math.min(focus, nav.length - 1));
+      this.onLeftRight = (d) => this._focus(this.navI + d);
       this.onBack = () => this.rpgHub();
     };
     const claim = (i, text) => {
@@ -727,7 +729,7 @@ export const hubScreens = {
     const mast = mkProg(`Maestría ${rw.mastery.before}`, BIKE_BY_ID[rw.mastery.bike]?.short || '', 'mastery');
     const crV = h('b', {}, '+0');
     const crRow = h('div', { class: 'lh-rw-cr lh-a' }, icon(RICON.credits), h('span', {}, 'Créditos'), crV,
-      rw.salvaged.n ? h('em', {}, `Desguace automático: +${fmtN(rw.salvaged.frags)} fragmentos · +${fmtN(rw.salvaged.credits)} créditos`) : null);
+      rw.salvaged.n ? h('em', {}, `Inventario lleno: ${plural(rw.salvaged.n, 'pieza desguazada', 'piezas desguazadas')} automáticamente (+${fmtN(rw.salvaged.frags)} fragmentos · +${fmtN(rw.salvaged.credits)} créditos). Libera espacio en Equipamiento.`) : null);
     const conRows = rw.contracts.map((c) => {
       const b = bar(c.from / c.n, c.done ? 'done' : '');
       const f = b.querySelector('.fill');
@@ -747,8 +749,7 @@ export const hubScreens = {
     const colC = h('div', { class: 'lh-rw-col glass wide' },
       head('Piezas', h('span', { class: 'n' }, cards.length ? plural(cards.length, 'pieza', 'piezas') : '')),
       wonEl,
-      cards.length ? loot : h('div', { class: 'lh-none' }, 'Sin piezas: termina la prueba para conseguir botín.'),
-      rw.salvaged.n ? h('div', { class: 'lh-note' }, `Inventario lleno: ${plural(rw.salvaged.n, 'pieza desguazada', 'piezas desguazadas')} automáticamente. Libera espacio en Equipamiento.`) : null);
+      cards.length ? loot : h('div', { class: 'lh-none' }, 'Sin piezas: termina la prueba para conseguir botín.'));
 
     // these headings appear together with their first line
     const unlHead = unl.length ? head('Desbloqueado') : null;
@@ -773,27 +774,27 @@ export const hubScreens = {
     // ---- the sequence (each step: instant? -> ms to wait before the next)
     const show = (el) => el && el.classList.add('in');
     const count = (el, to, ms, pre = '+') => tween(fin, ms, (k) => { el.textContent = pre + fmtN(to * k); });
-    step(() => 450);
+    step(() => 350);
     rw.objectives.forEach((o, i) => step((inst) => {
       show(objRows[i]);
       const got = o.ok || o.had;
       if (got) { hstars[i].classList.add('on'); if (o.ok && !o.had) hstars[i].classList.add('pop'); }
       if (!inst && o.ok) Audio.select();
-      return o.ok ? 380 : 240;
+      return o.ok ? 330 : 220;
     }));
     let xpSum = 0;
     xpRows.forEach((x) => step((inst) => {
       show(x.row);
       xpSum += x.xp;
       if (inst) { x.v.textContent = `+${fmtN(x.xp)}`; return 0; }
-      count(x.v, x.xp, 260);
-      return 210;
+      count(x.v, x.xp, 240);
+      return 170;
     }));
     step((inst) => {
       show(xpTotRow);
       if (inst) { xpTot.textContent = fmtN(rw.xp); return 0; }
-      count(xpTot, rw.xp, 500, '');
-      return 600;
+      count(xpTot, rw.xp, 450, '');
+      return 500;
     });
     // a bar that fills across level-ups: one segment per level, a banner per level-up
     const segments = (L0, x0, ups, x1, need, max) => {
@@ -811,16 +812,16 @@ export const hubScreens = {
           P.fill.style.width = pct(g.from * 100);
           const val = (k) => { const f = g.from + (g.to - g.from) * k; P.ghost.style.width = pct(f * 100); P.val.textContent = max(g.L) ? 'Máx.' : `${fmtN(f * need(g.L))} / ${fmtN(need(g.L))} ${unit}`; };
           if (inst) { val(1); return 0; }
-          const ms = Math.max(250, 900 * (g.to - g.from));
+          const ms = Math.max(220, 750 * (g.to - g.from));
           tween(fin, ms, val);
-          return ms + 120;
+          return ms + 100;
         });
         if (g.up) step((inst) => {
           P.ban.appendChild(banner(g.L + 1));
           P.fill.style.width = '0%'; P.ghost.style.width = '0%';
           P.lab.textContent = label(g.L + 1);
           if (!inst) Audio.fanfare();
-          return 750;
+          return 650;
         });
       });
     };
@@ -833,11 +834,11 @@ export const hubScreens = {
     step((inst) => {
       show(crRow);
       if (inst) { crV.textContent = `+${fmtN(rw.credits)}`; return 0; }
-      count(crV, rw.credits, 600);
+      count(crV, rw.credits, 500);
       Audio.click();
-      return 650;
+      return 550;
     });
-    if (wonEl) step((inst) => { show(wonEl); if (!inst) Audio.fanfare(); return 900; });
+    if (wonEl) step((inst) => { show(wonEl); if (!inst) Audio.fanfare(); return 800; });
     cards.forEach((c, i) => step((inst) => {
       if (inst) c.classList.add('inst');
       c.classList.add('open');
@@ -845,7 +846,7 @@ export const hubScreens = {
         c.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         if (rw.items[i].rar >= 3) Audio.fanfare(); else Audio.select();
       }
-      return rw.items[i].rar >= 3 ? 1000 : 600;
+      return rw.items[i].rar >= 3 ? 950 : 550;
     }));
     unl.forEach((u) => step((inst) => { show(unlHead); show(u); if (!inst) Audio.lap(); return 380; }));
     conRows.forEach((x) => step((inst) => {
@@ -866,11 +867,14 @@ export const hubScreens = {
       if (!live()) return;
       for (const el of this.nav) el.classList.remove('focus');
       this._setNav(btns, 0);
+      this.onLeftRight = (d) => this._focus(this.navI + d);
       this.onBack = () => this.game.exitRace();
     };
     const runNext = () => {
       timer = 0;
       if (!live()) return;
+      // a tween still running (rAF paused in a hidden tab) must land before the next step
+      for (const f of [...fin]) f();
       if (si >= steps.length) { end(); return; }
       const ms = steps[si++](false);
       timer = setTimeout(runNext, ms);

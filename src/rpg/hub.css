@@ -410,7 +410,7 @@
 .lh-rw-cr .rpg-ico { color: var(--gold); }
 .lh-rw-cr span { font-family: var(--font-h); font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
 .lh-rw-cr b { margin-left: auto; font-family: var(--font-h); font-size: 26px; font-weight: 700; }
-.lh-rw-cr em { flex-basis: 100%; font-style: normal; font-size: 12px; color: var(--dim); }
+.lh-rw-cr em { flex-basis: 100%; font-style: normal; font-size: 12px; line-height: 1.4; color: #f3d9a8; padding-left: 8px; border-left: 2px solid var(--amber); }
 .lh-rw-con { padding: 5px 0 7px; }
 .lh-rw-con .k { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: #cfd4da; margin-bottom: 5px; }
 .lh-rw-con .k b { font-family: var(--font-h); font-size: 14px; font-weight: 600; white-space: nowrap; }
@@ -464,6 +464,7 @@
   .lh-rate .k { font-size: 12.5px; letter-spacing: .05em; }
   .lh-ev { grid-template-columns: 36px minmax(0, 1fr) 40px auto 84px; gap: 9px; }
   .lh-rw-loot { grid-template-columns: minmax(0, 1fr); }
+  .lh-mbtns .btn { font-size: 13px; letter-spacing: .06em; white-space: nowrap; gap: 8px; padding-left: 8px; padding-right: 8px; }
 }
 @media (max-height: 620px) {
   .lh { --lh-top: 88px; --lh-bot: 56px; }
