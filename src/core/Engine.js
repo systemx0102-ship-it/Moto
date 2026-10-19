@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { Save } from './Settings.js';
 import { setMaxAnisotropy } from './textures.js';
 import { clamp } from './utils.js';
@@ -205,8 +206,8 @@ export class Engine {
     r.shadowMap.enabled = q.shadows > 0;
     r.shadowMap.needsUpdate = true;
     if (this.composer) { this.composer.dispose?.(); this.composer = null; }
-    this.lens?.dispose(); this.bloom?.dispose?.(); this.aaPass?.dispose?.(); this.finalPass?.dispose?.();
-    this.lens = null; this.aaPass = null;
+    this.lens?.dispose(); this.bloom?.dispose?.(); this.aaPass?.dispose?.(); this.finalPass?.dispose?.(); this.gtao?.dispose?.();
+    this.lens = null; this.aaPass = null; this.gtao = null;
     const tier = q.post ? (TIER[Save.settings.quality] || 2) : 0;
     this.tier = tier;
     if (q.post) {
@@ -217,6 +218,14 @@ export class Engine {
       const composer = new EffectComposer(r, rt);
       this.renderPass = new RenderPass(this.scene, this.camera);
       composer.addPass(this.renderPass);
+      // ground-truth ambient occlusion for the showroom (scenes flagged userData.ao): dark
+      // crevices round the engine, under the tank and between the parts, contact shadows
+      this.gtao = new GTAOPass(this.scene || new THREE.Scene(), this.camera, Math.max(1, size.x), Math.max(1, size.y));
+      this.gtao.updateGtaoMaterial({ radius: 0.2, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: q.msaa ? 16 : 12, distanceFallOff: 1, screenSpaceRadius: false });
+      this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
+      this.gtao.blendIntensity = 1;
+      this.gtao.enabled = !!this.scene?.userData?.ao;
+      composer.addPass(this.gtao);
       // lens work reads the clean HDR frame (before bloom) at 1/4 res
       this.lens = new LensFX(tier);
       composer.addPass(this.lens.prepass);
@@ -247,6 +256,7 @@ export class Engine {
     this.scene = scene;
     this.camera = camera;
     if (this.renderPass) { this.renderPass.scene = scene; this.renderPass.camera = camera; }
+    if (this.gtao) { this.gtao.scene = scene; this.gtao.camera = camera; this.gtao.enabled = !!scene.userData.ao; }
     if (this.finalPass) this.finalPass.uniforms.uShimmer.value = 0;
     this.resize();
   }

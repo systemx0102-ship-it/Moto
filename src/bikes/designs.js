@@ -128,10 +128,10 @@ function sportBody(ctx, P) {
   A.add('chassis', belly, P.bellyMat || mats.paint2Solid);
   // fuel tank with faceted knee recesses
   const tank = loftProfile([
-    S(0.47, [0, 0.845], [0.08, 0.85], [0.1, 0.885], [0.08, 0.93], [0, 0.945]),
-    S(0.34, [0, 0.83], [0.15, 0.84], [0.178, 0.9], [0.14, 0.99], [0, 1.02]),
-    S(0.14, [0, 0.83], [0.152, 0.84], [0.185, 0.9], [0.15, 0.99], [0, 1.025]),
-    S(-0.04, [0, 0.83], [0.115, 0.84], [0.138, 0.88], [0.11, 0.94], [0, 0.96]),
+    S(0.47, [0, 0.845], [0.08, 0.85], [0.1, 0.882], [0.082, 0.922], [0, 0.935]),
+    S(0.34, [0, 0.83], [0.15, 0.84], [0.178, 0.895], [0.15, 0.975], [0, 0.995]),
+    S(0.14, [0, 0.83], [0.152, 0.84], [0.185, 0.895], [0.158, 0.978], [0, 1.0]),
+    S(-0.04, [0, 0.83], [0.115, 0.84], [0.138, 0.875], [0.115, 0.93], [0, 0.948]),
     S(-0.14, [0, 0.845], [0.07, 0.85], [0.08, 0.865], [0.06, 0.888], [0, 0.897]),
   ], { sub: 6, around: 4, creases: [2], capStart: true, capEnd: true });
   A.add('chassis', tank, mats.paintPlain);
@@ -237,12 +237,12 @@ function superbike(ctx) {
   // cockpit
   handlebar(ctx, { type: 'clipon' });
   dash(ctx, [0.5, 0.97, 0], 0.12, 0.075, { tilt: -1.1 });
-  for (const s of [-1, 1]) mirror(ctx, [0.62, 0.95, s * 0.2], s, { group: 'chassis', reach: 0.3, up: 0.06, dx: -0.03 });
+  for (const s of [-1, 1]) mirror(ctx, [0.62, 0.95, s * 0.2], s, { group: 'chassis', reach: 0.3, up: 0.06, dx: -0.03, signal: true });
   footpegs(ctx, -0.2, 0.4, 0.17, { plates: true });
   shock(ctx, [-0.08, 0.62, 0], [-0.2, 0.36, 0], { r: 0.026, springColor: 0xe2b521 });
   frontFender(ctx, { from: 1.8, len: 1.7, w: 0.13, mat: mats.paintSolid });
   rearFender(ctx, { from: 1.9, len: 1.4, mat: M.carbon(), w: 0.2 });
-  details(ctx, { damper: true, plate: { pos: [-0.86, 0.76, 0], tilt: 0.3 }, signalsF: [[0.7, 0.83, 0.205], [0.7, 0.83, -0.205]] });
+  details(ctx, { damper: true, plate: { pos: [-0.86, 0.76, 0], tilt: 0.3 } });
 }
 
 // 2. MotoGP prototype
@@ -620,13 +620,20 @@ function cafe(ctx) {
   // side covers / oil tank under the seat + seat pan
   const bat = box(0.2, 0.16, 0.15, 0.02); place(bat, { p: [-0.2, 0.64, 0] }); A.add('chassis', bat, M.black());
   for (const s of [-1, 1]) {
+    // domed side cover in the tank colour, carrying an oval racing number board
     const sc = loft([
-      { x: -0.05, y: 0.64, w: 0.01, ht: 0.1, hb: 0.11, n: 4, z: s * 0.1 },
-      { x: -0.2, y: 0.67, w: 0.012, ht: 0.075, hb: 0.07, n: 4, z: s * 0.104 },
-      { x: -0.35, y: 0.725, w: 0.01, ht: 0.035, hb: 0.025, n: 3.5, z: s * 0.098 },
-    ], { radial: 20, sub: 5, capStart: true, capEnd: true });
-    A.add('chassis', sc, mats.paint2Solid);
-    const badge = sphere(0.025, 14, 8); badge.scale(1, 1, 0.25); badge.translate(-0.12, 0.66, s * 0.112); A.add('chassis', badge, M.chrome());
+      { x: -0.05, y: 0.64, w: 0.02, ht: 0.1, hb: 0.11, n: 2.8, z: s * 0.095 },
+      { x: -0.2, y: 0.67, w: 0.026, ht: 0.075, hb: 0.07, n: 2.8, z: s * 0.1 },
+      { x: -0.35, y: 0.725, w: 0.018, ht: 0.035, hb: 0.025, n: 2.6, z: s * 0.094 },
+    ], { radial: 22, sub: 5, capStart: true, capEnd: true });
+    A.add('chassis', sc, mats.paintSolid);
+    const board = new THREE.CircleGeometry(1, 32);
+    board.scale(0.07, 0.052, 1);
+    if (s < 0) board.rotateY(Math.PI);
+    board.translate(-0.15, 0.665, s * 0.127);
+    A.add('chassis', board, mats.plate);
+    const rim = torus(1, 0.06, 32, 6); rim.scale(0.072, 0.054, 0.072); rim.translate(-0.15, 0.665, s * 0.126);
+    A.add('chassis', rim, M.chrome());
   }
   const pan = box(0.36, 0.02, 0.2, 0.008); place(pan, { p: [-0.3, 0.775, 0] }); A.add('chassis', pan, M.black());
   // knee pads

@@ -704,6 +704,12 @@ export function mirror(ctx, base, side, o = {}) {
   gl.rotateY(-Math.PI / 2);
   place(gl, { p: [head[0] - 0.0215, head[1] + 0.02, head[2] + side * 0.04], r: [side * 0.12, side * -0.15, 0] });
   ctx.A.add(o.group || 'steer', gl, M.chrome());
+  if (o.signal) {
+    // indicator LED strip along the leading outer edge of the housing
+    const led = box(0.008, 0.012, 0.09, 0.004);
+    place(led, { p: [head[0] + 0.021, head[1] + 0.005, head[2] + side * 0.055], r: [side * 0.12, side * -0.15, 0] });
+    ctx.A.add(o.group || 'steer', led, M.emissive(0xff8a00, 0.25));
+  }
 }
 
 // Handlebars (steer group)

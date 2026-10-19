@@ -13,6 +13,7 @@ export class GarageScene {
     this.engine = engine;
     const scene = new THREE.Scene();
     this.scene = scene;
+    scene.userData.ao = true; // showroom gets screen-space ambient occlusion
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
     this.time = 0;
     this.mode = 'menu';
