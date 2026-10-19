@@ -5,6 +5,7 @@ import { DESIGNS } from './designs.js';
 import { M } from '../core/materials.js';
 import { liveryTexture, numberPlateTexture, makeCanvas, toTexture, licensePlateTexture, flakeNormalTexture } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
+import { Rider } from './Rider.js';
 
 function liveryMaterials(spec, livery, opts) {
   const matte = !!livery.matte;
@@ -105,8 +106,12 @@ export class BikeModel {
     this.headMat = mats.head;
     this.neonMat = mats.neon;
 
-    // bounds (bike space)
+    // bounds (bike space, machine only)
     const box = new THREE.Box3().setFromObject(A.inner);
+    if (opts.rider) {
+      this.rider = new Rider(spec, this.livery, ctx, this.groups, { castShadow: opts.castShadow !== false, number: this.livery.number });
+      this.model.add(this.rider.root);
+    }
     this.bounds = box;
     this.height = box.max.y;
     this.length = box.max.x - box.min.x;
@@ -140,6 +145,7 @@ export class BikeModel {
     }
     // brake light
     this.tailMat.emissiveIntensity = s.braking ? 7 : 1.6;
+    if (this.rider) this.rider.update(s, dt);
   }
 
   setVisible(v) { this.root.visible = v; }
@@ -158,6 +164,7 @@ export class BikeModel {
   }
 
   dispose() {
+    this.rider?.dispose(); // shared rider geometry stays alive for the next race
     this.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
     for (const k of ['paint', 'paintPlain', 'paintSolid', 'paint2Solid', 'accentSolid', 'frame', 'wheel', 'head', 'tail', 'neon', 'plate', 'plateSolid', 'dash']) this.mats[k]?.dispose?.();
     this.mats.dashTex?.dispose();

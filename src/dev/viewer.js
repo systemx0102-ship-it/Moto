@@ -28,13 +28,13 @@ const view = params.get('view') || 'side';
 const liv = +(params.get('livery') || 0);
 const t0 = performance.now();
 const models = ids.map((id, i) => {
-  const m = new BikeModel(BIKE_BY_ID[id] || BIKES[0], liv);
+  const m = new BikeModel(BIKE_BY_ID[id] || BIKES[0], liv, { rider: params.get('rider') === '1' });
   scene.add(m.root);
   if (ids.length > 1) {
     const cols = Math.ceil(Math.sqrt(ids.length));
     m.root.position.set((i % cols) * 1.2 - (cols - 1) * 0.6, 0, Math.floor(i / cols) * -2.6);
   }
-  m.animate({ speed: 0, steerAngle: +(params.get('steer') || 0), lean: +(params.get('lean') || 0), pitch: +(params.get('pitch') || 0) }, 0);
+  m.animate({ speed: +(params.get('speed') || 0), throttle: 1, steerAngle: +(params.get('steer') || 0), lean: +(params.get('lean') || 0), pitch: +(params.get('pitch') || 0) }, 10);
   return m;
 });
 const buildMs = performance.now() - t0;
@@ -52,4 +52,5 @@ else cam.lookAt(view === 'closeF' ? new THREE.Vector3(0, 0.4, 0.7) : new THREE.V
 if (params.get('fov')) { cam.fov = +params.get('fov'); cam.updateProjectionMatrix(); }
 renderer.render(scene, cam);
 document.title = `ok build=${buildMs.toFixed(0)}ms tris=${tris} draws=${renderer.info.render.calls}`;
+window.__models = models;
 window.__ready = true;

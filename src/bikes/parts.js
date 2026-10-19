@@ -178,19 +178,52 @@ export function wheel(ctx, group, w) {
   }
   if (w.sprocket) {
     const s = w.sprocket;
-    const g = closedLathe([[0.04, -0.003], [s.r, -0.003], [s.r, 0.003], [0.04, 0.003]], 40);
+    const g = sprocketGeo(s.r, s.teeth ?? 42, s.holes ?? 6, 0.0065);
     g.translate(0, 0, s.z);
     A.add(group, g, M.anodized(s.color ?? 0x8a8f96), { local: true });
-    // teeth ring
-    const teeth = [];
-    for (let i = 0; i < 40; i++) {
-      const a = (i / 40) * Math.PI * 2;
-      const t = box(0.008, 0.006, 0.006);
-      place(t, { p: [Math.cos(a) * (s.r + 0.004), Math.sin(a) * (s.r + 0.004), s.z], r: [0, 0, a] });
-      teeth.push(t);
+    // carrier bolts with their nuts
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
+      const b = cyl(0.0065, 0.0065, 0.016, 6, 'z');
+      b.translate(Math.cos(a) * 0.062, Math.sin(a) * 0.062, s.z);
+      A.add(group, b, M.chrome(), { local: true });
     }
-    for (const t of teeth) A.add(group, t, M.anodized(s.color ?? 0x8a8f96), { local: true });
   }
+}
+
+// Laser-cut sprocket in the wheel plane (axis Z): tooth profile round the rim,
+// lightening windows between the spokes and the centre bore.
+export function sprocketGeo(R, teeth = 42, holes = 6, thick = 0.0065) {
+  const shape = new THREE.Shape();
+  const n = teeth * 6;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const ph = (i % 6) / 6;
+    // root, flank, rounded tip, flank (smooth bump per tooth)
+    const r = R - 0.0035 + 0.011 * Math.pow(Math.sin(Math.PI * ph), 1.6);
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+  }
+  const rin = 0.05, rout = R - 0.024;
+  if (holes && rout > rin + 0.02) {
+    const web = 0.016;
+    for (let k = 0; k < holes; k++) {
+      const a0 = (k / holes) * Math.PI * 2, a1 = ((k + 1) / holes) * Math.PI * 2;
+      const h = new THREE.Path();
+      const o0 = a0 + web / rout, o1 = a1 - web / rout, i0 = a0 + web / rin, i1 = a1 - web / rin;
+      h.moveTo(Math.cos(o0) * rout, Math.sin(o0) * rout);
+      for (let j = 1; j <= 10; j++) { const a = o0 + (o1 - o0) * (j / 10); h.lineTo(Math.cos(a) * rout, Math.sin(a) * rout); }
+      for (let j = 0; j <= 6; j++) { const a = i1 + (i0 - i1) * (j / 6); h.lineTo(Math.cos(a) * rin, Math.sin(a) * rin); }
+      h.closePath();
+      shape.holes.push(h);
+    }
+  }
+  const bore = new THREE.Path();
+  bore.absarc(0, 0, 0.026, 0, Math.PI * 2, true);
+  shape.holes.push(bore);
+  const g = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: true, bevelThickness: 0.0008, bevelSize: 0.0008, bevelSegments: 1, curveSegments: 8 });
+  g.translate(0, 0, -thick / 2);
+  return g;
 }
 
 const discMats = new Map();
@@ -410,15 +443,39 @@ export function swingarm(ctx, o = {}) {
     if (style === 'tube') {
       A.add('swingarm', rod([px, py, z * 0.85], [ax + 0.02, ay, z], 0.02, 12), mat);
     } else {
-      const hgt = style === 'single' ? 0.06 : (o.h ?? 0.05);
-      const midY = (py + ay) / 2 + (style === 'banana' ? 0.03 : 0);
+      const hgt = style === 'single' ? 0.065 : (o.h ?? 0.058);
+      const arch = style === 'banana' ? (z > 0 ? 0.045 : 0.03) : 0;
+      const L = (t) => [px + (ax - px) * t, py + (ay - py) * t + arch * Math.sin(Math.PI * Math.min(1, t * 1.15))];
+      const sec = (t, w, ht, zz, n = 5.5) => { const [x, y] = L(t); return { x, y, w, ht, hb: ht, n, z: zz }; };
+      // box section: tall at the pivot, tapering to the axle block
       const g = loft([
-        { x: px, y: py, w: 0.022, ht: hgt, n: 4, z: z * 0.8 },
-        { x: px + (ax - px) * 0.35, y: py + (ay - py) * 0.35 + (style === 'banana' ? 0.035 : 0), w: 0.02, ht: hgt * 0.95, n: 4, z: z * 0.97 },
-        { x: px + (ax - px) * 0.7, y: midY + (ay - midY) * 0.4, w: 0.018, ht: hgt * 0.75, n: 4, z },
-        { x: ax - 0.02, y: ay, w: 0.016, ht: hgt * 0.6, n: 4, z },
-      ], { radial: 16, sub: 5, capStart: true, capEnd: true });
+        sec(0.0, 0.03, hgt, z * 0.78), sec(0.18, 0.028, hgt * 1.02, z * 0.93),
+        sec(0.5, 0.025, hgt * 0.86, z), sec(0.82, 0.022, hgt * 0.66, z), sec(1.0, 0.021, hgt * 0.56, z),
+      ], { radial: 20, sub: 6, capStart: true, capEnd: true });
       A.add('swingarm', g, mat);
+      if (style === 'banana' || o.brace) {
+        // underslung brace truss with two webs
+        const [x0, y0] = L(0.16), [x1, y1] = L(0.74);
+        const by = (t) => y0 + (y1 - y0) * t - hgt - 0.045 * Math.sin(Math.PI * t);
+        const br = loft([
+          { x: x0, y: y0 - hgt * 0.7, w: 0.018, ht: 0.016, n: 5, z: z * 0.92 },
+          { x: x0 + (x1 - x0) * 0.35, y: by(0.35), w: 0.017, ht: 0.017, n: 5, z: z * 0.98 },
+          { x: x0 + (x1 - x0) * 0.7, y: by(0.7), w: 0.016, ht: 0.016, n: 5, z },
+          { x: x1, y: y1 - hgt * 0.5, w: 0.015, ht: 0.014, n: 5, z },
+        ], { radial: 14, sub: 5, capStart: true, capEnd: true });
+        A.add('swingarm', br, mat);
+        for (const t of [0.35, 0.68]) {
+          const [wx, wy] = L(t);
+          A.add('swingarm', rod([wx, wy - hgt * 0.8, z], [wx, by(t) + 0.005, z], 0.008, 8), mat);
+        }
+      }
+      // axle block with the adjuster bolt and lock nut
+      const blk = box(0.07, hgt * 1.25, 0.034, 0.008);
+      place(blk, { p: [ax + 0.005, ay, z] });
+      A.add('swingarm', blk, mat);
+      A.add('swingarm', rod([ax + 0.04, ay, z], [ax + 0.075, ay, z], 0.0045, 6), M.chrome());
+      const nut = cyl(0.008, 0.008, 0.008, 6, 'x'); nut.translate(ax + 0.07, ay, z);
+      A.add('swingarm', nut, M.chrome());
       if (style === 'single') {
         // big hub carrier
         const hub = cyl(0.075, 0.075, 0.05, 28, 'z');
@@ -429,7 +486,12 @@ export function swingarm(ctx, o = {}) {
   }
   // cross brace + pivot
   if (style !== 'single') A.add('swingarm', rod([px + 0.08, py - 0.01, -side * 0.85], [px + 0.08, py - 0.01, side * 0.85], 0.02, 10), mat);
-  A.add('swingarm', cyl(0.028, 0.028, side * 2 + 0.06, 16, 'z').translate(px, py, 0), M.aluminum());
+  A.add('swingarm', cyl(0.03, 0.03, side * 2 + 0.06, 20, 'z').translate(px, py, 0), M.aluminum());
+  // pivot bolt heads
+  for (const s of [-1, 1]) {
+    const nut = cyl(0.02, 0.02, 0.012, 6, 'z'); nut.translate(px, py, s * (side + 0.036));
+    A.add('swingarm', nut, M.chrome());
+  }
   // axle
   const axle = cyl(0.014, 0.014, side * 2 + 0.05, 12, 'z');
   axle.translate(ax, ay, 0);
@@ -454,7 +516,7 @@ export function chain(ctx, o = {}) {
   const lenT = Math.hypot(top1[0] - top0[0], top1[1] - top0[1]);
   ctx.A.add('swingarm', uvScale(rod(top0, top1, 0.0065, 6), 1, lenT / 0.0127), M.chain());
   ctx.A.add('swingarm', uvScale(rod(bot0, bot1, 0.0065, 6), 1, lenT / 0.0127), M.chain());
-  const spr = cyl(fr, fr, 0.01, 16, 'z');
+  const spr = sprocketGeo(fr - 0.004, 16, 0, 0.009);
   spr.translate(fs[0], fs[1], z);
   ctx.A.add('chassis', spr, M.darkChrome());
   // guard
@@ -658,6 +720,7 @@ export function handlebar(ctx, o = {}) {
       A.add('steer', rod(a, b, 0.012, 10), M.anodized(0x222222));
       A.add('steer', rod([a[0] - 0.05, a[1] - 0.016, s * (fw + 0.08)], b, 0.017, 12), M.rubber());
       ends.push(b);
+      (ctx.grips || (ctx.grips = [])).push([(a[0] - 0.05 + b[0]) / 2, (a[1] - 0.016 + b[1]) / 2, (s * (fw + 0.08) + b[2]) / 2]);
     }
   } else {
     const rise = o.rise ?? 0.1, back = o.back ?? 0.1, half = o.half ?? 0.38;
@@ -680,6 +743,7 @@ export function handlebar(ctx, o = {}) {
       const s = Math.sign(e[2]);
       const grip = rod([e[0], e[1], e[2] - s * 0.12], e, 0.017, 12);
       A.add('steer', grip, M.rubber());
+      (ctx.grips || (ctx.grips = [])).push([e[0], e[1], e[2] - s * 0.06]);
     }
   }
   // levers & switchgear

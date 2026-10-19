@@ -828,10 +828,34 @@ export function liveryTexture(livery, label = '', number = '') {
         g.closePath(); g.fill();
       }
     }
+    // racing liveries carry sponsor decals (fictional brands) and fine piping like real race bodywork
+    const racing = ['arrow', 'split', 'stripe', 'neon'].includes(pattern) && livery.decals !== false;
+    if (racing && label) {
+      const SP = [['NEXOL', '#ffffff', '#111111'], ['VELOX', '#ffd400', '#111111'], ['TURBOMAX', '#111111', '#ffffff'], ['ZENTEK', '#e2231a', '#ffffff'], ['BAYO', '#1a4fd6', '#ffffff']];
+      const off = (label.length * 7) % SP.length;
+      const deco = (u, v, w, h, sp, flip) => {
+        g.save(); g.translate(W * u, vy(v)); if (flip) g.rotate(Math.PI);
+        g.fillStyle = sp[1]; g.fillRect((-w * W) / 2, (-h * H) / 2, w * W, h * H);
+        g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2; g.strokeRect((-w * W) / 2, (-h * H) / 2, w * W, h * H);
+        g.fillStyle = sp[2]; g.font = `italic 700 ${Math.round(h * H * 0.74)}px "Barlow Condensed", Arial, sans-serif`;
+        g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(sp[0], 0, h * H * 0.05, w * W * 0.86);
+        g.restore();
+      };
+      for (const [vc, flip] of [[0.25, false], [0.75, true]]) {
+        const d = flip ? -1 : 1;
+        deco(0.76, vc - 0.065 * d, 0.115, 0.032, SP[off % SP.length], flip);
+        deco(0.88, vc - 0.025 * d, 0.075, 0.026, SP[(off + 1) % SP.length], flip);
+        deco(0.62, vc + 0.075 * d, 0.1, 0.024, SP[(off + 2) % SP.length], flip);
+        deco(0.3, vc - 0.07 * d, 0.07, 0.022, SP[(off + 3) % SP.length], flip);
+        // accent piping just above the colour break
+        g.fillStyle = accent; g.fillRect(W * 0.05, vy(vc + 0.112 * d) - 2, W * 0.9, 4);
+      }
+    }
     // labels on both sides
     if (label) {
       const ls = livery.labelScale ?? 1, lu = livery.labelU ?? 0.45, lv = livery.labelV ?? 0.27;
-      g.font = `${livery.labelFont ?? '900'} ${Math.round(52 * ls)}px ${livery.labelFamily ?? 'Orbitron, Arial, sans-serif'}`;
+      const fam = livery.labelFamily ?? (racing ? '"Barlow Condensed", Arial, sans-serif' : 'Orbitron, Arial, sans-serif');
+      g.font = `${livery.labelFont ?? (racing ? 'italic 700' : '900')} ${Math.round((racing ? 66 : 52) * ls)}px ${fam}`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       const lc = livery.labelColor ?? accent;
       // +z side: v .25 (normal orientation)

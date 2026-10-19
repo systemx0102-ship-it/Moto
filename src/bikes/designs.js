@@ -38,18 +38,35 @@ function paintMats(ctx) {
 function twinSpar(ctx, o = {}) {
   const H = ctx.head, [px, py] = ctx.pivot;
   const zw = o.z ?? 0.13;
+  const mat = o.mat || M.aluminum();
   for (const s of [-1, 1]) {
+    // pressed/extruded beam: tall box section with crisp corners
     const g = loft([
-      { x: H[0] + 0.02, y: H[1] + 0.06, w: 0.03, ht: 0.06, n: 4, z: s * 0.05 },
-      { x: H[0] - 0.12, y: H[1] + 0.02, w: 0.025, ht: 0.07, n: 4, z: s * zw * 0.85 },
-      { x: (H[0] + px) / 2, y: (H[1] + py) / 2 + 0.07, w: 0.022, ht: 0.065, n: 4, z: s * zw },
-      { x: px + 0.06, y: py + 0.05, w: 0.022, ht: 0.08, n: 4, z: s * zw * 0.95 },
-      { x: px - 0.01, y: py - 0.02, w: 0.024, ht: 0.07, n: 4, z: s * zw * 0.9 },
-    ], { radial: 16, sub: 6, capStart: true, capEnd: true });
-    ctx.A.add('chassis', g, o.mat || M.aluminum());
+      { x: H[0] + 0.02, y: H[1] + 0.06, w: 0.032, ht: 0.07, n: 5, z: s * 0.05 },
+      { x: H[0] - 0.12, y: H[1] + 0.025, w: 0.03, ht: 0.085, n: 5, z: s * zw * 0.85 },
+      { x: (H[0] + px) / 2, y: (H[1] + py) / 2 + 0.075, w: 0.028, ht: 0.08, n: 5, z: s * zw },
+      { x: px + 0.07, y: py + 0.06, w: 0.028, ht: 0.09, n: 5, z: s * zw * 0.95 },
+      { x: px - 0.01, y: py - 0.01, w: 0.03, ht: 0.085, n: 5, z: s * zw * 0.9 },
+    ], { radial: 20, sub: 6, capStart: true, capEnd: true });
+    ctx.A.add('chassis', g, mat);
+    // cast pivot plate with the swingarm pivot boss
+    const plate = box(0.13, 0.2, 0.016, 0.01);
+    place(plate, { p: [px + 0.01, py + 0.01, s * zw * 0.92] });
+    ctx.A.add('chassis', plate, mat);
+    const boss = cyl(0.042, 0.042, 0.03, 22, 'z'); boss.translate(px, py, s * zw * 0.95);
+    ctx.A.add('chassis', boss, mat);
+    // engine mount bolts through the beam
+    for (const [bx, by] of [[(H[0] + px) / 2 + 0.05, (H[1] + py) / 2 + 0.03], [px + 0.06, py + 0.1]]) {
+      const b = cyl(0.009, 0.009, 0.012, 6, 'z'); b.translate(bx, by, s * (zw + 0.03));
+      ctx.A.add('chassis', b, M.chrome());
+    }
   }
-  // head tube
-  ctx.A.add('chassis', rod(ctx.sp(ctx.Lf - 0.01), ctx.sp(ctx.Lf + ctx.headLen + 0.01), 0.038, 18), o.mat || M.aluminum());
+  // cast headstock wrapping the head tube
+  ctx.A.add('chassis', rod(ctx.sp(ctx.Lf - 0.01), ctx.sp(ctx.Lf + ctx.headLen + 0.01), 0.04, 20), mat);
+  const hs = box(0.1, ctx.headLen + 0.02, 0.1, 0.02);
+  const hm = ctx.sp(ctx.Lf + ctx.headLen / 2);
+  place(hs, { p: [hm[0] - 0.035, hm[1], 0], r: [0, 0, ctx.rake] });
+  ctx.A.add('chassis', hs, mat);
 }
 
 // Subframe rails under seat/tail
@@ -58,6 +75,8 @@ function subframe(ctx, from, to, z = 0.09, r = 0.012, mat) {
 }
 
 function seatLoft(ctx, x0, x1, y, w, h, o = {}) {
+  // the first seat built is the rider's: sit a third of the way back from its front
+  if (!ctx.seat) ctx.seat = { x: x0 + (x1 - x0) * 0.32, y: y + h * 0.9 + (o.frontRise ?? 0) * 0.5 };
   const g = loft([
     { x: x1, y: y - 0.005, w: w * (o.rearW ?? 0.8), ht: h * 0.8, hb: 0.02, n: 3 },
     { x: x1 + (x0 - x1) * 0.4, y: y + (o.dip ?? 0), w, ht: h, hb: 0.025, n: 3.2 },
@@ -552,6 +571,7 @@ function bobber(ctx) {
     { x: -0.12, y: 0.72, w: 0.06, ht: 0.025, hb: 0.02, n: 2.4 },
   ], { radial: 20, sub: 5, capStart: true, capEnd: true });
   A.add('chassis', seat, mats.seat);
+  ctx.seat = { x: -0.3, y: 0.725 };
   for (const s of [-1, 1]) A.add('chassis', spring([-0.4, 0.55, s * 0.08], [-0.4, 0.67, s * 0.08], 0.018, 0.004, 6), M.chrome());
   // chopped rear fender
   rearFender(ctx, { from: 2.6, len: 1.5, w: 0.2, gap: 0.03, mat: mats.paintSolid });

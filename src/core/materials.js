@@ -87,7 +87,11 @@ export const M = {
     });
   },
   engine(color = 0x2b2d31) {
-    return get(`engine:${color}`, () => new THREE.MeshStandardMaterial({ color, metalness: 0.75, roughness: 0.42 }));
+    return get(`engine:${color}`, () => {
+      const c = new THREE.Color(color);
+      const dark = c.r + c.g + c.b < 0.25;
+      return new THREE.MeshStandardMaterial({ color, metalness: dark ? 0.35 : 0.78, roughness: dark ? 0.5 : 0.36, roughnessMap: brushedTexture() });
+    });
   },
   disc() {
     return get('disc', () => new THREE.MeshStandardMaterial({ color: 0xa8acb2, metalness: 1, roughness: 0.28 }));

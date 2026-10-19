@@ -473,6 +473,10 @@ export class BikePhysics {
     out.compF = this.compF; out.compR = this.compR;
     out.braking = this.input.brake > 0.1 || this.input.rearBrake > 0.1;
     out.wheelSpinExtra = this.wheelspin * 25 + (this.airborne ? this.input.throttle * 30 : 0);
+    out.throttle = this.input.throttle;
+    out.airborne = this.airborne;
+    out.crashed = this.crashed;
+    out.crashT = this.crashT;
     return out;
   }
 }
