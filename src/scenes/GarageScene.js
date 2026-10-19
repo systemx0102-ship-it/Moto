@@ -283,6 +283,9 @@ export class GarageScene {
   setMode(mode) {
     if (mode !== 'podium') this.clearPodium();
     this.mode = mode;
+    // screens with their own layout may set {x, y}: camera shift along its right / up axes
+    // (world units) so the bike sits in the gap between their panels
+    this.frame = null;
     if (mode === 'menu') { this.dist = 5.4; this.pitch = 0.1; }
     if (mode === 'garage') { this.dist = 4.4; this.pitch = 0.16; this.autoSpin = true; }
     if (mode === 'podium') { this.dist = 6; this.pitch = 0.18; }
@@ -318,10 +321,13 @@ export class GarageScene {
     cam.lookAt(target);
     // shift the framing so the bike sits clear of the UI panels
     const portrait = this.engine.width < this.engine.height;
-    const shift = portrait ? 0 : (this.mode === 'menu' ? -1.25 : this.mode === 'garage' ? -0.75 : 0);
-    if (shift) {
+    const fr = portrait ? null : this.frame;
+    const shift = portrait ? 0 : fr ? fr.x || 0 : (this.mode === 'menu' ? -1.25 : this.mode === 'garage' ? -0.75 : 0);
+    const lift = fr ? fr.y || 0 : 0;
+    if (shift || lift) {
       cam.updateMatrixWorld();
       const off = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).multiplyScalar(shift);
+      if (lift) off.add(new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1).multiplyScalar(lift));
       cam.position.add(off);
     }
     cam.aspect = this.engine.width / this.engine.height;

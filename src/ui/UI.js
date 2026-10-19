@@ -109,6 +109,7 @@ export class UI {
     this.nav = []; this.navI = 0;
     this.onBack = null;
     this.onLeftRight = null;
+    this.onInput = null;
     this._onFocus = null;
     return s;
   }
@@ -133,6 +134,8 @@ export class UI {
     const e = Input.edges;
     if (this.game.race && !this.game.race.paused && this.game.race.phase !== 'results' && this.game.race.phase !== 'replay') return;
     if (!this.nav.length && !this.onBack) return;
+    // a screen can take over the arrows and shoulder buttons (2D grids, trees); true = consumed
+    if (this.onInput && !this.modal && this.onInput(e)) return;
     if (e.up) this._focus(this.navI - 1);
     if (e.down) this._focus(this.navI + 1);
     if ((e.left || e.right) && this.onLeftRight) this.onLeftRight(e.left ? -1 : 1);
@@ -352,7 +355,7 @@ export class UI {
     return (p, m) => { fill.style.width = `${Math.round(p * 100)}%`; if (m) msg.textContent = m; };
   }
 
-  hideScreens() { if (this.current) { const o = this.current; o.classList.remove('show'); setTimeout(() => o.remove(), 350); this.current = null; } this.nav = []; this.onBack = null; this.onLeftRight = null; }
+  hideScreens() { if (this.current) { const o = this.current; o.classList.remove('show'); setTimeout(() => o.remove(), 350); this.current = null; } this.nav = []; this.onBack = null; this.onLeftRight = null; this.onInput = null; }
 
   // ---------------------------------------------------------------- pause
   pauseMenu(race) {
