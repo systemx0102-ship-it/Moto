@@ -13,6 +13,7 @@ import { SpeedFX } from './SpeedFX.js';
 import { RacingLine } from './RacingLine.js';
 import { Recorder, GhostTrack } from './Replay.js';
 import { HUD } from '../ui/HUD.js';
+import { RpgRace } from './RpgRace.js';
 import { Input } from '../core/Input.js';
 import { Audio } from '../core/Audio.js';
 import { Save } from '../core/Settings.js';
@@ -40,7 +41,12 @@ export class Race {
     this.finishOrder = [];
     this._acc = 0;
     this._vis = {};
+    // Modo Leyenda event (grid, eliminations, perks, objectives tracker): see RpgRace
+    this.rpg = cfg.rpg || null;
+    this.rpgTrack = this.rpg ? new RpgRace(this) : null;
   }
+
+  rpgReport() { return this.rpgTrack ? this.rpgTrack.report() : null; }
 
   async load(onProgress) {
     const engine = this.game.engine;
@@ -69,9 +75,10 @@ export class Race {
     if (this.mode === 'champ' && this.cfg.gridSlot !== undefined) pSlot = clamp(this.cfg.gridSlot, 0, total - 1);
     else if (diff === 'facil') pSlot = Math.min(total - 1, Math.floor(total * 0.35));
     else if (diff === 'normal') pSlot = Math.min(total - 1, Math.floor(total * 0.6));
-    const entrants = [];
+    let entrants = [];
     let fi = 0;
-    for (let slot = 0; slot < total; slot++) {
+    if (this.rpgTrack) entrants = this.rpgTrack.entrants(pSpec, this.cfg.livery ?? 0, others, rivalsN, r);
+    else for (let slot = 0; slot < total; slot++) {
       if (slot === pSlot) entrants.push({ spec: pSpec, livery: this.cfg.livery ?? 0, player: true });
       else entrants.push({ spec: field[fi++], livery: Math.floor(r() * 3), player: false });
     }
@@ -91,7 +98,8 @@ export class Race {
           grip: (playerProbe.mu / probe.mu),
           maxLean: Math.max(playerProbe.maxLean, 0.5),
         };
-      }
+        if (this.rpgTrack) this.rpgTrack.tuneAI(e, perf);
+      } else if (this.rpg) perf = this.rpg.perf; // parts, mastery and talents of the machine
       const phys = new BikePhysics(e.spec, this.track, { ai: !e.player, perf });
       if (perf.maxLean) { phys.maxLean = perf.maxLean; }
       const row = Math.floor(slot / 2);
@@ -105,13 +113,16 @@ export class Race {
         id: slot, spec: e.spec, livery: e.livery, model, phys, isPlayer: e.player,
         color: model.livery.base === '#111111' || model.livery.base === '#0c0c0e' || model.livery.base === '#0b0b0d' || model.livery.base === '#101012' || model.livery.base === '#141414' || model.livery.base === '#0d0f12' ? model.livery.accent : model.livery.base,
         lapStart: 0, lapTimes: [], bestLap: 0, finished: false, finishTime: 0, popT: 0,
+        label: e.label || null, isBoss: e.role === 'boss',
       };
-      if (!e.player) bike.ai = new AIController(phys, this.track, { skill: skill * (0.97 + r() * 0.05), seed: slot * 31 + 7, wet: this.env.wet || this.env.snow });
+      if (!e.player) bike.ai = new AIController(phys, this.track, { skill: this.rpgTrack ? this.rpgTrack.aiSkill(e, r) : skill * (0.97 + r() * 0.05), seed: slot * 31 + 7, wet: this.env.wet || this.env.snow });
       this.effects.attachFlames(bike);
       this.bikes.push(bike);
       if (e.player) this.player = bike;
     });
     this.order = this.bikes.slice();
+    this.active = this.bikes; // bikes still in the race (eliminations replace it)
+    if (this.rpgTrack) this.rpgTrack.setup();
     this.glow = new BikeGlow(this.scene, Save.quality, this.ts.env, this.bikes);
 
     // headlight for the player at night / dusk / storm
@@ -134,7 +145,7 @@ export class Race {
     // ---------------- ghost (time trial)
     if (this.mode === 'trial') {
       this.ghostRec = new GhostTrack();
-      const saved = Save.data.ghosts[def.id];
+      const saved = this.rpg ? null : Save.data.ghosts[def.id];
       if (saved && saved.data) {
         try {
           this.ghostData = GhostTrack.decode(saved.data);
@@ -180,7 +191,8 @@ export class Race {
     this.phase = 'intro';
     this.phaseT = 0;
     this.hud.setVisible(true);
-    this.hud.message(this.track.def.name, `${this.track.def.place.toUpperCase()} · ${this.mode === 'free' ? 'PASEO LIBRE' : this.mode === 'trial' ? 'CONTRARRELOJ' : `${this.laps} VUELTAS`}`, 2600);
+    if (this.rpgTrack) this.hud.message(...this.rpgTrack.introText(), 2600);
+    else this.hud.message(this.track.def.name, `${this.track.def.place.toUpperCase()} · ${this.mode === 'free' ? 'PASEO LIBRE' : this.mode === 'trial' ? 'CONTRARRELOJ' : `${this.laps} VUELTAS`}`, 2600);
     Audio.playMusic('race');
     Audio.whoosh();
   }
@@ -225,7 +237,7 @@ export class Race {
     this._nitroWas = inp.nitro;
 
     // ---- AI
-    if (canDrive) for (const b of this.bikes) if (b.ai && !(b.finished && b.coast)) b.ai.update(dt, this.bikes);
+    if (canDrive) for (const b of this.active) if (b.ai && !(b.finished && b.coast)) b.ai.update(dt, this.active);
     this._rubberBand();
 
     // ---- physics (fixed step)
@@ -234,7 +246,7 @@ export class Race {
     while (this._acc >= DT && steps < 12) {
       this._acc -= DT; steps++;
       if (canDrive) {
-        for (const b of this.bikes) b.phys.step(DT, this.env);
+        for (const b of this.active) b.phys.step(DT, this.env);
         this._collisions();
       } else {
         // held on the grid: allow revving
@@ -250,6 +262,7 @@ export class Race {
     if (canDrive) this.time += dt;
     this._draft();
     this._progressAndLaps();
+    if (this.rpgTrack) this.rpgTrack.update(dt);
     this._processEvents(dt);
     this._syncModels(dt);
     this._fx(dt);
@@ -286,7 +299,7 @@ export class Race {
   _autopilot(b) {
     // after the flag: gentle cruise along the racing line
     if (!b.autoAI) b.autoAI = new AIController(b.phys, this.track, { skill: 0.8, seed: 99 });
-    b.autoAI.update(DT, this.bikes);
+    b.autoAI.update(DT, this.active);
     b.phys.input.throttle *= 0.6;
   }
 
@@ -316,7 +329,7 @@ export class Race {
   }
 
   _collisions() {
-    const B = this.bikes;
+    const B = this.active;
     const R = 0.42;
     for (let i = 0; i < B.length; i++) {
       const a = B[i].phys;
@@ -357,17 +370,18 @@ export class Race {
           const impact = -rel;
           a.events.push({ type: 'bump', impact, x: (a.x + b.x) / 2, y: a.y + 0.5, z: (a.z + b.z) / 2, other: B[j] });
           b.events.push({ type: 'bump', impact, x: (a.x + b.x) / 2, y: b.y + 0.5, z: (a.z + b.z) / 2, other: B[i] });
-          if (impact > 11) { if (Math.random() < 0.5) a.crash('contact'); else b.crash('contact'); }
+          // the loser of the contact goes down unless its toughness (RPG: resistance, Blindaje) absorbs it
+          if (impact > 11) { const v = Math.random() < 0.5 ? a : b; if (impact > 11 * v.tough) v.crash('contact'); }
         }
       }
     }
   }
 
   _draft() {
-    for (const b of this.bikes) {
+    for (const b of this.active) {
       let best = 0;
       const p = b.phys;
-      for (const o of this.bikes) {
+      for (const o of this.active) {
         if (o === b) continue;
         const q = o.phys;
         const dx = q.x - p.x, dz = q.z - p.z;
@@ -402,13 +416,15 @@ export class Race {
     }
     // standings
     this.order = this.bikes.slice().sort((a, b) => {
+      // eliminated bikes last, the most recent one first
+      if (a.out || b.out) return a.out && b.out ? b.out - a.out : a.out ? 1 : -1;
       if (a.finished && b.finished) return a.finishTime - b.finishTime;
       if (a.finished) return -1;
       if (b.finished) return 1;
       return b.phys.dist - a.phys.dist;
     });
     const pos = this.order.indexOf(this.player);
-    if (this._lastPos !== undefined && pos !== this._lastPos && this.phase === 'race' && this.time > 3 && this.mode !== 'trial' && this.mode !== 'free') {
+    if (this._lastPos !== undefined && pos !== this._lastPos && this.phase === 'race' && this.time > 3 && this.mode !== 'trial' && this.mode !== 'free' && !this.player.out) {
       if (pos < this._lastPos) this.hud.toast(`P${pos + 1}  ▲`, '#36c06e', 900);
       else this.hud.toast(`P${pos + 1}  ▼`, '#e2231a', 900);
     }
@@ -420,7 +436,7 @@ export class Race {
     const rec = Save.data.records[def.id] || {};
     let txt = `VUELTA ${formatTime(lt * 1000)}`;
     let sub = '';
-    if (!rec.lap || lt < rec.lap) {
+    if (!this.rpg && (!rec.lap || lt < rec.lap)) {
       rec.lap = lt; rec.lapBike = this.player.spec.id;
       Save.data.records[def.id] = rec; Save.save();
       sub = 'Nuevo récord del circuito';
@@ -437,7 +453,8 @@ export class Race {
     if (b.isPlayer) {
       const place = this.finishOrder.length;
       this.phase = 'finished'; this.phaseT = 0;
-      if (this.mode === 'trial') this.hud.message('Sesión completada', '', 3000);
+      if (this.rpgTrack && this.mode === 'trial') this.hud.message('Prueba completada', this.rpgTrack.trialSummary(), 3000);
+      else if (this.mode === 'trial') this.hud.message('Sesión completada', '', 3000);
       else this.hud.message(place === 1 ? 'Victoria' : `${place}º puesto`, place <= 3 ? 'Podio' : 'Bandera a cuadros', 4000);
       Audio.fanfare();
       Input.rumble(0.5, 0.8, 400);
@@ -447,7 +464,7 @@ export class Race {
         if (place === 1) st.wins++;
         if (place <= 3) st.podiums++;
         const rec = Save.data.records[this.track.def.id] || {};
-        if (!rec.race || this.time < rec.race) { rec.race = this.time; rec.raceBike = b.spec.id; rec.raceLaps = this.laps; }
+        if (!this.rpg && (!rec.race || this.time < rec.race)) { rec.race = this.time; rec.raceBike = b.spec.id; rec.raceLaps = this.laps; }
         Save.data.records[this.track.def.id] = rec;
       }
       Save.save();
@@ -522,6 +539,7 @@ export class Race {
       m.animate(v, dt);
       // fade invulnerable bikes
       if (p.ghostT > 0) m.root.visible = Math.floor(p.ghostT * 10) % 2 === 0; else m.root.visible = true;
+      if (b.out) m.root.visible = this.rpgTrack.visible(b);
     }
   }
 
@@ -532,7 +550,7 @@ export class Race {
     for (const b of this.bikes) {
       const p = b.phys, m = b.model;
       const dist2 = (p.x - cam.x) ** 2 + (p.z - cam.z) ** 2;
-      if (dist2 > 160 * 160) { ef.updateFlames(b, false, 0, dt); continue; }
+      if (dist2 > 160 * 160 || b.out) { ef.updateFlames(b, false, 0, dt); continue; }
       const rx = Math.cos(p.vh), rz = -Math.sin(p.vh);
       const rear = m.worldPoint([-m.wb / 2, 0.02, 0], ef._v);
       const sliding = !p.airborne && !p.crashed && (Math.abs(p.slip) > 0.1 || p.wheelspin > 0.25 || p.skid > 0.3);
@@ -578,7 +596,7 @@ export class Race {
     const inside = this.cam.mode === 2 || this.cam.mode === 3; // helmet / nose cam: onboard mix
     const cp = cam.position;
     const camDist = Math.hypot(p.x - cp.x, p.y + 0.6 - cp.y, p.z - cp.z);
-    if (this.playerVoice) {
+    if (this.playerVoice && !P.out) {
       const v = this.playerVoice;
       v.vol = inside ? 1 : 0.9;
       if (live && p.gear !== this._aGear) { if (this._aGear !== undefined && !p.crashed) v.shift(p.gear > this._aGear ? 1 : -1); this._aGear = p.gear; }
@@ -600,7 +618,7 @@ export class Race {
     this._voiceT = (this._voiceT || 0) - dt;
     if (this._voiceT <= 0) {
       this._voiceT = 0.35;
-      const near = this.bikes.filter((b) => !b.isPlayer).map((b) => [b, (b.phys.x - cam.position.x) ** 2 + (b.phys.z - cam.position.z) ** 2])
+      const near = this.bikes.filter((b) => !b.isPlayer && !b.out).map((b) => [b, (b.phys.x - cam.position.x) ** 2 + (b.phys.z - cam.position.z) ** 2])
         .filter(([, d]) => d < 140 * 140).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([b]) => b);
       for (const [b, v] of this.voices) if (!near.includes(b)) { v.stop(); this.voices.delete(b); }
       for (const b of near) if (!this.voices.has(b)) { this.voices.set(b, Audio.engine(b.spec, { positional: true, lite: true })); b._aGear = b.phys.gear; }
@@ -679,13 +697,14 @@ export class Race {
     const def = this.track.def;
     const arr = this.ghostRec.toArray();
     this.ghostRec.reset();
-    const saved = Save.data.ghosts[def.id];
+    const saved = this.rpg ? this._rpgGhost : Save.data.ghosts[def.id];
     if (!saved || !saved.lap || lt < saved.lap) {
-      Save.data.ghosts[def.id] = { bike: this.player.spec.id, lap: lt, data: GhostTrack.encode(arr) };
-      Save.save();
+      // an RPG machine carries upgrades: its ghost only lives for this event
+      if (this.rpg) this._rpgGhost = { lap: lt };
+      else { Save.data.ghosts[def.id] = { bike: this.player.spec.id, lap: lt, data: GhostTrack.encode(arr) }; Save.save(); }
       this.ghostData = arr;
       if (!this.ghostSpec || this.ghostSpec.id !== this.player.spec.id) { this.ghostSpec = this.player.spec; this._makeGhostModel(this.player.spec); }
-      this.hud.toast('Fantasma guardado', '#ffffff', 1600);
+      this.hud.toast(this.rpg ? 'Fantasma actualizado' : 'Fantasma guardado', '#ffffff', 1600);
     }
   }
 
@@ -693,18 +712,22 @@ export class Race {
   _toResults() {
     if (this.phase === 'results') return;
     this.phase = 'results';
-    // estimate finish times for bikes still running
-    const avg = this.player.finishTime / Math.max(1, this.laps * this.track.L);
+    // estimate finish times for bikes still running (at the player's pace, or the
+    // winner's / leader's when the player was eliminated)
+    const len = this.laps * this.track.L, ref = this.player.finished ? this.player : this.finishOrder[0];
+    const avg = ref ? ref.finishTime / Math.max(1, len) : this.time / Math.max(1, ...this.active.map((b) => b.phys.dist));
     for (const b of this.order) {
-      if (b.finished) continue;
-      const remain = this.laps * this.track.L - b.phys.dist;
+      if (b.finished || b.out) continue;
+      const remain = len - b.phys.dist;
       b.finished = true; b.estimated = true;
       b.finishTime = this.time + remain * avg * (1.02 + Math.random() * 0.03);
     }
-    this.order.sort((a, b) => a.finishTime - b.finishTime);
+    // eliminated bikes below the survivors, the last one out first
+    this.order.sort((a, b) => (a.out || b.out ? (a.out && b.out ? b.out - a.out : a.out ? 1 : -1) : a.finishTime - b.finishTime));
     const results = this.order.map((b, i) => ({
-      pos: i + 1, bikeId: b.spec.id, name: b.spec.name, short: b.spec.short, color: b.color, livery: b.livery,
-      time: b.finishTime, best: b.bestLap, player: b.isPlayer, points: POINTS[i] || 0,
+      pos: i + 1, bikeId: b.spec.id, name: b.label || b.spec.name, short: b.label || b.spec.short, color: b.color, livery: b.livery,
+      time: b.out ? b.outTime : b.finishTime, best: b.bestLap, player: b.isPlayer, points: POINTS[i] || 0,
+      boss: !!b.isBoss, eliminated: !!b.out, outLap: b.outLap || 0,
     }));
     this.hud.setVisible(false);
     this.silence();
@@ -744,6 +767,7 @@ export class Race {
     this.bikes.forEach((b, i) => {
       const s = rec.sample(i, this.replayT, tmp);
       const m = b.model;
+      if (b.out) { const k = this.replayT - b.outRec; m.root.visible = k < 0 || (k < 1.2 && Math.floor(k * 8) % 2 === 0); }
       m.root.position.set(s.x, s.y, s.z);
       m.root.rotation.set(0, s.h, 0);
       m.animate({ speed: s.speed, lean: s.lean, pitch: s.pitch, steerAngle: s.steerAngle, compF: s.compF, compR: s.compR, braking: s.braking }, dt);
