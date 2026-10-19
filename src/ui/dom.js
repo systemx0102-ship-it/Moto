@@ -4,7 +4,8 @@ export function h(tag, attrs = {}, ...kids) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v === undefined || v === null || v === false) continue;
     if (k === 'class') el.className = v;
-    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    // custom properties (--x) need setProperty; plain assignment ignores them
+    else if (k === 'style' && typeof v === 'object') for (const [p, sv] of Object.entries(v)) { if (p.startsWith('--')) el.style.setProperty(p, sv); else el.style[p] = sv; }
     else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
     else if (k === 'html') el.innerHTML = v;
     else el.setAttribute(k, v === true ? '' : v);
