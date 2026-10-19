@@ -32,7 +32,7 @@ const DEFAULTS = {
     racingLine: true,
     timeSel: 'auto',
     weatherSel: 'auto',
-    style: 'anime', // art direction: 'anime' (AAA anime, Genshin-like) or 'real' (photoreal PBR)
+    style: 'real', // art direction: 'real' (photoreal PBR, default) or 'anime'
   },
   records: {}, // trackId -> { lap, race, bike }
   ghosts: {}, // trackId -> { bike, lap, data(base64) }
