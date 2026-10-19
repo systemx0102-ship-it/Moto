@@ -571,6 +571,122 @@ function gp(ctx) {
   details(ctx, { damper: true, kickstand: false });
 }
 
+// ---------------------------------------------------------------------------
+// Street bodywork (naked / streetfighter): side-projected street livery, angular tank
+// with a shoulder crease, radiator shrouds, a slim upswept tail with an LED light, seat,
+// engine spoiler. Shapes come from cross-sections so the character lines stay crisp.
+function streetLivery(ctx, label, P = {}) {
+  const L = ctx.livery;
+  const frame = [-1.0, 1.05, 0.1, 1.2];
+  const map = sideLiveryTexture(`street:${JSON.stringify(L)}:${label}:${P.key || ''}`, frame, (g, X, Y) => {
+    const poly = (pts, fill) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.closePath(); g.fillStyle = fill; g.fill(); };
+    const line = (pts, w, col) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)))); g.lineWidth = w; g.strokeStyle = col; g.stroke(); };
+    g.fillStyle = L.base; g.fillRect(0, 0, 4096, 4096);
+    for (const q of P.second || []) poly(q, L.second);
+    for (const q of P.lines || []) line(q, 6, L.accent);
+    const light = (c) => { const q = new THREE.Color(c); return 0.2126 * q.r + 0.7152 * q.g + 0.0722 * q.b > 0.55; };
+    if (P.labelAt) {
+      const [lx, ly, size] = P.labelAt;
+      g.font = `italic 800 ${size || 60}px "Barlow Condensed", Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = L.accent === L.base ? (light(L.base) ? '#111' : '#fff') : L.accent; g.fillText(label, X(lx), Y(ly));
+    }
+    if (P.sub) { g.font = '600 22px Barlow, Arial, sans-serif'; g.fillStyle = light(L.base) ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.75)'; g.fillText(P.sub[0], X(P.sub[1]), Y(P.sub[2])); }
+  });
+  return { map, frame };
+}
+
+function nakedBody(ctx, P) {
+  const { A, mats } = ctx;
+  const { map, frame } = streetLivery(ctx, ctx.spec.short, P.livery || {});
+  const paint = mats.side || (mats.side = mats.makePaint(map));
+  const uv = sideUV(frame);
+  const both = (geo, mat) => { A.add('chassis', geo, mat); A.add('chassis', mirrorPanel(geo, mat === paint ? sideUVLeft : null), mat); };
+  const T = 0.0042;
+  const secs = (list) => list.map(([x, pts]) => ({ x, pts }));
+  // tank: sides below a shoulder crease, top to the centreline
+  const tank = sectionStrips(secs(P.tank), { sub: 6, around: 5, creases: [2] });
+  both(shell(tank[0].rows, { thick: T, out: [0, 0.2, 1], uv, seam: 'top', crisp: ['top'] }), paint);
+  both(shell(tank[1].rows, { thick: T, out: [0, 1, 0.3], uv, seam: 'top', crisp: ['bottom'] }), paint);
+  // radiator shrouds: two layered blades down over the radiator flanks
+  if (P.shroud) {
+    const [bot, top, rear, front] = P.shroud;
+    const rows = coons(bot, top, rear, front, 22, 10, { dir: [0.3, 0, 1], amount: 0.012 });
+    both(shell(rows, { thick: T, out: [0.2, 0, 1], uv }), paint);
+    // intake slot + inner dark layer peeking out under the blade
+    both(shell(onPanel(rows, [[0.45, 0.25], [0.92, 0.3], [0.9, 0.48], [0.47, 0.42]], 0.0012, [0.2, 0, 1], 10, 3), { thick: 0.002, out: [0.2, 0, 1] }), M.gloss(0x08080a));
+    const inner = coons(bot.map(([x, y, z]) => [x + 0.02, y - 0.04, z - 0.012]), bot.map(([x, y, z]) => [x, y + 0.02, z - 0.008]), [[bot[0][0] + 0.02, bot[0][1] - 0.04, bot[0][2] - 0.012], [bot[0][0], bot[0][1] + 0.02, bot[0][2] - 0.008]], [[bot[bot.length - 1][0] + 0.02, bot[bot.length - 1][1] - 0.04, bot[bot.length - 1][2] - 0.012], [bot[bot.length - 1][0], bot[bot.length - 1][1] + 0.02, bot[bot.length - 1][2] - 0.008]], 16, 3);
+    both(shell(inner, { thick: 0.003, out: [0, -0.2, 1] }), M.plastic(0x141416));
+  }
+  // tail: upswept sides with an under-crease, cover, undertray, LED light in the tip
+  if (P.tail) {
+    const [bot, top, rear, front] = P.tail;
+    const rows = coons(bot, top, rear, front, 24, 8, { dir: [0, 0.1, 1], amount: 0.01 });
+    both(shell(rows, { thick: T, out: [0, 0, 1], uv }), paint);
+    const cover = coons(top.map(([x, y, z]) => [x, y + 0.004, z]), top.map(([x, y]) => [x, y + 0.02, 0]), [[top[0][0], top[0][1] + 0.004, top[0][2]], [top[0][0], top[0][1] + 0.02, 0]], [[top[top.length - 1][0], top[top.length - 1][1] + 0.004, top[top.length - 1][2]], [top[top.length - 1][0], top[top.length - 1][1] + 0.02, 0]], 16, 4, { dir: [0, 1, 0], amount: 0.006 });
+    both(shell(cover, { thick: T, out: [0, 1, 0.1], uv, seam: 'top' }), P.coverMat || paint);
+    const under = coons(bot.map(([x, y]) => [x, y - 0.004, 0]), bot.map(([x, y, z]) => [x, y - 0.004, z]), [[bot[0][0], bot[0][1] - 0.004, 0], [bot[0][0], bot[0][1] - 0.004, bot[0][2]]], [[bot[bot.length - 1][0], bot[bot.length - 1][1] - 0.004, 0], [bot[bot.length - 1][0], bot[bot.length - 1][1] - 0.004, bot[bot.length - 1][2]]], 16, 3);
+    both(shell(under, { thick: 0.003, out: [0, -1, 0], seam: 'bottom' }), M.plastic(0x101012));
+    both(shell(onPanel(rows, [[0.0, 0.25], [0.08, 0.22], [0.08, 0.92], [0.0, 0.95]], 0.0015, [-0.5, 0.2, 1], 6, 4), { thick: 0.003, out: [-0.5, 0.2, 1] }), mats.tail);
+    const tip = bot[0];
+    ctx.tails.push({ pos: [tip[0] - 0.01, (tip[1] + top[0][1]) / 2, 0] });
+  }
+  // engine spoiler under the crankcase
+  if (P.spoiler) {
+    const [bot, top, rear, front] = P.spoiler;
+    const rows = coons(bot, top, rear, front, 16, 8, { dir: [0, -0.5, 1], amount: 0.01 });
+    both(shell(rows, { thick: T, out: [0, -0.4, 1], seam: 'bottom', uv }), P.spoilerMat || paint);
+  }
+}
+
+// LED headlight nacelle on the forks: angular housing, twin projectors with chrome
+// reflector rings, DRL brow, clear cover, flyscreen, mounting brackets to the fork legs
+function ledNacelle(ctx, c, o = {}) {
+  const A = ctx.A, grp = 'steer';
+  const w = o.w ?? 0.085, h = o.h ?? 0.06, d = o.d ?? 0.09;
+  const sec = (x, s, y = 0) => ({ x: c[0] + x, y: c[1] + y, w: w * s, ht: h * s * 0.9, hb: h * s, wt: w * s * 0.85, n: 3.2 });
+  const hs = loft([sec(-d, 0.75, 0.005), sec(-d * 0.5, 0.95), sec(-0.012, 1), sec(0, 0.97)], { radial: 28, sub: 5, capStart: true, capEnd: false });
+  A.add(grp, hs, M.gloss(0x0b0b0c));
+  const face = c[0] + 0.001;
+  for (const s of [-1, 1]) {
+    const pz = s * w * 0.48, py = c[1] - h * 0.12;
+    const ringG = revolveFace(0.024, 0.016, 0.006); ringG.translate(face - 0.004, py, pz); A.add(grp, ringG, M.chrome());
+    const lensG = cyl(0.017, 0.017, 0.006, 24, 'x'); lensG.translate(face - 0.006, py, pz); A.add(grp, lensG, ctx.mats.head);
+  }
+  // DRL brow: thin lit blade along the top edge
+  A.add(grp, sweep([[face - 0.002, c[1] + h * 0.55, -w * 0.85], [face + 0.002, c[1] + h * 0.62, 0], [face - 0.002, c[1] + h * 0.55, w * 0.85]], () => [[0, -0.004], [0.003, 0], [0, 0.004], [-0.003, 0]], { segments: 16 }), ctx.mats.head);
+  const cov = loft([sec(-0.006, 1.02), sec(0.004, 0.99)], { radial: 28, sub: 2, capStart: false, capEnd: true });
+  A.add(grp, cov, M.lens());
+  ctx.headlights.push({ pos: [c[0] + 0.01, c[1], 0], group: grp, r: 0.045 });
+  // brackets to the fork legs
+  for (const s of [-1, 1]) A.add(grp, sweep([[c[0] - d * 0.7, c[1] + h * 0.3, s * w * 0.8], [c[0] - d * 0.95, c[1] + h * 0.4, s * (ctx.fw - 0.02)]], () => roundRect(0.03, 0.006, 0.002, 2), { segments: 2, up: [0, 0, 1] }), M.black());
+  if (o.flyscreen !== false) {
+    const fly = loft([
+      { x: c[0] - 0.02, y: c[1] + h + 0.01, w: w * 0.9, ht: 0.012, n: 2 },
+      { x: c[0] - 0.07, y: c[1] + h + 0.06, w: w * 1.05, ht: 0.014, n: 2 },
+    ], { radial: 14, sub: 5, t0: 0.15, t1: Math.PI - 0.15 });
+    A.add(grp, fly, o.flyMat || ctx.mats.glass);
+  }
+}
+function revolveFace(ro, ri, dz) { return turned([[ri, -dz / 2], [ro, -dz / 2], [ro, dz / 2], [ri, dz / 2]], 24, 'x'); }
+
+// Trellis frame: welded steel tubes between two rails per side, weld beads at the nodes
+function trellis(ctx, top, bot, zz, o = {}) {
+  const A = ctx.A, fm = o.mat || ctx.mats.frame, steps = o.steps ?? 5, r = o.r ?? 0.0115;
+  const nodes = [];
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < steps; i++) {
+      const a = i / steps, b = (i + 1) / steps;
+      const ta = [...top(a), zz(a, s)], tb = [...top(b), zz(b, s)], ba = [...bot(a), zz(a, s)], bb = [...bot(b), zz(b, s)];
+      A.add('chassis', rod(ta, tb, r, 12), fm);
+      A.add('chassis', rod(ba, bb, r, 12), fm);
+      A.add('chassis', rod(i % 2 ? ba : ta, i % 2 ? tb : bb, r * 0.85, 10), fm);
+      nodes.push(ta, ba);
+    }
+    nodes.push([...top(1), zz(1, s)], [...bot(1), zz(1, s)]);
+  }
+  for (const n of nodes) { const w = sphere(r * 1.35, 10, 8); w.translate(...n); A.add('chassis', w, fm); }
+}
+
 // 3. Naked streetfighter with trellis frame + single-sided swingarm
 function naked(ctx) {
   const { A, mats } = ctx;
@@ -579,27 +695,17 @@ function naked(ctx) {
   wheels(ctx, { caliperColor: 0xd4a431, carrier: '#222222', rimStripe: mats.accentSolid });
   swingarm(ctx, { style: 'single', mat: M.aluminum() });
   chain(ctx);
-  // trellis frame: nodes on each side
+  // trellis frame round the engine, rear subframe to the tail
   const H = ctx.head, [px, py] = ctx.pivot;
   const top = (t) => [H[0] + (px + 0.05 - H[0]) * t, H[1] + 0.07 + (py + 0.2 - H[1] - 0.07) * t];
   const bot = (t) => [H[0] - 0.05 + (px + 0.02 - H[0] + 0.05) * t, H[1] - 0.15 + (py - 0.02 - H[1] + 0.15) * t];
+  trellis(ctx, top, bot, (t, s) => s * (0.06 + 0.07 * Math.min(1, t * 2)));
   const fm = mats.frame;
   for (const s of [-1, 1]) {
-    const z0 = 0.06, z1 = 0.13;
-    const zz = (t) => s * (z0 + (z1 - z0) * Math.min(1, t * 2));
-    const steps = 5;
-    for (let i = 0; i < steps; i++) {
-      const a = i / steps, b = (i + 1) / steps;
-      const ta = top(a), tb = top(b), ba = bot(a), bb = bot(b);
-      A.add('chassis', rod([ta[0], ta[1], zz(a)], [tb[0], tb[1], zz(b)], 0.011, 8), fm);
-      A.add('chassis', rod([ba[0], ba[1], zz(a)], [bb[0], bb[1], zz(b)], 0.011, 8), fm);
-      A.add('chassis', rod([ta[0], ta[1], zz(a)], [bb[0], bb[1], zz(b)], 0.009, 8), fm);
-    }
-    // rear subframe trellis
-    A.add('chassis', rod([top(1)[0], top(1)[1], s * z1], [-0.62, 0.8, s * 0.07], 0.01, 8), fm);
-    A.add('chassis', rod([bot(1)[0], bot(1)[1] + 0.05, s * z1], [-0.5, 0.78, s * 0.08], 0.009, 8), fm);
+    A.add('chassis', rod([top(1)[0], top(1)[1], s * 0.13], [-0.62, 0.8, s * 0.07], 0.011, 12), fm);
+    A.add('chassis', rod([bot(1)[0], bot(1)[1] + 0.05, s * 0.13], [-0.5, 0.78, s * 0.08], 0.0095, 12), fm);
   }
-  A.add('chassis', rod(ctx.sp(ctx.Lf - 0.01), ctx.sp(ctx.Lf + ctx.headLen + 0.01), 0.036, 16), fm);
+  A.add('chassis', rod(ctx.sp(ctx.Lf - 0.01), ctx.sp(ctx.Lf + ctx.headLen + 0.01), 0.036, 24), fm);
   // inline triple (visible)
   radiator(ctx, [0.38, 0.48, 0], 0.3, 0.24, { tilt: -0.15 });
   const eng = engineUnit(ctx, { pos: [0.05, 0.31], cyl: 3, tilt: 0.38, cooling: 'liquid', caseMat: M.engine(0x232528), coverMat: M.engine(0x6a6e75), camMat: mats.accentSolid });
@@ -607,37 +713,37 @@ function naked(ctx) {
     header(ctx, [[x, y, z], [x + 0.06, y - 0.08, z * 1.05], [0.36, 0.24, z * 0.7], [0.3, 0.14, z * 0.4], [0.1, 0.12, 0.04], [-0.06, 0.18, 0.1]], 0.019, M.header());
   }
   muffler(ctx, [-0.06, 0.2, 0.12], [-0.3, 0.3, 0.17], { type: 'cone', r: 0.06, mat: M.darkChrome(), endcap: M.carbon() });
-  // angular tank + scoops
-  const tank = loft([
-    { x: 0.4, y: 0.88, w: 0.11, ht: 0.05, hb: 0.08, n: 3.2 },
-    { x: 0.26, y: 0.95, w: 0.19, ht: 0.085, hb: 0.12, n: 3.6 },
-    { x: 0.05, y: 0.94, w: 0.18, ht: 0.08, hb: 0.12, n: 3.4 },
-    { x: -0.12, y: 0.86, w: 0.12, ht: 0.05, hb: 0.08, n: 3 },
-  ], { radial: 28, sub: 6, capStart: true, capEnd: true });
-  A.add('chassis', tank, mats.paint);
-  for (const s of [-1, 1]) {
-    const scoop = loft([
-      { x: 0.46, y: 0.78, w: 0.02, ht: 0.05, hb: 0.07, n: 3, z: s * 0.17 },
-      { x: 0.3, y: 0.78, w: 0.035, ht: 0.07, hb: 0.1, n: 3.2, z: s * 0.2 },
-      { x: 0.14, y: 0.8, w: 0.02, ht: 0.05, hb: 0.06, n: 3, z: s * 0.17 },
-    ], { radial: 14, sub: 5, capStart: true, capEnd: true });
-    A.add('chassis', scoop, mats.paint2Solid);
-  }
-  const tail = loft([
-    { x: -0.1, y: 0.8, w: 0.11, ht: 0.04, hb: 0.05, n: 3 },
-    { x: -0.4, y: 0.85, w: 0.09, ht: 0.05, hb: 0.05, n: 3 },
-    { x: -0.68, y: 0.92, w: 0.035, ht: 0.03, hb: 0.025, n: 2.6 },
-  ], { radial: 22, sub: 6, capStart: true, capEnd: true });
-  A.add('chassis', tail, mats.paint);
-  seatLoft(ctx, -0.1, -0.46, 0.86, 0.12, 0.04);
-  // twin bug-eye headlights + flyscreen
-  for (const s of [-1, 1]) headlightRound(ctx, [0.66, 0.86, s * 0.055], 0.05, { shellMat: M.black() });
-  const fly = loft([
-    { x: 0.7, y: 0.93, w: 0.07, ht: 0.02, n: 2 },
-    { x: 0.62, y: 0.99, w: 0.09, ht: 0.02, n: 2 },
-  ], { radial: 12, sub: 4, t0: 0.2, t1: Math.PI - 0.2 });
-  A.add('steer', fly, mats.glass);
-  tailLight(ctx, [-0.69, 0.91, 0], 0.05, 0.015);
+  nakedBody(ctx, {
+    livery: { key: 'viper', second: [[[0.5, 0.86], [0.42, 0.64], [0.3, 0.55], [0.14, 0.6], [0.12, 0.8], [0.3, 0.86]], [[-0.1, 0.78], [-0.4, 0.84], [-0.75, 0.93], [-0.75, 0.88], [-0.4, 0.79], [-0.1, 0.72]]], lines: [[[0.45, 0.64], [0.3, 0.58], [0.15, 0.62]], [[-0.1, 0.795], [-0.45, 0.86], [-0.75, 0.945]]], labelAt: [0.1, 0.88, 50] },
+    tank: [
+      [-0.13, [[0.08, 0.83], [0.086, 0.858], [0.076, 0.884], [0.04, 0.896], [0, 0.898]]],
+      [-0.02, [[0.13, 0.818], [0.137, 0.868], [0.122, 0.922], [0.066, 0.946], [0, 0.952]]],
+      [0.12, [[0.16, 0.818], [0.172, 0.888], [0.156, 0.962], [0.086, 0.99], [0, 0.996]]],
+      [0.3, [[0.152, 0.838], [0.162, 0.9], [0.15, 0.962], [0.085, 0.994], [0, 0.999]]],
+      [0.42, [[0.1, 0.862], [0.11, 0.9], [0.1, 0.935], [0.06, 0.954], [0, 0.958]]],
+    ],
+    shroud: [
+      [[0.16, 0.64, 0.168], [0.3, 0.57, 0.19], [0.44, 0.565, 0.19], [0.53, 0.63, 0.165]],
+      [[0.13, 0.82, 0.158], [0.28, 0.852, 0.162], [0.4, 0.862, 0.128], [0.48, 0.842, 0.108]],
+      [[0.16, 0.64, 0.168], [0.13, 0.73, 0.172], [0.13, 0.82, 0.158]],
+      [[0.53, 0.63, 0.165], [0.52, 0.74, 0.14], [0.48, 0.842, 0.108]],
+    ],
+    tail: [
+      [[-0.74, 0.9, 0.024], [-0.5, 0.815, 0.07], [-0.25, 0.765, 0.1], [-0.06, 0.74, 0.118]],
+      [[-0.76, 0.952, 0.02], [-0.5, 0.898, 0.08], [-0.3, 0.86, 0.1], [-0.1, 0.84, 0.118]],
+      [[-0.74, 0.9, 0.024], [-0.76, 0.952, 0.02]],
+      [[-0.06, 0.74, 0.118], [-0.08, 0.8, 0.124], [-0.1, 0.84, 0.118]],
+    ],
+    spoiler: [
+      [[-0.06, 0.2, 0], [0.12, 0.17, 0], [0.3, 0.2, 0]],
+      [[-0.04, 0.29, 0.12], [0.12, 0.26, 0.135], [0.28, 0.28, 0.12]],
+      [[-0.06, 0.2, 0], [-0.04, 0.29, 0.12]],
+      [[0.3, 0.2, 0], [0.28, 0.28, 0.12]],
+    ],
+    spoilerMat: M.plastic(0x141416),
+  });
+  seatLoft(ctx, -0.1, -0.48, 0.835, 0.122, 0.042, { rearRise: 0.04 });
+  ledNacelle(ctx, [0.62, 0.85, 0], { w: 0.08, h: 0.055 });
   handlebar(ctx, { type: 'wide', rise: 0.07, back: 0.12, half: 0.37 });
   dash(ctx, [0.55, 0.99, 0], 0.1, 0.065, { group: 'steer', tilt: -1.0 });
   for (const s of [-1, 1]) mirror(ctx, [ctx.barEnds[s > 0 ? 1 : 0][0] + 0.05, ctx.barEnds[0][1], s * 0.24], s, { reach: 0.3, up: 0.14 });
@@ -658,7 +764,7 @@ function electric(ctx) {
   fork(ctx, { type: 'usd', innerMat: M.gold(), outerMat: M.anodized(0x15171a) });
   wheels(ctx, { noSprocket: true, caliperColor: 0xd4a431, carrier: '#1e1e1e', rimStripe: mats.accentSolid });
   swingarm(ctx, { style: 'banana', mat: M.anodized(0x1c1e21) });
-  const bz = belt(ctx).z;
+  const bz = belt(ctx, { pulley: false }).z;
   // toothed belt pulley bolted to the rear wheel
   const pul = closedLathe([[0.045, -0.013], [0.126, -0.013], [0.134, -0.011], [0.134, 0.011], [0.126, 0.013], [0.045, 0.013]], 72);
   pul.translate(0, 0, bz);
@@ -673,21 +779,13 @@ function electric(ctx) {
   const fm = mats.frame;
   const top = (t) => [H[0] + (px + 0.02 - H[0]) * t, H[1] + 0.06 + (py + 0.3 - H[1] - 0.06) * t];
   const bot = (t) => [H[0] - 0.04 + (px + 0.01 - H[0] + 0.04) * t, H[1] - 0.18 + (py + 0.02 - H[1] + 0.18) * t - 0.08 * Math.sin(Math.PI * t)];
+  trellis(ctx, top, bot, (t, s) => s * (0.06 + 0.12 * Math.min(1, t * 2.2)), { r: 0.012 });
   for (const s of [-1, 1]) {
-    const zz = (t) => s * (0.06 + 0.12 * Math.min(1, t * 2.2));
-    const steps = 5;
-    for (let i = 0; i < steps; i++) {
-      const a = i / steps, b = (i + 1) / steps;
-      const ta = top(a), tb = top(b), ba = bot(a), bb = bot(b);
-      A.add('chassis', rod([ta[0], ta[1], zz(a)], [tb[0], tb[1], zz(b)], 0.012, 10), fm);
-      A.add('chassis', rod([ba[0], ba[1], zz(a)], [bb[0], bb[1], zz(b)], 0.012, 10), fm);
-      A.add('chassis', rod([ta[0], ta[1], zz(a)], [bb[0], bb[1], zz(b)], 0.009, 8), fm);
-    }
     // subframe to the tail
-    A.add('chassis', rod([top(1)[0], top(1)[1], s * 0.18], [-0.66, 0.84, s * 0.07], 0.011, 8), fm);
-    A.add('chassis', rod([px + 0.02, py + 0.12, s * 0.18], [-0.52, 0.8, s * 0.075], 0.009, 8), fm);
+    A.add('chassis', rod([top(1)[0], top(1)[1], s * 0.18], [-0.66, 0.84, s * 0.07], 0.011, 12), fm);
+    A.add('chassis', rod([px + 0.02, py + 0.12, s * 0.18], [-0.52, 0.8, s * 0.075], 0.009, 12), fm);
     // pivot plates
-    const pl = box(0.12, 0.18, 0.014, 0.01); place(pl, { p: [px + 0.02, py + 0.04, s * 0.19] }); A.add('chassis', pl, M.anodized(0x1c1e21));
+    const pl = extrude([[-0.06, -0.09], [0.07, -0.09], [0.08, 0.06], [0.0, 0.1], [-0.06, 0.06]], 0.014, { holes: [circle(0.016, 12, 0.01, 0.0)], bevel: 0.003 }); pl.translate(px + 0.02, py + 0.04, s * 0.19); A.add('chassis', pl, M.anodized(0x1c1e21));
   }
   A.add('chassis', rod(ctx.sp(ctx.Lf - 0.01), ctx.sp(ctx.Lf + ctx.headLen + 0.01), 0.036, 16), fm);
   // ---- battery: finned aluminium case, brackets, service plug and its label
@@ -720,60 +818,32 @@ function electric(ctx) {
     A.add('chassis', tube([[-0.08, 0.48, s * 0.12], [-0.12, 0.56, s * 0.13], [-0.18, 0.62, s * 0.09]], 0.011, { radial: 8 }), M.matte(0xff6a00, 0.45));
     A.add('chassis', tube([[-0.18, 0.61, s * 0.05], [-0.14, 0.45, s * 0.12], [-0.08, 0.38, s * 0.125]], 0.01, { radial: 8 }), M.matte(0xff6a00, 0.45));
   }
-  // ---- charger compartment in place of a tank, with air shrouds either side
-  const both = (geo, mat) => { A.add('chassis', geo, mat); A.add('chassis', mirrorPanel(geo), mat); };
-  const T = 0.0045;
-  const tankSide = coons(
-    [[-0.12, 0.79, 0.09], [0.08, 0.79, 0.15], [0.3, 0.8, 0.16], [0.45, 0.82, 0.11]],
-    [[-0.12, 0.86, 0.075], [0.08, 0.93, 0.12], [0.3, 0.965, 0.14], [0.45, 0.92, 0.085]],
-    [[-0.12, 0.79, 0.09], [-0.12, 0.86, 0.075]],
-    [[0.45, 0.82, 0.11], [0.45, 0.92, 0.085]],
-    20, 8, { dir: [0, 0.3, 1], amount: 0.018 },
-  );
-  both(shell(tankSide, { thick: T, out: [0, 0.2, 1] }), mats.paintSolid);
-  const tankTop = coons(
-    [[-0.12, 0.872, 0.0], [0.08, 0.955, 0.0], [0.3, 0.992, 0.0], [0.45, 0.935, 0.0]],
-    [[-0.12, 0.86, 0.075], [0.08, 0.93, 0.12], [0.3, 0.965, 0.14], [0.45, 0.92, 0.085]],
-    [[-0.12, 0.872, 0.0], [-0.12, 0.86, 0.075]],
-    [[0.45, 0.935, 0.0], [0.45, 0.92, 0.085]],
-    20, 8, { dir: [0, 1, 0.1], amount: 0.01 },
-  );
-  both(shell(tankTop, { thick: T, out: [0, 1, 0.1] }), mats.paintSolid);
-  const port = cyl(0.035, 0.035, 0.01, 24, 'y'); place(port, { p: [0.27, 0.99, 0], r: [0, 0, -0.12] }); A.add('chassis', port, M.anodized(0x15171a));
-  const shroud = coons(
-    [[0.2, 0.62, 0.2], [0.34, 0.62, 0.21], [0.47, 0.68, 0.19]],
-    [[0.16, 0.79, 0.165], [0.32, 0.81, 0.18], [0.47, 0.83, 0.15]],
-    [[0.2, 0.62, 0.2], [0.17, 0.7, 0.19], [0.16, 0.79, 0.165]],
-    [[0.47, 0.68, 0.19], [0.48, 0.76, 0.18], [0.47, 0.83, 0.15]],
-    16, 10, { dir: [0.2, 0.1, 1], amount: 0.02 },
-  );
-  both(shell(shroud, { thick: T, out: [0.2, 0, 1] }), mats.paint2Solid);
-  const slot = onPanel(shroud, [[0.35, 0.3], [0.85, 0.42], [0.85, 0.62], [0.35, 0.5]], 0.0015, [0.2, 0, 1], 8, 4);
-  both(shell(slot, { thick: 0.003, out: [0.2, 0, 1] }), mats.neon);
-  // ---- short tail on the subframe, seat
-  const tail = coons(
-    [[-0.86, 0.9, 0.02], [-0.6, 0.83, 0.075], [-0.36, 0.79, 0.11]],
-    [[-0.88, 0.955, 0.018], [-0.6, 0.915, 0.08], [-0.36, 0.89, 0.115]],
-    [[-0.86, 0.9, 0.02], [-0.88, 0.955, 0.018]],
-    [[-0.36, 0.79, 0.11], [-0.36, 0.89, 0.115]],
-    18, 6, { dir: [0, 0.1, 1], amount: 0.012 },
-  );
-  both(shell(tail, { thick: T, out: [0, 0, 1] }), mats.paintSolid);
-  seatLoft(ctx, -0.12, -0.5, 0.88, 0.13, 0.035);
-  ledStrip(ctx, [-0.865, 0.94, -0.03], [-0.865, 0.94, 0.03], 0.008, 'chassis', mats.tail);
-  ctx.tails.push({ pos: [-0.865, 0.94, 0] });
-  // ---- headlight nacelle: twin LED bars over a projector, small smoked screen
-  const nac = loft([
-    { x: 0.6, y: 0.86, w: 0.08, ht: 0.06, hb: 0.06, n: 3 },
-    { x: 0.67, y: 0.855, w: 0.1, ht: 0.075, hb: 0.07, n: 3.2 },
-    { x: 0.71, y: 0.85, w: 0.085, ht: 0.06, hb: 0.06, n: 3 },
-  ], { radial: 22, sub: 4, capStart: true, capEnd: true });
-  A.add('steer', nac, M.black());
-  for (const dy of [0.03, -0.035]) ledStrip(ctx, [0.715, 0.85 + dy, -0.06], [0.715, 0.85 + dy, 0.06], 0.007, 'steer');
-  const projL = cyl(0.03, 0.03, 0.01, 20, 'x'); projL.translate(0.716, 0.85, 0); A.add('steer', projL, M.lens());
-  ctx.headlights.push({ pos: [0.72, 0.85, 0], group: 'steer', r: 0.04 });
-  const scr = loft([{ x: 0.66, y: 0.92, w: 0.07, ht: 0.015, n: 2 }, { x: 0.6, y: 0.99, w: 0.09, ht: 0.02, n: 2 }], { radial: 14, sub: 4, t0: 0.25, t1: Math.PI - 0.25 });
-  A.add('steer', scr, mats.glass);
+  // ---- charger compartment in place of a tank, air shrouds with lit slots, short tail
+  nakedBody(ctx, {
+    livery: { key: 'volt', second: [[[0.5, 0.84], [0.47, 0.64], [0.2, 0.62], [0.16, 0.8], [0.3, 0.84]], [[-0.1, 0.8], [-0.86, 0.95], [-0.86, 0.9], [-0.1, 0.75]]], lines: [[[0.46, 0.66], [0.2, 0.64]], [[-0.1, 0.81], [-0.86, 0.96]]], labelAt: [0.12, 0.9, 46] },
+    tank: [
+      [-0.12, [[0.09, 0.8], [0.094, 0.83], [0.084, 0.855], [0.044, 0.868], [0, 0.872]]],
+      [0.08, [[0.15, 0.79], [0.158, 0.86], [0.142, 0.925], [0.074, 0.952], [0, 0.958]]],
+      [0.3, [[0.16, 0.8], [0.168, 0.875], [0.15, 0.962], [0.08, 0.988], [0, 0.993]]],
+      [0.45, [[0.11, 0.82], [0.118, 0.87], [0.104, 0.918], [0.056, 0.932], [0, 0.936]]],
+    ],
+    shroud: [
+      [[0.2, 0.62, 0.2], [0.34, 0.62, 0.21], [0.47, 0.68, 0.19]],
+      [[0.16, 0.79, 0.165], [0.32, 0.81, 0.18], [0.47, 0.83, 0.15]],
+      [[0.2, 0.62, 0.2], [0.17, 0.7, 0.19], [0.16, 0.79, 0.165]],
+      [[0.47, 0.68, 0.19], [0.48, 0.76, 0.18], [0.47, 0.83, 0.15]],
+    ],
+    tail: [
+      [[-0.86, 0.9, 0.02], [-0.6, 0.83, 0.075], [-0.36, 0.79, 0.11]],
+      [[-0.88, 0.955, 0.018], [-0.6, 0.915, 0.08], [-0.36, 0.89, 0.115]],
+      [[-0.86, 0.9, 0.02], [-0.88, 0.955, 0.018]],
+      [[-0.36, 0.79, 0.11], [-0.36, 0.84, 0.118], [-0.36, 0.89, 0.115]],
+    ],
+  });
+  const port = cyl(0.035, 0.035, 0.01, 24, 'y'); place(port, { p: [0.27, 0.992, 0], r: [0, 0, -0.12] }); A.add('chassis', port, M.anodized(0x15171a));
+  for (const s of [-1, 1]) { const slot = sweep([[0.42, 0.72, s * 0.192], [0.3, 0.69, s * 0.206], [0.2, 0.68, s * 0.2]], () => [[0, -0.004], [0.003, 0], [0, 0.004], [-0.003, 0]], { segments: 8 }); A.add('chassis', slot, mats.neon); }
+  seatLoft(ctx, -0.12, -0.5, 0.86, 0.13, 0.04, { rearRise: 0.03 });
+  ledNacelle(ctx, [0.7, 0.85, 0], { w: 0.085, h: 0.06, flyMat: mats.glass });
   handlebar(ctx, { type: 'wide', rise: 0.06, back: 0.12, half: 0.35 });
   dash(ctx, [0.5, 0.98, 0], 0.13, 0.08, { tilt: -1.0, group: 'steer' });
   footpegs(ctx, -0.18, 0.4, 0.17, { plates: true });

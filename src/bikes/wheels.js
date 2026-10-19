@@ -11,7 +11,7 @@ const TAU = Math.PI * 2;
 // ---------------------------------------------------------------------------
 // Tyre: real motorcycle section. Bead tucked inside the rim flange, sidewall bulge, a
 // near-circular crown arc over the tread. v: 0.05 bead .. 0.3 shoulder .. 0.5 crown.
-export function tyreGeo(R, rimR, tw, rimW, { knobby = false, seg = 128 } = {}) {
+export function tyreGeo(R, rimR, tw, rimW, { knobby = false, seg = 96 } = {}) {
   const H = R - rimR, W = tw / 2, w = rimW / 2;
   const rs = rimR + (knobby ? 0.78 : 0.66) * H; // shoulder radius
   const crownR = knobby ? R - 0.012 : R;

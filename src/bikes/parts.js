@@ -509,7 +509,7 @@ export function radiator(ctx, c, w, h, o = {}) {
 export function header(ctx, pts, r = 0.02, mat) {
   const g = tube(pts, r, { radial: 18 });
   const len = g.parameters.path.getLength();
-  const seg = Math.max(24, Math.round(len * 90));
+  const seg = Math.max(20, Math.round(len * 40));
   ctx.A.add('chassis', tube(pts, r, { radial: 18, segments: seg }), mat || M.header());
 }
 
