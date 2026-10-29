@@ -307,6 +307,18 @@ export class Race {
 
   _placeIntroCamera(t) {
     const cam = this.game.engine.camera;
+    if (t > 1.7 && this.player) {
+      // second shot: a low TV dolly past the player's rider on the grid, on the side away from
+      // the other column (track right = (-cos h, sin h) in this bike's frame)
+      const P = this.player.phys, u = Math.min(1, (t - 1.7) / 1.5);
+      const fx = Math.sin(P.h), fz = Math.cos(P.h), rx = -Math.cos(P.h), rz = Math.sin(P.h);
+      const along = 3.0 - 2.7 * u, side = Math.sign(P.proj.d || 1) * (2.2 + 0.35 * u);
+      cam.position.set(P.x + fx * along + rx * side, P.y + 1.3 + 0.12 * u, P.z + fz * along + rz * side);
+      cam.up.set(0, 1, 0);
+      cam.lookAt(P.x + fx * 0.15, P.y + 1.0, P.z + fz * 0.15);
+      cam.fov = 38; cam.updateProjectionMatrix();
+      return;
+    }
     const p = this.track.pointAt(-30 + t * 6, 0);
     const a = t * 0.35 + 0.6;
     const R = 18 - t * 2;
