@@ -11,6 +11,8 @@ import { BikeModel } from '../bikes/BikeModel.js';
 const P = new URLSearchParams(location.search);
 if (P.get('q')) Save.settings.quality = P.get('q');
 const engine = new Engine(document.getElementById('stage'));
+if (P.get('tm') === 'agx') engine.renderer.toneMapping = THREE.AgXToneMapping;
+if (P.get('tm') === 'neutral') engine.renderer.toneMapping = THREE.NeutralToneMapping;
 const t0 = performance.now();
 const base = TRACK_BY_ID[P.get('track') || 'gp'];
 const ts = await TrackScene.create(engine, { ...base, time: P.get('time') || base.time, weather: P.get('weather') || base.weather });

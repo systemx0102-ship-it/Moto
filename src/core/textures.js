@@ -120,18 +120,18 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
     }
     // sealed cracks ("tar snakes"): meandering bands of glossy black sealant
     if (cracks) {
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < 6; i++) {
         let x = r() * W, y = r() * H;
         const along = r() < 0.6;
         let a = along ? Math.PI / 2 + (r() - 0.5) * 0.6 : (r() - 0.5) * 0.8;
-        const lw = 2 + r() * 3;
-        g.strokeStyle = 'rgba(10,10,12,0.85)'; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+        const lw = 1.2 + r() * 1.8;
+        g.strokeStyle = `rgba(14,14,16,${0.45 + r() * 0.2})`; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
         mg.strokeStyle = '#0f0'; mg.lineWidth = lw; mg.lineCap = 'round';
         g.beginPath(); g.moveTo(x, y); mg.beginPath(); mg.moveTo(x, y);
-        const steps = 20 + r() * 40;
+        const steps = 12 + r() * 30;
         for (let k2 = 0; k2 < steps; k2++) {
-          a += (r() - 0.5) * 0.9;
-          x += Math.cos(a) * 6; y += Math.sin(a) * 6;
+          a += (r() - 0.5) * 1.1;
+          x += Math.cos(a) * 4; y += Math.sin(a) * 4;
           g.lineTo(x, y); mg.lineTo(x, y);
         }
         g.stroke(); mg.stroke();

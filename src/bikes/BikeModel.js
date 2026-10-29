@@ -102,6 +102,30 @@ export function drawDash(dc, kmh, rpmFrac, gear, spec, nitro) {
   g.fillRect(14, 112, 120 * clamp(nitro, 0, 1), 6);
 }
 
+// radial blur disc: spokes smeared to a soft metallic grey, rim lip, rubber sidewall with the
+// lettering smeared into a faint ring; alpha fades out at the hub and the tread
+let _blurTex = null;
+function blurTex() {
+  if (_blurTex) return _blurTex;
+  const N = 256, c = document.createElement('canvas'), a = document.createElement('canvas');
+  c.width = c.height = a.width = a.height = N;
+  const g = c.getContext('2d'), ga = a.getContext('2d');
+  const C = N / 2;
+  const col = g.createRadialGradient(C, C, 0, C, C, C);
+  col.addColorStop(0, '#2c2e32'); col.addColorStop(0.2, '#3a3d42'); col.addColorStop(0.62, '#4a4d52');
+  col.addColorStop(0.7, '#6a6d72'); col.addColorStop(0.73, '#121214'); col.addColorStop(0.84, '#1c1c1e');
+  col.addColorStop(0.87, '#2e2e30'); col.addColorStop(0.9, '#151516'); col.addColorStop(1, '#0c0c0d');
+  g.fillStyle = col; g.fillRect(0, 0, N, N);
+  const al = ga.createRadialGradient(C, C, 0, C, C, C);
+  al.addColorStop(0, '#000'); al.addColorStop(0.14, '#000'); al.addColorStop(0.24, '#9a9a9a'); al.addColorStop(0.66, '#b4b4b4');
+  al.addColorStop(0.72, '#d8d8d8'); al.addColorStop(0.8, '#8a8a8a'); al.addColorStop(0.95, '#6a6a6a'); al.addColorStop(1, '#000');
+  ga.fillStyle = al; ga.fillRect(0, 0, N, N);
+  const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
+  const alpha = new THREE.CanvasTexture(a);
+  _blurTex = { map, alpha };
+  return _blurTex;
+}
+
 export class BikeModel {
   constructor(spec, liveryIndex = 0, opts = {}) {
     this.spec = spec;
@@ -144,6 +168,25 @@ export class BikeModel {
 
     // bounds (bike space, machine only)
     const box = new THREE.Box3().setFromObject(A.inner);
+    // spin blur: translucent discs over each side of the wheels that fade in with angular
+    // speed, smearing spokes and sidewall lettering the way a camera shutter does
+    this._blur = [];
+    if (opts.wheelBlur !== false) {
+      for (const [gname, w] of [['frontWheel', spec.model.front], ['rearWheel', spec.model.rear]]) {
+        const mat = new THREE.MeshStandardMaterial({ map: blurTex().map, alphaMap: blurTex().alpha, color: 0xffffff, metalness: 0.5, roughness: 0.45, transparent: true, opacity: 0, depthWrite: false });
+        const geo = new THREE.RingGeometry(0.04, w.R - 0.006, 56, 1);
+        const meshes = [];
+        for (const sd of [-1, 1]) {
+          const m = new THREE.Mesh(geo, mat);
+          m.position.z = sd * (w.w / 2 + 0.008);
+          if (sd < 0) m.rotation.y = Math.PI;
+          m.renderOrder = 2; m.visible = false;
+          this.groups[gname].add(m);
+          meshes.push(m);
+        }
+        this._blur.push({ mat, meshes, R: w.R });
+      }
+    }
     if (opts.rider) {
       this.rider = new Rider(spec, this.livery, ctx, this.groups, { castShadow: opts.castShadow !== false, number: this.livery.number });
       this.model.add(this.rider.root);
@@ -162,6 +205,13 @@ export class BikeModel {
     this.wheelSpinR -= (dist + (s.wheelSpinExtra || 0) * dt) / rR;
     this.groups.frontWheel.rotation.z = this.wheelSpinF;
     this.groups.rearWheel.rotation.z = this.wheelSpinR;
+    for (let i = 0; i < this._blur.length; i++) {
+      const b = this._blur[i];
+      const w = Math.abs(s.speed || 0) / b.R + (i === 1 ? Math.abs(s.wheelSpinExtra || 0) / b.R : 0);
+      const k = clamp((w - 10) / 34, 0, 1);
+      b.mat.opacity = 0.92 * k;
+      b.meshes[0].visible = b.meshes[1].visible = k > 0.01;
+    }
     this.groups.steer.rotation.y = -(s.steerAngle || 0);
     // suspension: chassis drops, wheels stay planted
     const cf = clamp(s.compF || 0, -0.04, 0.09), cr = clamp(s.compR || 0, -0.04, 0.08);
@@ -189,6 +239,9 @@ export class BikeModel {
   // Translucent holographic look (time-trial ghost)
   setGhost(color = 0x40e0ff) {
     const mat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: color, emissiveIntensity: 0.9, transparent: true, opacity: 0.32, depthWrite: false, roughness: 0.5 });
+    // no spin-blur discs on a hologram
+    for (const b of this._blur) for (const m of b.meshes) m.removeFromParent();
+    this._blur.length = 0;
     this.root.traverse((o) => { if (o.isMesh) { o.material = mat; o.castShadow = false; o.receiveShadow = false; } });
     this.ghostMat = mat;
   }
