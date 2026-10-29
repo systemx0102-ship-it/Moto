@@ -22,11 +22,13 @@
 // with eyes on the start lights and a revving hand, the launch crouch over the tank,
 // downshift throttle blips, standing up over gravel and grass, stoppies braced on locked
 // arms, visor wipes with the left glove on wet straights, idle life at a standstill
-// (breathing, glances, visor wipes, hand flexes), victory celebrations (fist pumps, the
+// (breathing, glances, visor wipes, hand flexes, standing up off the seat to stretch),
+// victory celebrations (fist pumps, the
 // winner standing to point at the sky, waves to the crowd), a relaxed cool-down lap with a
 // hand resting on the thigh, and crashes in world space:
 // a highside flings the body over the front in a curled tumble that lands on the shoulders
-// and rolls onto the back; a lowside drops it on the hip and slides it feet first.
+// and rolls onto the back; a lowside drops it on the hip and slides it feet first. Each fall
+// grinds dust and grass stains into the leathers for the rest of the race.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, toTexture, heightToNormal } from '../core/textures.js';
@@ -1056,6 +1058,32 @@ function helmetColorMap(main, second, accent, number, design) {
   return toTexture(c, { wrap: true });
 }
 
+// grime ground into the leather by a fall: blotchy dust and grass stains that dull the sheen
+// (userData.dirt.value 0..1, raised by each crash, cleared for a new race)
+function dirtyLeather(mat) {
+  mat.userData.dirt = { value: 0 };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uDirt = mat.userData.dirt;
+    sh.fragmentShader = `uniform float uDirt;
+float dH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float dN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(dH(i), dH(i + vec2(1.0, 0.0)), f.x), mix(dH(i + vec2(0.0, 1.0)), dH(i + 1.0), f.x), f.y); }
+` + sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      float dirtM = 0.0;
+      if (uDirt > 0.001) {
+        float dm = dN(vMapUv * vec2(34.0, 52.0)) * 0.55 + dN(vMapUv * vec2(110.0, 170.0)) * 0.3 + dN(vMapUv * vec2(330.0, 510.0)) * 0.15;
+        dirtM = smoothstep(1.0 - uDirt * 0.95, 1.0 - uDirt * 0.95 + 0.16, dm);
+        vec3 grime = mix(vec3(0.16, 0.13, 0.1), vec3(0.11, 0.13, 0.07), step(0.6, dN(vMapUv * vec2(9.0, 14.0))));
+        diffuseColor.rgb = mix(diffuseColor.rgb, grime, dirtM * 0.8);
+      }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = mix(roughnessFactor, 0.95, dirtM);`);
+  };
+  mat.customProgramCacheKey = () => 'rider-suit-dirt';
+  return mat;
+}
+
 // rain soaks the leathers: darker, glossier; wet gloves and boots shine
 function setWet(m, wet) {
   m.suit.color.setScalar(wet ? 0.78 : 1);
@@ -1104,10 +1132,10 @@ function riderMaterials(livery, number, name, design, visor = 1) {
   const L = leatherSet();
   const m = {
     // race leather: atlas colour + panel relief, satin sheen
-    suit: new THREE.MeshPhysicalMaterial({
+    suit: dirtyLeather(new THREE.MeshPhysicalMaterial({
       map: suitColorMap(main, second, accent, number, name, design), normalMap: NR.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), roughnessMap: NR.roughnessMap,
       roughness: 0.66, metalness: 0, clearcoat: 0.14, clearcoatRoughness: 0.55, sheen: 0.55, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x6a6a6a),
-    }),
+    })),
     // gloves, armour plates, sliders, soles, helmet trims: vertex-coloured, leather grain;
     // the TEAM placeholder colours become the livery's
     gear: teamGear(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05, normalMap: rep(L.normalMap, 6), normalScale: new THREE.Vector2(0.3, 0.3), clearcoat: 0.2, clearcoatRoughness: 0.5 }), main, second, accent),
@@ -1171,7 +1199,7 @@ const _q = new THREE.Quaternion(), _qa = new THREE.Quaternion();
 const CRASH_PTS = [[0, 0.68, 0], [0.25, 0.42, 0.28], [0.25, 0.42, -0.28], [0.15, -0.86, 0.14], [0.15, -0.86, -0.14]];
 const _cv = V(), _cp = V(), _cq = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cm = new THREE.Matrix4(), _cm2 = new THREE.Matrix4(), _one = new THREE.Vector3(1, 1, 1), _I4 = new THREE.Matrix4();
 // idle repertoire at a standstill (duration s)
-const IDLE = [['look', 2.4], ['visor', 1.7], ['flex', 1.3], ['dash', 1.5], ['stretch', 2.0], ['tank', 1.1], ['look', 2.0]];
+const IDLE = [['look', 2.4], ['visor', 1.7], ['flex', 1.3], ['dash', 1.5], ['stretch', 2.0], ['tank', 1.1], ['look', 2.0], ['legs', 2.2]];
 // standing beside the machine (showroom)
 const STAND_IDLE = [['look', 2.2], ['visor', 1.6], ['flex', 1.4], ['stretch', 2.0], ['hip', 3.4], ['look', 1.8]];
 
@@ -1186,6 +1214,7 @@ export class Rider {
     const design = opts.design ?? (seed >>> 3) % 5;
     const mats = riderMaterials(livery, num, this.name, design, opts.visor ?? (seed >>> 6) % VISORS.length);
     this.mats = mats;
+    mats.suit.userData.dirt.value = 0; // a clean suit for every race
     this.style = STYLES[DESIGN_STYLE[spec.design] || 'street'];
     // personal riding style: how far each rider hangs off, elbows, knee, tuck, head carriage
     const pr = (k) => hash(seed * 0.37 + k * 11.3);
@@ -1330,7 +1359,7 @@ export class Rider {
     const headLagR = sp.headR.step(clamp(-st.leanVel * 0.06, -0.2, 0.2), dt);
 
     // ---------------- idle life and celebrations: the left arm can leave the bar
-    let ovW = 0, headYaw = 0, headPitch = 0, headRoll = 0, fingL = 0, armRaise = 0, sitUp = 0;
+    let ovW = 0, headYaw = 0, headPitch = 0, headRoll = 0, fingL = 0, armRaise = 0, sitUp = 0, straddle = 0;
     const ov = this._ovP, ovD = this._ovD;
     if (st.stop > 0.9 && st.grid < 0.5 && !crashed && finT < 0) {
       if (!settle) {
@@ -1352,6 +1381,7 @@ export class Rider {
       const u = st.actT / dur, env = smooth(0, 0.18, u) * (1 - smooth(0.78, 1, u));
       const side = hash(this.seed + st.actN) < 0.5 ? -1 : 1;
       if (kind === 'look') { headYaw += side * 0.85 * env; headPitch += 0.05 * env; }
+      else if (kind === 'legs') { straddle = env; headPitch -= 0.1 * env; } // up off the seat, both feet down
       else if (kind === 'dash') headPitch -= 0.38 * env;
       else if (kind === 'stretch') { headRoll += Math.sin(u * Math.PI * 2) * 0.35 * env; headPitch -= 0.12 * env; }
       else if (kind === 'flex') fingL = Math.max(0, Math.sin(u * Math.PI * 4)) * 0.9 * env;
@@ -1442,7 +1472,7 @@ export class Rider {
     const stop = st.stop, tuck = st.tuck;
     const P = _P.set(
       this.seat.x - 0.035 * ha - 0.025 * tuck + 0.05 * st.brake * (1 - ha) + surge * 0.12 + 0.03 * st.stand + 0.03 * wheel - 0.02 * sitUp + 0.045 * st.launch - 0.06 * stoppie,
-      this.seat.y + 0.075 - 0.025 * ha + 0.22 * st.stand + heave - 0.004 * stop + breath * 0.3 + 0.05 * stoppie,
+      this.seat.y + 0.075 - 0.025 * ha + 0.22 * st.stand + heave - 0.004 * stop + breath * 0.3 + 0.05 * stoppie + 0.13 * straddle,
       h * 0.13 + sway * 0.5 - 0.025 * stop,
     );
     // grips follow the steering; wrists just behind and above them, the right one rolling
@@ -1587,6 +1617,8 @@ export class Rider {
         ankle.lerp(_tmp.set(pg.x + 0.62, pg.y + 0.08, s0 * (pg.z + 0.3)), st.legOut);
         toeOut += st.legOut * 0.6;
       }
+      // stretching the legs on the grid: the right foot comes down too
+      if (s0 > 0 && straddle > 0.001) ankle.lerp(_tmp.set(pg.x + 0.1, 0.09, pg.z + 0.2), straddle);
       // standstill: left foot down to the road
       if (s0 < 0 && stop > 0.01) ankle.lerp(_tmp.set(pg.x + 0.12, 0.09, -(pg.z + 0.2)), stop);
       if (st.crash > 0) {
@@ -1616,6 +1648,8 @@ export class Rider {
   // (flung over the top, tumbling) or lowside (down on the hip beside the machine)
   _crashState(s) {
     if (this._crash) return this._crash;
+    const dirt = this.mats.suit.userData.dirt;
+    dirt.value = Math.min(0.7, dirt.value + 0.45);
     const par = this.root.parent;
     if (par) par.updateWorldMatrix(true, false);
     const M = par ? par.matrixWorld : _I4;
