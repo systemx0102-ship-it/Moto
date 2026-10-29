@@ -1577,7 +1577,7 @@ export class Rider {
       // MotoGP leg dangle: off the peg, out and forward, fluttering in the wind
       if (st.dangle > 0.001 && s0 === st.dangleSide) {
         const fl = Math.sin(t * 7.5 + this.seed) * 0.035 + Math.sin(t * 13.1) * 0.015;
-        ankle.lerp(_tmp.set(pg.x + 0.12, pg.y + 0.02 + fl * 0.5, s0 * (pg.z + 0.34 + fl)), st.dangle);
+        ankle.lerp(_tmp.set(pg.x + 0.16, pg.y - 0.13 + fl * 0.5, s0 * (pg.z + 0.4 + fl)), st.dangle);
         toeOut += st.dangle;
       }
       // supermoto slide: inside leg forward toward the front axle
@@ -1600,7 +1600,8 @@ export class Rider {
       placeSeg(b('thigh'), L.hp, L.kn, ZAX);
       placeSeg(b('shin'), L.kn, ankle, ZAX);
       // foot points forward along the bike (outward when off the peg), toe on the lever
-      const toe = L.toe.set(ankle.x + B.foot * 0.98, ankle.y - 0.05 + toeLift - (s0 < 0 ? 0.03 * stop : 0), ankle.z + s0 * (0.01 + 0.09 * toeOut));
+      const dg = s0 === st.dangleSide ? st.dangle : 0; // a dangling foot hangs toes down and out
+      const toe = L.toe.set(ankle.x + B.foot * (0.98 - 0.15 * dg), ankle.y - 0.05 + toeLift - (s0 < 0 ? 0.03 * stop : 0) - 0.07 * dg, ankle.z + s0 * (0.01 + 0.09 * toeOut));
       placeSeg(b('foot'), ankle, toe, UP);
     }
 
