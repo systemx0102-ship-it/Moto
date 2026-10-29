@@ -1750,11 +1750,12 @@ export class Rider {
       else if (kind === 'flex') fingL = 0.4 + Math.max(0, Math.sin(u * Math.PI * 4)) * 0.5 * env;
       else if (kind === 'visor') headPitch -= 0.06 * env;
     }
-    const shift = Math.sin(t * 0.35) * 0.7 + Math.sin(t * 0.13 + 1) * 0.3, breath = Math.sin(t * 1.6);
+    // contrapposto: the weight settles on one leg for a while, then the other
+    const shift = clamp(Math.sin(t * 0.22 + this.seed) * 1.7, -1, 1) * 0.85 + Math.sin(t * 0.13 + 1) * 0.15, breath = Math.sin(t * 1.6);
     // pelvis over the loaded leg, spine upright with a slight sway, chest lifting on the breath
-    const P = _P.set(0, 0.925 - 0.012 * Math.abs(shift), 0.035 * shift);
+    const P = _P.set(0, 0.925 - 0.015 * Math.abs(shift), 0.05 * shift);
     const segDir = (a, b, out) => out.set(Math.sin(a), Math.cos(a), Math.tan(b)).normalize();
-    const th = 0.03 + 0.012 * breath, latBend = -0.05 * shift, twist = -0.12;
+    const th = 0.03 + 0.012 * breath, latBend = -0.09 * shift, twist = -0.12 + 0.06 * shift;
     segDir(th * 0.5, latBend * 0.3, _e); _L.copy(P).addScaledVector(_e, B.pelvis);
     segDir(th * 0.95, latBend * 0.7, _f); _T.copy(_L).addScaledVector(_f, B.spine);
     segDir(th * 1.12, latBend, _g); _N.copy(_T).addScaledVector(_g, B.chest);
@@ -1793,12 +1794,13 @@ export class Rider {
       if (s0 > 0) {
         wrist.copy(_c);
         _hd.set(0.55, -0.8, 0.1).normalize(); _hz.copy(ZAX);
-        _a.set(-0.3, -0.6, 1);
+        _a.set(-1, -0.25, 0.3); // elbow back and a little out
       } else {
+        // hanging close to the body, elbow softly bent, a slow swing
         const sw = Math.sin(t * 0.9) * 0.015;
-        wrist.copy(L.sh).add(_tmp.set(0.05 + sw, -0.53, -0.08));
-        _hd.set(0.06, -1, 0.04).normalize(); _hz.copy(ZAX);
-        _a.set(-0.6, -0.2, -1);
+        wrist.copy(L.sh).add(_tmp.set(0.08 + sw, -0.5, 0.03));
+        _hd.set(0.12, -1, 0.06).normalize(); _hz.copy(ZAX);
+        _a.set(-1, -0.1, -0.25);
         if (kind === 'hip') {
           wrist.lerp(_tmp.copy(L.hp).add(_tmp2.set(-0.02, 0.1, -0.13)), env);
           _hd.lerp(_tmp.set(0.3, -0.5, 0.75).normalize(), env).normalize();
