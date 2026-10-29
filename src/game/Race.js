@@ -539,7 +539,11 @@ export class Race {
           case 'bump': {
             // which side the other machine hit us from, in this bike's frame (right = (-cos h, sin h))
             const o = e.other && e.other.phys;
-            if (o) { b.jolt = Math.max(b.jolt || 0, clamp(e.impact / 10, 0, 1)); b.joltSide = Math.sign(-(o.x - p.x) * Math.cos(p.h) + (o.z - p.z) * Math.sin(p.h)) || 1; }
+            if (o) {
+              b.jolt = Math.max(b.jolt || 0, clamp(e.impact / 10, 0, 1)); b.joltSide = Math.sign(-(o.x - p.x) * Math.cos(p.h) + (o.z - p.z) * Math.sin(p.h)) || 1;
+              // a rival that takes a real knock raises a hand in protest at whoever hit them
+              if (!b.isPlayer && e.impact > 3.5 && !(b.gripeT > 0)) { b.gripeT = 1.4; b.gripeSide = b.joltSide; }
+            }
             if (near) this.effects.sparks(e.x, e.y, e.z, 6, 0, 0, 5);
             if (b.isPlayer) { this.cam.addShake(clamp(e.impact / 10, 0.1, 0.8)); Audio.impact(clamp(e.impact / 12, 0.15, 0.9)); Input.rumble(0.6, 0.6, 120); }
             break;
@@ -597,6 +601,8 @@ export class Race {
       v.lookBack = b.isPlayer && this.phase === 'race' && !!Input.state.lookBack;
       v.wet = !!this.env.wet;
       v.jolt = b.jolt || 0; v.joltSide = b.joltSide || 0; b.jolt = 0;
+      if (b.gripeT > 0) b.gripeT -= dt;
+      v.gripe = b.gripeT > 0 ? b.gripeT : 0; v.gripeSide = b.gripeSide || 1;
       // a rival side by side (in this bike's frame: x forward, right = (-cos h, sin h))
       v.rival = 0;
       if (!p.crashed && p.v > 12) {

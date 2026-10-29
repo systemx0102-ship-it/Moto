@@ -87,7 +87,7 @@ const models = ids.map((id, i) => {
     dangle: N('dangle', 0), drift: params.get('drift') === '1', airborne: params.get('air') === '1', crashed: params.get('crash') === '1',
     crashT: N('crashT', 0), wet: params.get('wet') === '1', nitro: params.get('nitro') === '1',
     shiftT: params.has('shiftT') ? N('shiftT', 0) : undefined, shiftDir: N('shiftDir', 1),
-    stand: params.get('stand') === '1',
+    stand: params.get('stand') === '1', gripe: N('gripe', 0), gripeSide: N('gripeSide', 1),
   };
   m.animate(state, 10);
   for (let k = 0; k < N('sim', 0) * 60; k++) m.animate(state, 1 / 60);

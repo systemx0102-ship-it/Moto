@@ -21,7 +21,8 @@
 // and look-back head turns, glances over the shoulder on the straights and at a rival
 // drawing alongside, grid ready pose
 // with eyes on the start lights and a revving hand, the launch crouch over the tank,
-// downshift throttle blips, standing up over gravel and grass, stoppies braced on locked
+// downshift throttle blips, a raised hand in protest after a knock from a rival, standing
+// up over gravel and grass, stoppies braced on locked
 // arms, visor wipes with the left glove on wet straights, idle life at a standstill
 // (breathing, glances, visor wipes, hand flexes, standing up off the seat to stretch),
 // victory celebrations (fist pumps, both arms up in a V with the machine stopped, the
@@ -1412,6 +1413,18 @@ export class Rider {
       ovW = env;
       ov.set(0, 0, 0).add(bn[BONE.head].position).add(_tmp.set(0.2, 0.09, -0.06 + Math.sin(u * Math.PI * 2) * 0.1).applyQuaternion(bn[BONE.head].quaternion));
       ovD.set(0.2, 0.9, 0.3);
+    }
+    // protest after a knock: the left hand leaves the bar, open palm toward the culprit,
+    // the head turned to them (only upright and off the brakes)
+    if (s.gripe > 0 && !crashed && Math.abs(lean) < 0.35 && brk < 0.3 && finT < 0) {
+      const u = 1 - s.gripe / 1.4, env = smooth(0, 0.15, u) * (1 - smooth(0.75, 1, u));
+      const side = s.gripeSide || 1, shake = Math.sin(u * Math.PI * 6) * 0.03;
+      ovW = Math.max(ovW, env);
+      ov.copy(this.limbs[0].sh).add(_tmp.set(0.2 + shake, 0.18 + Math.abs(shake), side > 0 ? 0.02 : -0.24));
+      ovD.set(0.4, 0.75, side * 0.3);
+      fingL = -0.25;
+      headYaw += side * 0.7 * env;
+      sitUp = Math.max(sitUp, 0.35 * env);
     }
     // victory: sit up, punch the air, the winner stands and points to the sky, then waves
     if (finT >= 0) {
