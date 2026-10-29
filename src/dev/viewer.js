@@ -68,7 +68,7 @@ const view = params.get('view') || 'side';
 const liv = +(params.get('livery') || 0);
 const t0 = performance.now();
 const models = ids.map((id, i) => {
-  const m = new BikeModel(BIKE_BY_ID[id] || BIKES[0], liv, { rider: params.get('rider') === '1' });
+  const m = new BikeModel(BIKE_BY_ID[id] || BIKES[0], liv, { rider: params.get('rider') === '1', riderDesign: params.has('design') ? +params.get('design') : undefined });
   scene.add(m.root);
   if (ids.length > 1) {
     const cols = Math.ceil(Math.sqrt(ids.length));

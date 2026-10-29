@@ -188,7 +188,7 @@ export class BikeModel {
       }
     }
     if (opts.rider) {
-      this.rider = new Rider(spec, this.livery, ctx, this.groups, { castShadow: opts.castShadow !== false, number: this.livery.number });
+      this.rider = new Rider(spec, this.livery, ctx, this.groups, { castShadow: opts.castShadow !== false, number: this.livery.number, design: opts.riderDesign });
       this.model.add(this.rider.root);
     }
     this.bounds = box;

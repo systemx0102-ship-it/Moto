@@ -380,7 +380,7 @@ function helmetSurf(th0, th1, ph0, ph1, nth, nph, off, uvFull, thFn = null) {
       const fr = i / nth;
       const th = thFn ? thFn(fr, ph) : th0 + (th1 - th0) * fr;
       pos.push(...helmetPoint(th, ph, off));
-      uv.push(uvFull ? ((ph / (Math.PI * 2)) + 0.5) % 1 : j / nph, uvFull ? 1 - th / Math.PI : 1 - fr);
+      uv.push(uvFull ? 0.5 - ph / (Math.PI * 2) : j / nph, uvFull ? 1 - th / Math.PI : 1 - fr);
     }
   }
   for (let i = 0; i < nth; i++) for (let j = 0; j < nph; j++) {
@@ -784,12 +784,45 @@ function suitGraphics(design) {
       limbAll('thigh', s, -0.2, 1.2, 0.68, 0.72, 'accent');
       limbAll('shin', s, -0.2, 1.2, null, 0.2, 'second');
     }
-  } else {
+  } else if (design === 2) {
     // racing bands: chest band all round, accent waist band, double stripes down the limbs
     G.push({ col: 'second', poly: tp([[0, 0.6], [1, 0.6], [1, 0.75], [0, 0.75]]) });
     G.push({ col: 'accent', poly: tp([[0, 0.23], [1, 0.23], [1, 0.29], [0, 0.29]]) });
     G.push({ col: 'second', poly: tp([[0, 0.86], [1, 0.86], [1, T_MAX], [0, T_MAX]]) });
     for (const s of [-1, 1]) for (const n of ['upper', 'fore', 'thigh', 'shin']) { limbAll(n, s, 0.36, 0.46, null, null, 'second'); limbAll(n, s, 0.54, 0.64, null, null, 'accent'); }
+  } else if (design === 3) {
+    // arrows: stacked chevrons pointing up the chest and the back, arrowheads down the limbs
+    for (const uc of [0.75, 0.25]) {
+      G.push({ col: 'second', poly: tp([[uc - 0.17, 0.42], [uc, 0.7], [uc + 0.17, 0.42], [uc + 0.17, 0.3], [uc, 0.57], [uc - 0.17, 0.3]]) });
+      G.push({ col: 'accent', poly: tp([[uc - 0.15, 0.52], [uc, 0.78], [uc + 0.15, 0.52], [uc + 0.15, 0.47], [uc, 0.73], [uc - 0.15, 0.47]]) });
+    }
+    G.push({ col: 'second', poly: tp([[0, 0.9], [1, 0.9], [1, T_MAX], [0, T_MAX]]) });
+    for (const s of [-1, 1]) {
+      const [u0, u1] = LIMB_T.upper, [f0] = LIMB_T.fore;
+      G.push({ col: 'second', poly: lp('upper', s, [[0.3, u0], [0.7, u0], [0.7, 0.5], [0.5, 0.75], [0.3, 0.5]]) });
+      G.push({ col: 'accent', poly: lp('upper', s, [[0.3, 0.6], [0.5, 0.85], [0.7, 0.6], [0.7, 0.68], [0.5, u1], [0.3, 0.68]]) });
+      G.push({ col: 'second', poly: lp('fore', s, [[0.32, f0], [0.68, f0], [0.68, 0.4], [0.5, 0.62], [0.32, 0.4]]) });
+      G.push({ col: 'second', poly: lp('thigh', s, [[0.28, 0.95], [0.5, 0.5], [0.72, 0.95], [0.72, 0.78], [0.5, 0.36], [0.28, 0.78]]) });
+      G.push({ col: 'accent', poly: lp('thigh', s, [[0.32, 0.4], [0.5, 0.06], [0.68, 0.4], [0.68, 0.32], [0.5, -0.02], [0.32, 0.32]]) });
+      limbAll('shin', s, -0.2, 1.2, null, 0.12, 'second');
+    }
+  } else {
+    // shards: diagonal cuts across the torso, two-tone sleeves split on a slant
+    G.push({ col: 'second', poly: tp([[0.5, -0.05], [0.66, -0.05], [1.0, 0.72], [0.84, 0.72]]) });
+    G.push({ col: 'accent', poly: tp([[0.6, 0.5], [0.66, 0.5], [0.88, 1.0], [0.82, 1.0]]) });
+    G.push({ col: 'second', poly: tp([[0.0, -0.05], [0.16, -0.05], [0.5, 0.72], [0.34, 0.72]]) });
+    G.push({ col: 'accent', poly: tp([[0.1, 0.5], [0.16, 0.5], [0.38, 1.0], [0.32, 1.0]]) });
+    G.push({ col: 'second', poly: tp([[0.84, 0.72], [1.0, 0.72], [1.0, T_MAX], [0.66, T_MAX]]) });
+    G.push({ col: 'second', poly: tp([[0.34, 0.72], [0.5, 0.72], [0.5, T_MAX], [0.16, T_MAX]]) });
+    for (const s of [-1, 1]) {
+      const [u0, u1] = LIMB_T.upper, [f0, f1] = LIMB_T.fore, [t0, t1] = LIMB_T.thigh;
+      G.push({ col: 'second', poly: lp('upper', s, [[-0.2, u0], [1.2, u0], [1.2, 0.55], [-0.2, 0.35]]) });
+      G.push({ col: 'accent', poly: lp('fore', s, [[-0.2, 0.55], [1.2, 0.35], [1.2, 0.45], [-0.2, 0.65]]) });
+      G.push({ col: 'second', poly: lp('fore', s, [[-0.2, 0.65], [1.2, 0.45], [1.2, f1], [-0.2, f1]]) });
+      G.push({ col: 'second', poly: lp('thigh', s, [[-0.2, 0.62], [1.2, 0.3], [1.2, t1], [-0.2, t1]]) });
+      G.push({ col: 'accent', poly: lp('thigh', s, [[-0.2, 0.55], [1.2, 0.23], [1.2, 0.29], [-0.2, 0.61]]) });
+      void u1; void f0; void t0;
+    }
   }
   return G;
 }
@@ -932,7 +965,7 @@ function helmetColorMap(main, second, accent, number, design) {
   const W = 1024, H = 512;
   const { c, g } = makeCanvas(W, H);
   g.fillStyle = main; g.fillRect(0, 0, W, H);
-  // u: 0/1 back, .25 left, .5 front, .75 right; v: 1 crown -> .26 base
+  // u: 0/1 back, .25 right, .5 front, .75 left (reads correctly from outside); v: 1 crown -> base
   if (design === 0) {
     // swept side blades from the chin back over the ears, crown stripe with pinstripes
     g.fillStyle = second;
@@ -961,6 +994,29 @@ function helmetColorMap(main, second, accent, number, design) {
     }
     g.fillStyle = second;
     for (const uc of [0.25, 0.75]) g.fillRect((uc - 0.08) * W, H * 0.46, 0.16 * W, H * 0.22);
+  } else if (design === 3) {
+    // flames licking back from the chin bar over both sides
+    for (const [col, sc, off] of [[second, 1, 0], [accent, 0.72, 0.012]]) {
+      for (const uc of [0.25, 0.75]) {
+        const d = uc < 0.5 ? -1 : 1;
+        g.fillStyle = col;
+        g.beginPath();
+        g.moveTo((0.5 + d * 0.03) * W, H * 0.7);
+        for (let k = 0; k <= 5; k++) {
+          const ut = 0.5 + d * (0.06 + k * 0.075) * sc, peak = H * (0.36 + k * 0.03 + off * 10);
+          g.quadraticCurveTo((ut - d * 0.03) * W, H * 0.5, ut * W, peak);
+          g.quadraticCurveTo((ut + d * 0.01) * W, H * 0.52, (ut + d * 0.03) * W, H * 0.56);
+        }
+        g.lineTo((0.5 + d * 0.48 * sc) * W, H * 0.7);
+        g.closePath(); g.fill();
+      }
+    }
+  } else if (design === 4) {
+    // split crown: the top half in the second colour cut by an accent blade, a centre stripe
+    g.fillStyle = second; g.fillRect(0, 0, W, H * 0.3);
+    g.fillStyle = accent; g.beginPath(); g.moveTo(0, H * 0.3); g.lineTo(W, H * 0.3); g.lineTo(W, H * 0.33); g.lineTo(0, H * 0.33); g.closePath(); g.fill();
+    for (const uc of [0.25, 0.75]) { g.beginPath(); g.moveTo((uc - 0.12) * W, H * 0.33); g.lineTo((uc + 0.1) * W, H * 0.33); g.lineTo((uc - 0.02) * W, H * 0.52); g.closePath(); g.fill(); }
+    g.fillStyle = main; for (const x0 of [0.5, 0, 1]) g.fillRect((x0 - 0.02) * W, 0, 0.04 * W, H * 0.3);
   } else {
     // flowing ribbons wrapping the shell with a field of small stars
     const band = (y0, amp, w, col) => {
@@ -984,7 +1040,8 @@ function helmetColorMap(main, second, accent, number, design) {
   g.font = `italic 800 44px ${FONT}`; g.fillStyle = ink; g.fillText('MÍTICO', 0.5 * W, H * 0.39);
   g.font = `italic 700 26px ${FONT}`; g.fillText('MÍTICO', 0.5 * W, H * 0.665);
   g.font = `700 90px ${FONT}`; g.lineWidth = 6; g.strokeStyle = accent;
-  g.strokeText(number, 0.02 * W, H * 0.5); g.fillText(number, 0.02 * W, H * 0.5); g.strokeText(number, 0.98 * W, H * 0.5); g.fillText(number, 0.98 * W, H * 0.5);
+  // the back number straddles the seam: one copy centred on each edge, half of each shows
+  g.strokeText(number, 0, H * 0.5); g.fillText(number, 0, H * 0.5); g.strokeText(number, W, H * 0.5); g.fillText(number, W, H * 0.5);
   g.font = `700 60px ${FONT}`;
   for (const uc of [0.25, 0.75]) { g.strokeText(number, uc * W, H * 0.58); g.fillText(number, uc * W, H * 0.58); }
   // sponsor stickers on the sides and the chin
@@ -1124,7 +1181,7 @@ export class Rider {
     const seed = [...(spec.id + num)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
     this.seed = seed;
     this.name = opts.name || NAMES[seed % NAMES.length];
-    const design = opts.design ?? (seed >>> 3) % 3;
+    const design = opts.design ?? (seed >>> 3) % 5;
     const mats = riderMaterials(livery, num, this.name, design, opts.visor ?? (seed >>> 6) % VISORS.length);
     this.mats = mats;
     this.style = STYLES[DESIGN_STYLE[spec.design] || 'street'];
