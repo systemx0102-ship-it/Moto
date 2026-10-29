@@ -106,8 +106,8 @@ export class CameraController {
       cam.position.set(0.2, 0.12, 0).applyMatrix4(head.matrixWorld);
       const f = this._f || (this._f = new THREE.Vector3()), u = this._u || (this._u = new THREE.Vector3());
       f.set(e[0], e[1], e[2]).normalize(); u.set(e[4], e[5], e[6]).normalize();
-      // eyes a little below the head's line: the road ahead with the dash and the gloves
-      this.look.copy(cam.position).addScaledVector(f, 10).addScaledVector(u, -1.6);
+      // eyes ~16° below the head's line: the road ahead with the dash, the bars and the arms
+      this.look.copy(cam.position).addScaledVector(f, 10).addScaledVector(u, -2.9);
       // roll: the head's up vector against the travel direction's right (-cos yaw, 0, sin yaw)
       roll = Math.atan2(-u.x * Math.cos(this.yaw) + u.z * Math.sin(this.yaw), u.y);
       fovT += 16;
