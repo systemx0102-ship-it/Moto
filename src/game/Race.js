@@ -524,6 +524,8 @@ export class Race {
       for (const e of p.events) {
         switch (e.type) {
           case 'wall':
+            // the rider's body takes the knock (pushed away from the barrier)
+            b.jolt = Math.max(b.jolt || 0, clamp(e.impact / 14, 0, 1)); b.joltSide = e.side || 1;
             if (near) { this.effects.sparks(e.x, e.y, e.z, Math.min(40, 6 + e.impact * 2), 0, 0, 4 + e.impact * 0.5); }
             if (b.isPlayer) {
               this.cam.addShake(clamp(e.impact / 12, 0.2, 1)); Audio.impact(clamp(e.impact / 14, 0.2, 1.2)); Input.rumble(0.8, 0.4, 160);
@@ -534,10 +536,14 @@ export class Race {
             if (near && Math.random() < 0.4) this.effects.sparks(e.x, e.y, e.z, 2, 0, 0, 5);
             if (b.isPlayer) this._scrape = 1;
             break;
-          case 'bump':
+          case 'bump': {
+            // which side the other machine hit us from, in this bike's frame (right = (-cos h, sin h))
+            const o = e.other && e.other.phys;
+            if (o) { b.jolt = Math.max(b.jolt || 0, clamp(e.impact / 10, 0, 1)); b.joltSide = Math.sign(-(o.x - p.x) * Math.cos(p.h) + (o.z - p.z) * Math.sin(p.h)) || 1; }
             if (near) this.effects.sparks(e.x, e.y, e.z, 6, 0, 0, 5);
             if (b.isPlayer) { this.cam.addShake(clamp(e.impact / 10, 0.1, 0.8)); Audio.impact(clamp(e.impact / 12, 0.15, 0.9)); Input.rumble(0.6, 0.6, 120); }
             break;
+          }
           case 'crash':
             if (near) this.effects.explosionDust(e.x, e.y, e.z, DUST[this.track.def.runoffMat] || DUST.gravel);
             if (b.isPlayer) {
@@ -590,6 +596,7 @@ export class Race {
       v.place = v.finished ? this.finishOrder.indexOf(b) + 1 : 0;
       v.lookBack = b.isPlayer && this.phase === 'race' && !!Input.state.lookBack;
       v.wet = !!this.env.wet;
+      v.jolt = b.jolt || 0; v.joltSide = b.joltSide || 0; b.jolt = 0;
       // a rival side by side (in this bike's frame: x forward, right = (-cos h, sin h))
       v.rival = 0;
       if (!p.crashed && p.v > 12) {
