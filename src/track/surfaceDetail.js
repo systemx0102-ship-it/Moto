@@ -233,3 +233,62 @@ export const DETAIL_KIND = {
   grass: 'grass', wildGrass: 'grass', dryGrass: 'grass', forest: 'grass', sand: 'grain', beachSand: 'grain',
   snow: 'snow', dirt: 'grain', gravel: 'grain', rock: 'grain', stone: 'grain', mossStone: 'grain', asphaltDark: 'asphalt', volcanic: 'grain',
 };
+
+// Racing kerb: red/white painted concrete blocks (u across: 0 = track side, v along: one
+// red + one white block per tile) with transverse ridges, paint worn off where tyres run,
+// rubber streaks, dirt toward the grass and chipped edges. Returns map/normal/roughness.
+export function kerbTextures(colA = '#c3161b', colB = '#ededea', seed = 4) {
+  return cached(`kerb:${colA}:${colB}:${seed}`, () => {
+    const W = 256, Hh = 512;
+    const r = rng(seed);
+    const wearN = makeTileFbm(seed + 1, 8, 5), rubN = makeTileFbm(seed + 2, 4, 4), fine = makeTileFbm(seed + 3, 32, 3);
+    const ca = [parseInt(colA.slice(1, 3), 16), parseInt(colA.slice(3, 5), 16), parseInt(colA.slice(5, 7), 16)];
+    const cb = [parseInt(colB.slice(1, 3), 16), parseInt(colB.slice(3, 5), 16), parseInt(colB.slice(5, 7), 16)];
+    const H = new Float32Array(W * Hh);
+    const { c, g } = makeCanvas(W, Hh);
+    const img = g.createImageData(W, Hh);
+    const rc = makeCanvas(W, Hh), rimg = rc.g.createImageData(W, Hh);
+    for (let y = 0; y < Hh; y++) {
+      for (let x = 0; x < W; x++) {
+        const u = x / W, v = y / Hh;
+        const block = v < 0.5 ? ca : cb;
+        // seam between blocks
+        const seam = Math.min(Math.abs(v - 0.5), v, 1 - v) * Hh < 1.5;
+        // transverse ridges on the inner 80 %
+        const ridge = u < 0.8 ? Math.pow(Math.abs(Math.sin(v * Math.PI * 24)), 0.6) : 0.4;
+        const n = fine(u, v);
+        // paint wear: strongest on the track side and on ridge tops
+        const wear = wearN(u * 1.3, v) + (1 - u) * 0.18 + ridge * 0.06 - 0.5;
+        const bare = wear > 0.12 ? 1 : wear > 0.06 ? (wear - 0.06) / 0.06 : 0;
+        const conc = 120 + n * 30;
+        let rr = block[0] * (0.92 + n * 0.12), gg = block[1] * (0.92 + n * 0.12), bb = block[2] * (0.92 + n * 0.12);
+        rr = rr * (1 - bare) + conc * bare; gg = gg * (1 - bare) + (conc - 2) * bare; bb = bb * (1 - bare) + (conc - 6) * bare;
+        // rubber streaks where wheels ride over the kerb
+        const rub = Math.max(0, rubN(u * 0.8, v * 1.0) - 0.45) * 2.2 * Math.exp(-(((u - 0.3) / 0.25) ** 2));
+        const rk = 1 - Math.min(0.85, rub);
+        rr *= rk; gg *= rk; bb *= rk;
+        // dirt and grass stains on the outer edge
+        const dirt = Math.max(0, (u - 0.78) / 0.22) * (0.5 + 0.5 * fine(u * 2, v * 2));
+        rr = rr * (1 - dirt * 0.6) + 92 * dirt * 0.6; gg = gg * (1 - dirt * 0.6) + 86 * dirt * 0.6; bb = bb * (1 - dirt * 0.6) + 60 * dirt * 0.6;
+        if (seam) { rr *= 0.45; gg *= 0.45; bb *= 0.45; }
+        const i = (y * W + x) * 4;
+        img.data[i] = clamp(rr, 0, 255); img.data[i + 1] = clamp(gg, 0, 255); img.data[i + 2] = clamp(bb, 0, 255); img.data[i + 3] = 255;
+        const rough = (bare > 0.5 ? 0.86 : 0.5 + n * 0.08) * (1 - rub * 0.25) + dirt * 0.2;
+        rimg.data[i] = rimg.data[i + 1] = rimg.data[i + 2] = clamp(rough, 0, 1) * 255; rimg.data[i + 3] = 255;
+        H[y * W + x] = ridge * 0.6 + n * 0.12 - bare * 0.05 - (seam ? 0.3 : 0);
+      }
+    }
+    // a few chips knocked out of the paint
+    g.putImageData(img, 0, 0);
+    for (let k = 0; k < 40; k++) {
+      g.fillStyle = `rgba(${130 + r() * 30},${128 + r() * 30},${122 + r() * 30},${0.7 + r() * 0.3})`;
+      g.beginPath(); g.arc(r() * W * 0.7, r() * Hh, 1 + r() * 3, 0, Math.PI * 2); g.fill();
+    }
+    rc.g.putImageData(rimg, 0, 0);
+    return {
+      map: toTexture(c),
+      normalMap: toTexture(heightToNormal(H, W, Hh, 4), { srgb: false }),
+      roughnessMap: toTexture(rc.c, { srgb: false }),
+    };
+  });
+}

@@ -7,7 +7,7 @@ import {
   makeCanvas, toTexture, checkerTexture,
 } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
-import { asphaltDetail, rubberTexture, addSurfaceDetail, groundDetail, DETAIL_KIND } from './surfaceDetail.js';
+import { asphaltDetail, rubberTexture, addSurfaceDetail, groundDetail, DETAIL_KIND, kerbTextures } from './surfaceDetail.js';
 
 const CELL = 20;
 
@@ -280,7 +280,7 @@ export class Track {
     if (apron) {
       const at = groundTextures('asphaltDark', 21);
       const apMat = new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, roughnessMap: at.roughnessMap, roughness: 1 });
-      apMat.color.setRGB(1.9, 1.86, 1.82);
+      apMat.color.setRGB(2.55, 2.42, 2.2);
       addSurfaceDetail(apMat, { ...asphaltDetail(17), world: true, scale: [1 / 1.1, 1 / 1.1], albedo: 1, normal: 1.1, rough: 1, fade: [60, 180], key: 'apron' });
       for (const side of [-1, 1]) {
         const a = side * this.halfW, b = side * (this.halfW + apron);
@@ -305,14 +305,18 @@ export class Track {
       }
     }
     // curbs
-    const ct = curbTexture();
-    const curbMat = new THREE.MeshStandardMaterial({ map: ct, roughness: 0.6 });
+    const kt = kerbTextures();
+    const curbMat = new THREE.MeshStandardMaterial({ map: kt.map, normalMap: kt.normalMap, roughnessMap: kt.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.8, 0.8) });
     for (const run of this.curbRuns) {
       const side = run.side;
       const a = side * (this.halfW - 0.2), b = side * (this.halfW + 1.2);
+      const len = run.i1 - run.i0, N = this.N;
       const geo = this.ribbon(side < 0 ? [b, a] : [a, b], 6, (i, d) => {
         const u = (Math.abs(d) - (this.halfW - 0.2)) / 1.4;
-        return Math.sin(clamp(u, 0, 1) * Math.PI) * 0.045 + 0.004;
+        // ramp the kerb in and out over ~3 m instead of starting with a vertical face
+        const rel = (((i - run.i0) % N) + N) % N;
+        const taper = clamp(Math.min(rel, len - rel) * this.ds / 3, 0, 1);
+        return Math.sin(clamp(u, 0, 1) * Math.PI) * 0.045 * taper + 0.004;
       }, (i, u) => [side < 0 ? 1 - u : u, (i * this.ds) / 2.4], [run.i0, run.i1]);
       const m = new THREE.Mesh(geo, curbMat);
       m.receiveShadow = true;

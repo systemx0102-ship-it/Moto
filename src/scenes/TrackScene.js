@@ -65,6 +65,7 @@ export class TrackScene {
     this.env.update(dt, camera, focus);
     this.trackside?.update(dt);
     if (this.waterNormal) { this.waterNormal.offset.x += dt * 0.004; this.waterNormal.offset.y += dt * 0.0025; }
+    if (this.terrain.waterU) this.terrain.waterU.uWTime.value += dt;
   }
 
   dispose() {

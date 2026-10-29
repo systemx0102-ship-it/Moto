@@ -279,11 +279,66 @@ export class Terrain {
 
   _water() {
     const w = this.track.theme.water;
-    const geo = new THREE.PlaneGeometry(this.size * 1.6, this.size * 1.6, 1, 1);
+    const size = this.size * 1.6;
+    const geo = new THREE.PlaneGeometry(size, size, 1, 1);
     geo.rotateX(-Math.PI / 2);
+    // water depth over the plane from the terrain: shallow turquoise over sand, deep blue
+    // offshore, foam where the swell breaks on the shore
+    const R = 256, data = new Uint8Array(R * R * 4);
+    const x0 = this.cx - size / 2, z0 = this.cz - size / 2;
+    for (let j = 0; j < R; j++) {
+      for (let i = 0; i < R; i++) {
+        const x = x0 + (i + 0.5) / R * size, z = z0 + (j + 0.5) / R * size;
+        const inside = Math.abs(x - this.cx) < this.size / 2 && Math.abs(z - this.cz) < this.size / 2;
+        const h = inside ? this.heightAt(x, z) : this.skirtY;
+        const depth = clamp((w.level - h) / 24, 0, 1);
+        const o = (j * R + i) * 4;
+        data[o] = depth * 255; data[o + 1] = data[o + 2] = 0; data[o + 3] = 255;
+      }
+    }
+    const depthTex = new THREE.DataTexture(data, R, R, THREE.RGBAFormat);
+    depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter;
+    depthTex.needsUpdate = true;
     this.waterMat = new THREE.MeshPhysicalMaterial({
-      color: w.color, roughness: 0.08, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.4,
+      color: w.color, roughness: 0.05, metalness: 0, ior: 1.333, envMapIntensity: 1.1, specularIntensity: 1,
     });
+    const u = {
+      tWDepth: { value: depthTex }, uWRect: { value: new THREE.Vector3(x0, z0, 1 / size) },
+      uWShallow: { value: new THREE.Color(0x1f8a8a) }, uWDeep: { value: new THREE.Color(w.color) },
+      uWFoam: { value: new THREE.Color(0xe8eef0) }, uWTime: { value: 0 },
+    };
+    this.waterU = u;
+    this.waterMat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, u);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWW = (modelMatrix * vec4(position, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vWW; uniform sampler2D tWDepth; uniform vec3 uWRect, uWShallow, uWDeep, uWFoam; uniform float uWTime;
+          float wHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float wNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(wHash(i), wHash(i + vec2(1, 0)), f.x), mix(wHash(i + vec2(0, 1)), wHash(i + vec2(1, 1)), f.x), f.y); }`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          float wDepth = texture2D(tWDepth, (vWW.xz - uWRect.xy) * uWRect.z).r * 24.0;
+          vec3 wBody = mix(uWShallow, uWDeep, smoothstep(0.4, 10.0, wDepth));
+          // breaking swell: bands that roll in toward the shore, broken up by noise
+          float wn = wNoise(vWW.xz * 0.35 + uWTime * 0.05) * 0.6 + wNoise(vWW.xz * 1.7 - uWTime * 0.12) * 0.4;
+          float roll = sin(wDepth * 3.2 - uWTime * 1.1 + wn * 3.0) * 0.5 + 0.5;
+          float wFoam = smoothstep(1.6, 0.15, wDepth) * smoothstep(0.35, 0.9, roll * 0.55 + wn * 0.6);
+          wFoam = max(wFoam, smoothstep(0.35, 0.0, wDepth) * (0.55 + 0.45 * wn));
+          diffuseColor.rgb = mix(wBody, uWFoam, clamp(wFoam, 0.0, 1.0));`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = mix(roughnessFactor, 0.75, clamp(wFoam, 0.0, 1.0));`)
+        .replace('mapN.xy *= normalScale;', `mapN.xy *= normalScale;
+          {
+            // second, finer ripple layer drifting the other way
+            vec3 n2 = texture2D(normalMap, vNormalMapUv * 3.3 + vec2(uWTime * -0.011, uWTime * 0.007)).xyz * 2.0 - 1.0;
+            n2.xy *= normalScale * 0.7;
+            mapN = normalize(vec3(mapN.xy + n2.xy, mapN.z * n2.z));
+          }`);
+    };
+    this.waterMat.customProgramCacheKey = () => 'water2';
     const m = new THREE.Mesh(geo, this.waterMat);
     m.position.set(this.cx, w.level, this.cz);
     m.receiveShadow = false;
