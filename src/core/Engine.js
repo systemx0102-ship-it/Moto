@@ -234,7 +234,7 @@ export class Engine {
       this.gtao.updateGtaoMaterial({ radius: 0.2, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: q.msaa ? 16 : 12, distanceFallOff: 1, screenSpaceRadius: false });
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
       this.gtao.blendIntensity = 1;
-      this.gtao.enabled = !!this.scene?.userData?.ao;
+      this.gtao.enabled = !!this.scene?.userData?.ao || (tier >= 3 && !!this.scene?.userData?.atmo);
       composer.addPass(this.gtao);
       // aerial perspective / height haze from the depth buffer (track scenes with an atmosphere)
       this.atmoPass = new AtmospherePass();
@@ -278,7 +278,14 @@ export class Engine {
     this.scene = scene;
     this.camera = camera;
     if (this.renderPass) { this.renderPass.scene = scene; this.renderPass.camera = camera; }
-    if (this.gtao) { this.gtao.scene = scene; this.gtao.camera = camera; this.gtao.enabled = !!scene.userData.ao; }
+    if (this.gtao) {
+      this.gtao.scene = scene; this.gtao.camera = camera;
+      // garage: tight contact AO; race on ULTRA: wider occlusion round barriers, stands and bikes
+      const raceAO = this.tier >= 3 && !!scene.userData.atmo;
+      this.gtao.enabled = !!scene.userData.ao || raceAO;
+      if (raceAO) this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 2.5, scale: 1.0, distanceFallOff: 1, screenSpaceRadius: false });
+      else this.gtao.updateGtaoMaterial({ radius: 0.2, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, distanceFallOff: 1, screenSpaceRadius: false });
+    }
     this._applyAtmo();
     if (this.finalPass) this.finalPass.uniforms.uShimmer.value = 0;
     this.resize();

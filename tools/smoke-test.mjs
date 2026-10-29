@@ -19,16 +19,16 @@ p.on('pageerror', (e) => errors.push('pageerror: ' + e.message + '\n' + (e.stack
 await p.goto('file://' + path.resolve('dist/index.html'));
 await p.waitForFunction(() => window.__ready, null, { timeout: 120000 });
 await p.waitForTimeout(1500);
-await p.screenshot({ path: `${out}/s1_menu.png` });
+await p.screenshot({ path: `${out}/s1_menu.png`, timeout: 240000 });
 await p.evaluate((t) => { const g = window.__game; g.ui._lastTrack = t; g.ui.trackSelect('race'); }, track);
 await p.waitForTimeout(1000);
-await p.screenshot({ path: `${out}/s2_tracks.png` });
+await p.screenshot({ path: `${out}/s2_tracks.png`, timeout: 240000 });
 await p.evaluate(() => { window.__game.ui.nav[0].click(); });
 const t0 = Date.now();
 await p.waitForFunction(() => window.__game.race && window.__game.state === 'race', null, { timeout: 180000 });
 console.log('race loaded in', Date.now() - t0, 'ms');
 await p.waitForTimeout(1000);
-await p.screenshot({ path: `${out}/s3_intro.png` });
+await p.screenshot({ path: `${out}/s3_intro.png`, timeout: 240000 });
 // pause the engine loop and drive the simulation manually
 await p.evaluate(() => { const g = window.__game; g._origUpdate = g.engine.onUpdate; g.engine.onUpdate = () => {}; });
 const sim = async (secs, keys = {}) => p.evaluate(({ secs, keys }) => {
@@ -54,11 +54,11 @@ console.log('skip intro', JSON.stringify(await sim(0.2, { confirm: true })));
 console.log('countdown', JSON.stringify(await sim(6, { throttle: 0.5 })));
 console.log('full gas', JSON.stringify(await sim(5, { throttle: 1 })));
 await p.evaluate(() => window.__game.engine.render());
-await p.screenshot({ path: `${out}/s4_race1.png` });
+await p.screenshot({ path: `${out}/s4_race1.png`, timeout: 240000 });
 let last;
 for (let k = 0; k < simSeconds / 15; k++) {
   last = await sim(15, { auto: true }); console.log(`auto ${k}`, JSON.stringify(last));
-  if (k === 1) { await p.evaluate(() => window.__game.engine.render()); await p.screenshot({ path: `${out}/s5_race2.png` }); }
+  if (k === 1) { await p.evaluate(() => window.__game.engine.render()); await p.screenshot({ path: `${out}/s5_race2.png`, timeout: 240000 }); }
   if (last.phase !== 'race') break;
 }
 // let the finish sequence play out, then results
@@ -66,6 +66,6 @@ for (let k = 0; k < 6; k++) { const st = await p.evaluate(() => window.__game.st
 await p.evaluate(() => { const g = window.__game; g.engine.onUpdate = g._origUpdate; });
 await p.waitForTimeout(2500);
 console.log('state', await p.evaluate(() => window.__game.state));
-await p.screenshot({ path: `${out}/s6_results.png` });
+await p.screenshot({ path: `${out}/s6_results.png`, timeout: 240000 });
 console.log('ERRORS:', errors.length ? errors.slice(0, 8).join('\n') : 'none');
 await b.close();

@@ -651,7 +651,8 @@ export class SpeedFX {
     if (!vis) return;
     this._travel = (this._travel + p.v * dt) % 50000;
     u.uTravel.value = this._travel;
-    u.uAlpha.value = this._sI * this.sBase;
+    // realistic look: only a faint hint of wind lines, full strength under nitro
+    u.uAlpha.value = this._sI * this.sBase * (0.3 + 0.7 * (this._nt || 0));
     u.uLen.value = clamp(p.v * 0.05, 0.6, 5.5) * (p.nitroOn ? 1.45 : 1) * this.sLen;
     u.uPix.value = this._pix;
     u.uAspect.value = camera.aspect;

@@ -332,11 +332,12 @@ function sportPanels(ctx, P) {
   // ---- upper cowl from cross-sections: flank below a sharp shoulder crease, top surface
   // above it running to the nose centreline and, behind the screen line, to the screen base
   const lz = (z) => z * k;
+  // modern superbike nose: a short beak over a broad face (lights either side of the intake)
   const cowlSecs = (P.cowl ?? [
-    [0.984, [[0, 0.79], [0, 0.803], [0, 0.816], [0, 0.824], [0, 0.828]]],
-    [0.96, [[0.042, 0.772], [0.056, 0.792], [0.058, 0.82], [0.036, 0.842], [0, 0.85]]],
-    [0.92, [[0.088, 0.75], [0.11, 0.778], [0.113, 0.826], [0.076, 0.86], [0, 0.872]]],
-    [0.86, [[0.132, 0.728], [0.154, 0.762], [0.157, 0.83], [0.108, 0.878], [0, 0.894]]],
+    [0.972, [[0, 0.786], [0, 0.8], [0, 0.818], [0, 0.83], [0, 0.836]]],
+    [0.955, [[0.062, 0.768], [0.08, 0.79], [0.082, 0.824], [0.05, 0.848], [0, 0.858]]],
+    [0.92, [[0.112, 0.748], [0.134, 0.776], [0.137, 0.83], [0.092, 0.866], [0, 0.878]]],
+    [0.86, [[0.15, 0.728], [0.17, 0.762], [0.172, 0.834], [0.118, 0.882], [0, 0.896]]],
     [sb[0], [[0.164, 0.712], [0.184, 0.752], [0.188, 0.834], [0.132, 0.892], [0, sb[1]]]],
     [0.73, [[0.188, 0.698], [0.205, 0.745], [0.206, 0.83], [0.16, 0.902], [0.115, 0.916]]],
     [0.66, [[0.2, 0.693], [0.214, 0.745], [0.216, 0.842], [0.18, 0.913], [0.152, 0.926]]],
@@ -354,13 +355,14 @@ function sportPanels(ctx, P) {
   const cowlTop = W([[0.586, 0.933, 0.167], [0.66, 0.926, 0.152], [0.73, 0.916, 0.115], [0.775, 0.909, 0.062], [sb[0], sb[1], 0]]);
   // headlights: dark recessed eyes under the shoulder crease, twin projectors, LED brow
   if (P.eyes !== false) {
-    const eyeQ = [[0.55, 0.42], [0.9, 0.5], [0.93, 0.96], [0.56, 0.96]];
+    const eyeQ = [[0.5, 0.36], [0.9, 0.44], [0.94, 0.97], [0.5, 0.97]];
     both(shell(onPanel(flankRows, eyeQ, -0.0015, [0.5, 0.1, 1], 14, 6), { thick: 0.003, out: [0.5, 0.1, 1] }), M.gloss(0x0a0a0b));
     both(shell(onPanel(flankRows, [[0.56, 0.86], [0.92, 0.88], [0.93, 0.95], [0.57, 0.95]], 0.0015, [0.5, 0.1, 1], 14, 2), { thick: 0.0015, out: [0.5, 0.1, 1] }), mats.head);
-    for (const [u0, u1] of [[0.62, 0.71], [0.74, 0.83]]) {
-      // projector: chrome reflector ring with the lit lens inside
-      both(shell(onPanel(flankRows, [[u0, 0.5], [u1, 0.52], [u1, 0.8], [u0, 0.78]], 0.0004, [0.5, 0.1, 1], 8, 6), { thick: 0.002, out: [0.5, 0.1, 1] }), M.chrome());
-      both(shell(onPanel(flankRows, [[u0 + 0.015, 0.55], [u1 - 0.015, 0.565], [u1 - 0.015, 0.75], [u0 + 0.015, 0.735]], 0.0012, [0.5, 0.1, 1], 8, 6), { thick: 0.0015, out: [0.5, 0.1, 1] }), mats.head);
+    for (const [u0, u1] of [[0.56, 0.7], [0.73, 0.88]]) {
+      // LED projector unit: chrome reflector bowl, dark inner bezel, lit lens
+      both(shell(onPanel(flankRows, [[u0, 0.42], [u1, 0.46], [u1, 0.88], [u0, 0.84]], 0.0004, [0.5, 0.1, 1], 8, 6), { thick: 0.002, out: [0.5, 0.1, 1] }), M.chrome());
+      both(shell(onPanel(flankRows, [[u0 + 0.012, 0.47], [u1 - 0.012, 0.5], [u1 - 0.012, 0.82], [u0 + 0.012, 0.79]], 0.0008, [0.5, 0.1, 1], 8, 6), { thick: 0.0015, out: [0.5, 0.1, 1] }), M.gloss(0x111316));
+      both(shell(onPanel(flankRows, [[u0 + 0.03, 0.53], [u1 - 0.03, 0.56], [u1 - 0.03, 0.76], [u0 + 0.03, 0.73]], 0.0014, [0.5, 0.1, 1], 8, 6), { thick: 0.0015, out: [0.5, 0.1, 1] }), mats.head);
     }
     both(shell(onPanel(flankRows, eyeQ, 0.003, [0.5, 0.1, 1], 14, 6), { thick: 0.0015, out: [0.5, 0.1, 1] }), M.lens());
     ctx.headlights.push({ pos: [0.9, 0.79, 0], group: 'chassis', r: 0.05 });
@@ -529,7 +531,7 @@ function superbike(ctx) {
   for (const s of [-1, 1]) mirror(ctx, [0.62, 0.95, s * 0.2], s, { group: 'chassis', reach: 0.3, up: 0.06, dx: -0.03, signal: true });
   footpegs(ctx, -0.2, 0.4, 0.17, { plates: true });
   shock(ctx, [-0.08, 0.62, 0], [-0.2, 0.36, 0], { r: 0.026, springColor: 0xe2b521 });
-  frontFender(ctx, { from: 1.8, len: 1.7, w: 0.13, mat: mats.paintSolid });
+  frontFender(ctx, { from: 1.85, len: 1.5, w: 0.112, gap: 0.014, mat: mats.paintSolid });
   rearFender(ctx, { from: 1.9, len: 1.4, mat: M.carbon(), w: 0.2 });
   details(ctx, { damper: true, plate: { pos: [-0.86, 0.76, 0], tilt: 0.3 } });
 }
@@ -566,7 +568,7 @@ function gp(ctx) {
   dash(ctx, [0.52, 0.96, 0], 0.11, 0.06, { tilt: -1.1 });
   footpegs(ctx, -0.22, 0.42, 0.16, { plates: true });
   shock(ctx, [-0.06, 0.62, 0], [-0.18, 0.36, 0], { r: 0.025, springColor: 0xd8d8d8 });
-  frontFender(ctx, { from: 1.8, len: 1.6, w: 0.13, mat: M.carbon() });
+  frontFender(ctx, { from: 1.85, len: 1.45, w: 0.11, gap: 0.014, mat: M.carbon() });
   ctx.headlights.push({ pos: [0.88, 0.84, 0], group: 'chassis', r: 0.0, none: true });
   details(ctx, { damper: true, kickstand: false });
 }
@@ -1491,7 +1493,7 @@ function sporttourer(ctx) {
   // number-plate hanger under the tail
   const hanger = box(0.31, 0.012, 0.15, 0.006); place(hanger, { p: [-0.92, 0.74, 0], r: [0, 0, 0.876] }); A.add('chassis', hanger, M.plastic(0x101012));
   rearFender(ctx, { from: 1.9, len: 1.4, mat: M.black(), w: 0.21 });
-  frontFender(ctx, { from: 1.75, len: 1.75, w: 0.13, mat: mats.paintSolid });
+  frontFender(ctx, { from: 1.8, len: 1.55, w: 0.118, gap: 0.016, mat: mats.paintSolid });
   // cockpit
   handlebar(ctx, { type: 'wide', rise: 0.07, back: 0.12, half: 0.33 });
   dash(ctx, [0.56, 1.0, 0], 0.15, 0.09, { tilt: -1.0 });
