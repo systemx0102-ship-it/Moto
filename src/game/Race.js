@@ -560,7 +560,8 @@ export class Race {
 
   _syncModels(dt) {
     const v = this._vis, tr = this.track, ks = tr.c.kappaSmooth;
-    const grid = this.phase === 'intro' || this.phase === 'countdown';
+    // ready pose for the lights; during the presentation the riders fidget at a standstill
+    const grid = this.phase === 'countdown';
     for (const b of this.bikes) {
       const p = b.phys, m = b.model;
       m.root.position.set(p.x, p.y + (p.curbY || 0), p.z);

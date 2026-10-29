@@ -591,6 +591,9 @@ function uvTo(g, region, u, v) {
   return g;
 }
 
+// vertex colours the gear material swaps for the team's colours (main, second, accent)
+const TEAM = { main: 0xff00ff, second: 0x00ffff, accent: 0xffff00 };
+
 // Gauntlet glove round the grip. Returns [geometry, colour, bone] in that bone's space: the
 // hand body, cuff, thumb, ring + little fingers on 'hand'; index + middle (over the lever)
 // on 'fing', authored relative to the knuckle so the bone can curl them.
@@ -601,8 +604,8 @@ function gloveGeometry(s) {
   // gauntlet cuff over the forearm, flared, with the velcro strap and a TPU wrist guard
   const cuff = segment(0.09, [[0, 0.043, 0.043, 0.048, 0, 0, 2.3], [0.55, 0.036, 0.036, 0.042, 0, 0, 2.2], [1, 0.033, 0.033, 0.039, 0, 0, 2.2]], { radial: 18 });
   cuff.translate(0, -0.09, 0);
-  P.push([cuff, black, 'hand']);
-  P.push([segment(0.02, [[0, 0.039, 0.039, 0.045, 0, 0, 2.3], [1, 0.039, 0.039, 0.045, 0, 0, 2.3]], { radial: 18 }).translate(0, -0.052, 0), 0x2a2b2e, 'hand']);
+  P.push([cuff, TEAM.main, 'hand']);
+  P.push([segment(0.02, [[0, 0.039, 0.039, 0.045, 0, 0, 2.3], [1, 0.039, 0.039, 0.045, 0, 0, 2.3]], { radial: 18 }).translate(0, -0.052, 0), TEAM.second, 'hand']);
   P.push([rbox(0.01, 0.05, 0.03, [-0.04, -0.07, s * 0.02], [0, 0, 0.05], 0.4), carbon, 'hand']);
   // hand body: wrist -> knuckles, riding over the grip (back of the hand up = -X)
   const hb = segment(0.085, [[0, 0.031, 0.031, 0.041, 0.0, 0, 2.3], [0.35, 0.027, 0.025, 0.047, -0.01, 0, 2.6], [0.75, 0.019, 0.021, 0.048, -0.026, 0, 2.8], [1, 0.017, 0.019, 0.046, -0.033, 0, 2.8]], { radial: 18, ant: -1 });
@@ -610,8 +613,8 @@ function gloveGeometry(s) {
   // palm slider + carbon knuckle shell (three ridges) and the back-of-hand panel
   P.push([rbox(0.008, 0.034, 0.05, [0.02, 0.03, 0], [0, 0, -0.1], 0.4), palm, 'hand']);
   P.push([rbox(0.013, 0.031, 0.084, [-0.051, 0.072, 0], [0, 0, -0.25], 0.35), carbon, 'hand']);
-  for (let k = -1; k <= 1; k++) P.push([rbox(0.004, 0.026, 0.012, [-0.058, 0.073, k * 0.024], [0, 0, -0.25], 0.4), accent, 'hand']);
-  P.push([rbox(0.008, 0.045, 0.06, [-0.046, 0.035, 0], [0, 0, -0.18], 0.4), 0x1f2023, 'hand']);
+  for (let k = -1; k <= 1; k++) P.push([rbox(0.004, 0.026, 0.012, [-0.058, 0.073, k * 0.024], [0, 0, -0.25], 0.4), TEAM.accent, 'hand']);
+  P.push([rbox(0.008, 0.045, 0.06, [-0.046, 0.035, 0], [0, 0, -0.18], 0.4), TEAM.second, 'hand']);
   // fingers: index + middle reach forward over the lever, ring + little wrap the grip
   const K = KNUCKLE;
   for (let k = 0; k < 4; k++) {
@@ -661,7 +664,7 @@ function bootGeometry(s) {
   // top rim (rubber band) and shin plate
   P.push([segment(B.shin, [[0.495, 0.054, 0.066, 0.056, 0, 0, 2.4], [0.52, 0.054, 0.066, 0.056, 0, 0, 2.4]], { radial: 24, ant: -1 }), 'gear', 'shin', 0x151517]);
   const plate = rbox(0.012, 0.17, 0.06, [-0.052, B.shin * 0.73, 0], [0, 0, 0.04], 0.35);
-  P.push([plate, 'gear', 'shin', 0x2a2b2e]);
+  P.push([plate, 'gear', 'shin', TEAM.second]);
   const brace = rbox(0.014, 0.14, 0.05, [0.066, B.shin * 0.72, 0], [0, 0, -0.06], 0.35);
   P.push([brace, 'gear', 'shin', 0x1d1e21]);
   // buckles on the outer side
@@ -670,7 +673,7 @@ function bootGeometry(s) {
     P.push([rbox(0.03, 0.012, 0.006, [0.004, y, s * 0.057], [0, 0, 0.12], 0.3), 'gear', 'shin', 0x9ea2a8]);
   }
   // ankle brace pivot disc on the outer side
-  P.push([new THREE.CylinderGeometry(0.02, 0.022, 0.006, 18).rotateX(Math.PI / 2).translate(0.006, B.shin * 0.99, s * 0.052), 'gear', 'shin', 0x26272a]);
+  P.push([new THREE.CylinderGeometry(0.02, 0.022, 0.006, 18).rotateX(Math.PI / 2).translate(0.006, B.shin * 0.99, s * 0.052), 'gear', 'shin', TEAM.accent]);
   // foot shell: heel cup -> instep -> toe box (x lateral, z up)
   const foot = segment(0.285, [
     [0, 0.026, 0.026, 0.026, 0, -0.01, 2.2], [0.08, 0.056, 0.058, 0.038, 0, -0.012, 2.6], [0.3, 0.052, 0.056, 0.042, 0, -0.014, 2.8],
@@ -991,6 +994,35 @@ function helmetColorMap(main, second, accent, number, design) {
   return toTexture(c, { wrap: true });
 }
 
+// rain soaks the leathers: darker, glossier; wet gloves and boots shine
+function setWet(m, wet) {
+  m.suit.color.setScalar(wet ? 0.78 : 1);
+  m.suit.roughness = wet ? 0.4 : 0.66;
+  m.suit.clearcoat = wet ? 0.6 : 0.14;
+  m.suit.clearcoatRoughness = wet ? 0.14 : 0.55;
+  m.suit.sheen = wet ? 0.2 : 0.55;
+  m.gear.roughness = wet ? 0.32 : 0.5;
+  m.gear.clearcoat = wet ? 0.55 : 0.2;
+  m.boot.roughness = wet ? 0.22 : 0.36;
+}
+
+function teamGear(mat, main, second, accent) {
+  const u = { uTeamMain: { value: new THREE.Color(main) }, uTeamSecond: { value: new THREE.Color(second) }, uTeamAccent: { value: new THREE.Color(accent) } };
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.fragmentShader = 'uniform vec3 uTeamMain;\nuniform vec3 uTeamSecond;\nuniform vec3 uTeamAccent;\n' + sh.fragmentShader.replace('#include <color_fragment>', `
+      #if defined( USE_COLOR )
+        vec3 vcT = vColor.rgb;
+        if ( vcT.g < 0.02 && vcT.r > 0.98 && vcT.b > 0.98 ) vcT = uTeamMain;
+        else if ( vcT.r < 0.02 && vcT.g > 0.98 && vcT.b > 0.98 ) vcT = uTeamSecond;
+        else if ( vcT.b < 0.02 && vcT.r > 0.98 && vcT.g > 0.98 ) vcT = uTeamAccent;
+        diffuseColor.rgb *= vcT;
+      #endif`);
+  };
+  mat.customProgramCacheKey = () => 'rider-team-gear';
+  return mat;
+}
+
 // visor tints: dark smoke, blue iridium, gold iridium, silver mirror
 const VISORS = [
   { color: 0x0b0d11, metalness: 0.35, roughness: 0.04, iridescence: 0 },
@@ -1014,8 +1046,9 @@ function riderMaterials(livery, number, name, design, visor = 1) {
       map: suitColorMap(main, second, accent, number, name, design), normalMap: NR.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), roughnessMap: NR.roughnessMap,
       roughness: 0.66, metalness: 0, clearcoat: 0.14, clearcoatRoughness: 0.55, sheen: 0.55, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x6a6a6a),
     }),
-    // gloves, armour plates, sliders, soles, helmet trims: vertex-coloured, leather grain
-    gear: new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05, normalMap: rep(L.normalMap, 6), normalScale: new THREE.Vector2(0.3, 0.3), clearcoat: 0.2, clearcoatRoughness: 0.5 }),
+    // gloves, armour plates, sliders, soles, helmet trims: vertex-coloured, leather grain;
+    // the TEAM placeholder colours become the livery's
+    gear: teamGear(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05, normalMap: rep(L.normalMap, 6), normalScale: new THREE.Vector2(0.3, 0.3), clearcoat: 0.2, clearcoatRoughness: 0.5 }), main, second, accent),
     boot: new THREE.MeshPhysicalMaterial({ color: lum(main) < 0.25 ? 0xe9eaec : lum(main) > 0.7 ? 0x16171a : new THREE.Color(main).getHex(), roughness: 0.36, clearcoat: 0.6, clearcoatRoughness: 0.2, normalMap: rep(grainSet(19, 128, 2).normalMap, 4), normalScale: new THREE.Vector2(0.2, 0.2) }),
     helmet: new THREE.MeshPhysicalMaterial({ map: helmetColorMap(main, second, accent, number, design), roughness: 0.2, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.03 }),
     // visor: smoked or iridium mirror with a thin-film colour shift
@@ -1085,7 +1118,11 @@ export class Rider {
     this.name = opts.name || NAMES[seed % NAMES.length];
     const design = opts.design ?? (seed >>> 3) % 3;
     const mats = riderMaterials(livery, num, this.name, design, opts.visor ?? (seed >>> 6) % VISORS.length);
+    this.mats = mats;
     this.style = STYLES[DESIGN_STYLE[spec.design] || 'street'];
+    // personal riding style: how far each rider hangs off, elbows, knee, tuck, head carriage
+    const pr = (k) => hash(seed * 0.37 + k * 11.3);
+    this.persona = { hang: 0.88 + 0.24 * pr(1), elbow: 0.75 + 0.5 * pr(2), knee: 0.85 + 0.3 * pr(3), tuck: 0.9 + 0.16 * pr(4), head: -0.035 + 0.07 * pr(5), lookIn: 0.7 + 0.6 * pr(6) };
     this.ctx = ctx;
     this.steer = groups.steer;
     this.root = new THREE.Group();
@@ -1124,7 +1161,7 @@ export class Rider {
       hang: 0, tuck: 0, brake: 0, stop: 1, crash: 0, air: 0, grid: 0, stand: 0, look: 0, thr: 0, clutch: 0, brakeF: 0,
       acc: 0, leanVel: 0, compVel: 0, pv: 0, pl: 0, pc: 0, wasAir: false,
       dangle: 0, dangleSide: 1, legOut: 0, legOutSide: 1, gear: undefined, shiftT: 0, shiftDir: 0, clutchT: 0,
-      finT: -1, idleT: 0, nextAct: 2.5 + hash(seed) * 3, act: -1, actT: 0, actN: 0, ov: 0,
+      finT: -1, idleT: 0, nextAct: 0.4 + hash(seed) * 2.2, act: -1, actT: 0, actN: 0, ov: 0,
       launch: 0, glanceT: 0, nextGlance: 8 + hash(seed * 2.3) * 12, glance: 0, glanceSide: 1,
     };
     this.sp = { surge: new Spring(70, 11), heave: new Spring(160, 13), sway: new Spring(55, 9), headP: new Spring(120, 12), headR: new Spring(100, 11) };
@@ -1144,6 +1181,7 @@ export class Rider {
     const brk = clamp(s.brake ?? (s.braking ? 0.85 : 0), 0, 1);
     const crashed = !!s.crashed;
     const pitchB = s.pitch || 0;
+    if (!!s.wet !== this._wet) { this._wet = !!s.wet; setWet(this.mats, this._wet); }
 
     // ---------------- signals
     const comp = (s.compF || 0) + (s.compR || 0);
@@ -1183,10 +1221,11 @@ export class Rider {
     let hangT = clamp((lean + clamp(st.leanVel * 0.16, -0.35, 0.35)) / 0.85, -1, 1);
     hangT = clamp(hangT + ca * 0.45 * smooth(0.1, 0.5, brk) * (1 - clamp(Math.abs(lean) / 0.6, 0, 1)), -1, 1);
     st.hang = sm(st.hang, hangT * (1 - st.stop), 6);
-    const h = st.hang * S.hang, ha = Math.abs(h);
+    const pe = this.persona;
+    const h = st.hang * S.hang * pe.hang, ha = Math.abs(h);
     // tuck behind the screen on the straights (deeper on nitro), not while braking or leaned over
     const tuckT = S.tuck * clamp((speed - 16) / 26, 0, 1) * (thr > 0.4 ? 1 : 0.35) * (1 - 0.85 * smooth(0.05, 0.4, brk)) * (1 - 0.6 * smooth(0.25, 0.8, Math.abs(lean))) + (s.nitro ? 0.15 * S.tuck : 0) + 0.1 * S.tuck * clamp(s.draft || 0, 0, 1);
-    st.tuck = sm(st.tuck, clamp(tuckT, 0, 1.15) * (1 - st.stop), 2.6);
+    st.tuck = sm(st.tuck, clamp(tuckT * pe.tuck, 0, 1.15) * (1 - st.stop), 2.6);
     st.brake = sm(st.brake, brk * smooth(2, 8, speed), 7);
     // MotoGP leg dangle: inside leg off the peg under hard braking into a corner
     const wantDangle = S.dangle > 0 && brk > 0.55 && speed > 20 && Math.abs(lean) < 0.32 && Math.abs(ca) > 0.25 && !crashed;
@@ -1370,8 +1409,8 @@ export class Rider {
     const head = bn[BONE.head];
     head.position.copy(headPos);
     const buffet = speed > 42 ? noise1(t * 9.3 + this.seed) * 0.016 * clamp((speed - 42) / 30, 0, 1) * (1 - tuck * 0.5) : 0;
-    const yaw = clamp(ca * 0.32 * (1 - stop) * (1 - st.look) + headYaw * (1 - st.look) - 1.25 * st.look, -1.4, 1.4);
-    const pitchH = -0.06 - 0.1 * tuck + 0.06 * st.brake + headPitch + headLagP * 0.4 + buffet;
+    const yaw = clamp(ca * 0.32 * pe.lookIn * (1 - stop) * (1 - st.look) + headYaw * (1 - st.look) - 1.25 * st.look, -1.4, 1.4);
+    const pitchH = -0.06 + pe.head - 0.1 * tuck + 0.06 * st.brake + headPitch + headLagP * 0.4 + buffet;
     const rollH = -lean * 0.55 + headRoll + headLagR + buffet * 0.6;
     _x.set(Math.cos(yaw) * Math.cos(pitchH), Math.sin(pitchH), Math.sin(yaw) * Math.cos(pitchH)).normalize();
     _y.copy(UP).applyAxisAngle(_x, rollH);
@@ -1402,7 +1441,7 @@ export class Rider {
         wrist.lerp(_tmp.copy(L.sh).add(_tmp2.set(0.18 + 0.2 * Math.sin(ct * 9 + s0) * fl, 0.15 + 0.25 * Math.cos(ct * 7) * fl, s0 * 0.5)), st.crash);
       }
       // elbows out and down; tucked in on a straight; the inside one drops in a corner
-      _a.set(-0.35 - 0.25 * tuck, -1 - 0.6 * inside + 0.35 * (ha - inside), s0 * (0.55 - 0.25 * tuck + 0.45 * inside));
+      _a.set(-0.35 - 0.25 * tuck, -1 - 0.6 * inside + 0.35 * (ha - inside), s0 * ((0.55 - 0.25 * tuck) * pe.elbow + 0.45 * inside));
       ik(L.sh, wrist, B.upper, B.fore, _a, L.el);
       placeSeg(b('upper'), L.sh, L.el, ZAX);
       placeSeg(b('fore'), L.el, wrist, ZAX);
@@ -1446,7 +1485,7 @@ export class Rider {
         ankle.lerp(_tmp.copy(L.hp).add(_tmp2.set(0.12 + 0.25 * Math.sin(ct * 6 + s0) * fl, -0.72, s0 * 0.24)), st.crash);
       }
       // knees: forward and gripping the tank, the inside one out toward the kerb
-      _a.set(0.9, 0.3 - 0.5 * inside, s0 * (0.12 + 1.45 * inside + 0.8 * toeOut - 0.06 * st.brake));
+      _a.set(0.9, 0.3 - 0.5 * inside, s0 * (0.12 + 1.45 * inside * pe.knee + 0.8 * toeOut - 0.06 * st.brake));
       ik(L.hp, ankle, B.thigh, B.shin, _a, L.kn);
       placeSeg(b('thigh'), L.hp, L.kn, ZAX);
       placeSeg(b('shin'), L.kn, ankle, ZAX);
