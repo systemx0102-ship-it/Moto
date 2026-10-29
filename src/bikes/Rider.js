@@ -1623,8 +1623,10 @@ export class Rider {
         _tmp2.lerp(_c.set(0.3, -0.02, s0 * 0.26), crAir);
         wrist.lerp(_tmp.copy(L.sh).add(_tmp2), st.crash);
       }
-      // elbows out and down; tucked in on a straight; the inside one drops in a corner
-      _a.set(-0.35 - 0.25 * tuck, -1 - 0.6 * inside + 0.35 * (ha - inside), s0 * ((0.55 - 0.25 * tuck) * pe.elbow + 0.45 * inside));
+      // elbows out and down; tucked in on a straight; the inside one drops in a corner and
+      // the outside forearm comes in to rest along the tank
+      const outside = ha - inside;
+      _a.set(-0.35 - 0.25 * tuck, -1 - 0.6 * inside - 0.25 * outside, s0 * ((0.55 - 0.25 * tuck) * pe.elbow * (1 - 0.8 * outside) + 0.45 * inside - 0.35 * outside));
       ik(L.sh, wrist, B.upper, B.fore, _a, L.el);
       placeSeg(b('upper'), L.sh, L.el, ZAX);
       placeSeg(b('fore'), L.el, wrist, ZAX);
