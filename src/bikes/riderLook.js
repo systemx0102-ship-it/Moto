@@ -57,8 +57,15 @@ function trace(g, rg, pts, du, close) {
   pts.forEach(([u, t], i) => { const [x, y] = at(rg, u + du, t); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
   if (close) g.closePath();
 }
-function fillP(g, rg, pts, style) { inRegion(g, rg, () => { g.fillStyle = style; for (const du of [-1, 0, 1]) { trace(g, rg, pts, du, true); g.fill(); } }); }
-function strokeP(g, rg, pts, close) { inRegion(g, rg, () => { for (const du of [-1, 0, 1]) { trace(g, rg, pts, du, close); g.stroke(); } }); }
+// the copies of a shape round the wrap that can reach the region (most need just one)
+const SHIFTS = [[0], [-1, 0], [0, 1], [-1, 0, 1]];
+function shifts(pts) {
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pts) { if (p[0] < lo) lo = p[0]; if (p[0] > hi) hi = p[0]; }
+  return SHIFTS[(hi > 1 - 0.01 ? 1 : 0) + (lo < 0.01 ? 2 : 0)];
+}
+function fillP(g, rg, pts, style) { inRegion(g, rg, () => { g.fillStyle = style; for (const du of shifts(pts)) { trace(g, rg, pts, du, true); g.fill(); } }); }
+function strokeP(g, rg, pts, close) { inRegion(g, rg, () => { for (const du of shifts(pts)) { trace(g, rg, pts, du, close); g.stroke(); } }); }
 
 // ---------------------------------------------------------------------------
 // Suit construction (one-piece race leathers): panels whose outlines are the seams, and
@@ -84,6 +91,9 @@ function construction() {
   add('line', T, [[0.56, 0.2], [0.94, 0.2]]);
   add('perf', T, [[0.7, 0.6], [0.8, 0.6], [0.8, 0.7], [0.7, 0.7]]);
   add('black', T, [[0.665, T_MIN - 0.02], [0.835, T_MIN - 0.02], [0.81, -0.06], [0.69, -0.06]]);
+  // black gusset between the legs, joining the crotch panel to the seat
+  add('black', T, [[0.43, T_MIN - 0.02], [0.665, T_MIN - 0.02], [0.69, -0.06], [0.45, -0.04]]);
+  add('black', T, [[0.835, T_MIN - 0.02], [1.07, T_MIN - 0.02], [1.05, -0.04], [0.81, -0.06]]);
   // back: yoke across the shoulders, back-protector panel, lower-back accordion, seat
   add('line', T, [[0.03, 0.925], [0.47, 0.925]]);
   add('panel', T, [[0.135, 0.455], [0.365, 0.455], [0.385, 0.9], [0.115, 0.9]]);
@@ -192,17 +202,57 @@ function strokeSeams(g, lw) {
   g.lineWidth = lw;
   for (const p of construction()) if (hasSeam(p.kind)) strokeP(g, p.rg, p.pts, isClosed(p.kind));
 }
-// double rows of stitching either side of every seam: a wide dashed band with its middle
-// cut out (in the current composite mode / colour)
-function strokeStitches(g, colour) {
-  const band = (lw, dash) => { g.setLineDash(dash); strokeSeams(g, lw); };
-  g.save();
-  g.strokeStyle = colour; g.lineCap = 'butt';
-  band(10, [3.4, 2.2]);
-  g.globalCompositeOperation = 'destination-out'; g.strokeStyle = '#000';
-  band(5.6, []);
-  g.restore();
-  g.setLineDash([]);
+
+// every seam as polylines in design px (copies round the wrap included), each with the
+// rectangle of its region
+let SEAMS = null;
+function seamPolylines() {
+  if (SEAMS) return SEAMS;
+  SEAMS = [];
+  for (const p of construction()) {
+    if (!hasSeam(p.kind)) continue;
+    const pts = isClosed(p.kind) ? [...p.pts, p.pts[0]] : p.pts;
+    for (const du of shifts(p.pts)) SEAMS.push({ R: p.rg.R, pts: pts.map(([u, t]) => at(p.rg, u + du, t)) });
+  }
+  return SEAMS;
+}
+// rasterise the seams (seed = 0 in D) and the two rows of stitches either side of them
+// (dashes 3.4 long, 2.2 apart, 3.9 off the seam, 1.8 thick, design px) straight into
+// arrays: much faster than reading the strokes back from a canvas
+function rasterSeams(W, S, D, stitch) {
+  for (const { R, pts } of seamPolylines()) {
+    const xa = (R.x0 - GUT) * S, xb = (R.x1 + GUT) * S, ya = (R.y0 - GUT) * S, yb = (R.y1 + GUT) * S;
+    const put = (arr, x, y, v) => { if (x >= xa && x < xb && y >= ya && y < yb && x >= 0 && y >= 0 && x < W && y < W) arr[(y | 0) * W + (x | 0)] = v; };
+    let phase = 0;
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const [ax, ay] = pts[k], [bx, by] = pts[k + 1];
+      const L = Math.hypot(bx - ax, by - ay);
+      if (L < 1e-6) continue;
+      const tx = (bx - ax) / L, ty = (by - ay) / L, nx = -ty, ny = tx;
+      for (let d = 0; d <= L; d += 0.5 / S) put(D, (ax + tx * d) * S, (ay + ty * d) * S, 0);
+      for (let d = 0; d < L; d += 0.35) {
+        if ((phase + d) % 5.6 >= 3.4) continue;
+        for (const side of [-1, 1]) for (let w = -0.9; w <= 0.9; w += 0.45) {
+          const o = side * 3.9 + w;
+          put(stitch, (ax + tx * d + nx * o) * S, (ay + ty * d + ny * o) * S, 255);
+        }
+      }
+      phase = (phase + L) % 5.6;
+    }
+  }
+}
+
+// a tileable fbm evaluated once on a 256 grid, sampled bilinearly (x, y in [0, 1),
+// wrapping): the low-frequency noises are far cheaper this way
+function noiseGrid(seed, period, oct) {
+  const G = 256, f = makeTileFbm(seed, period, oct), grid = new Float32Array(G * G);
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) grid[y * G + x] = f(x / G, y / G);
+  return (x, y) => {
+    const fx = x * G, fy = y * G, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const xa = ((x0 % G) + G) % G, xb = (xa + 1) % G, r0 = (((y0 % G) + G) % G) * G, r1 = ((((y0 + 1) % G) + G) % G) * G;
+    const a = grid[r0 + xa] + (grid[r0 + xb] - grid[r0 + xa]) * tx, b = grid[r1 + xa] + (grid[r1 + xb] - grid[r1 + xa]) * tx;
+    return a + (b - a) * ty;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,63 +260,77 @@ function strokeStitches(g, colour) {
 const RELIEF = {};
 function reliefMaps(res) {
   if (RELIEF[res]) return RELIEF[res];
-  const S = res / ATLAS, W = res, H = res, N = W * H;
+  const S = res / ATLAS, W = res, H = res, N = W * H, hw = W >> 1;
   const C = construction();
-  const layer = (draw) => {
-    const { c, g } = makeCanvas(W, H);
-    g.setTransform(S, 0, 0, S, 0, 0);
+  // the zone masks, all in one half-resolution canvas (canvas read-backs are the slow part):
+  // r: aramid fabric 255 / rubber seat 128; g: leather pleats 255 / black leather 128;
+  // b: perforations (none of the zones sharing a channel overlap)
+  const zm = new Uint8Array(hw * hw * 3);
+  {
+    const { g } = makeCanvas(hw, hw);
+    g.setTransform(S / 2, 0, 0, S / 2, 0, 0);
     g.fillStyle = '#000'; g.fillRect(0, 0, ATLAS, ATLAS);
-    draw(g);
-    const d = g.getImageData(0, 0, W, H).data, out = new Uint8Array(N);
-    for (let i = 0; i < N; i++) out[i] = d[i * 4];
+    g.globalCompositeOperation = 'lighter';
+    const col = { fabric: '#ff0000', seat: '#800000', pleats: '#00ff00', black: '#008000', perf: '#0000ff' };
+    for (const p of C) if (col[p.kind]) fillP(g, p.rg, p.pts, col[p.kind]);
+    const d = g.getImageData(0, 0, hw, hw).data;
+    for (let i = 0, n = hw * hw; i < n; i++) { zm[i * 3] = d[i * 4]; zm[i * 3 + 1] = d[i * 4 + 1]; zm[i * 3 + 2] = d[i * 4 + 2]; }
+  }
+  const zone = (x, y) => ((y >> 1) * hw + (x >> 1)) * 3;
+  // low-frequency noises on the same half-resolution grid
+  const halfNoise = (seed, period, oct, k = 1) => {
+    const f = noiseGrid(seed, period, oct), out = new Float32Array(hw * hw);
+    for (let y = 0; y < hw; y++) for (let x = 0; x < hw; x++) out[y * hw + x] = f((x / hw) * k, (y / hw) * k);
     return out;
   };
-  const kinds = (...ks) => (g) => { for (const p of C) if (ks.includes(p.kind)) fillP(g, p.rg, p.pts, '#fff'); };
-  const seam = layer((g) => { g.strokeStyle = '#fff'; strokeSeams(g, 1.6); });
-  const stitch = layer((g) => strokeStitches(g, '#fff'));
-  const fabric = layer(kinds('fabric'));
-  const pleats = layer(kinds('pleats'));
-  const perf = layer(kinds('perf'));
-  const seat = layer(kinds('seat'));
-  const blackL = layer(kinds('black'));
+  // seams (distance seeds) and stitches, rasterised directly
+  const D = new Float32Array(N).fill(1e6), stitch = new Uint8Array(N);
+  rasterSeams(W, S, D, stitch);
   // distance to the nearest seam (chamfer 1 / 1.414), in pixels
-  const D = new Float32Array(N);
-  for (let i = 0; i < N; i++) D[i] = seam[i] > 90 ? 0 : 1e6;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x; let d = D[i];
-    if (x > 0) d = Math.min(d, D[i - 1] + 1);
-    if (y > 0) { d = Math.min(d, D[i - W] + 1); if (x > 0) d = Math.min(d, D[i - W - 1] + 1.414); if (x < W - 1) d = Math.min(d, D[i - W + 1] + 1.414); }
+    const i = y * W + x; let d = D[i], e;
+    if (x > 0 && (e = D[i - 1] + 1) < d) d = e;
+    if (y > 0) {
+      if ((e = D[i - W] + 1) < d) d = e;
+      if (x > 0 && (e = D[i - W - 1] + 1.414) < d) d = e;
+      if (x < W - 1 && (e = D[i - W + 1] + 1.414) < d) d = e;
+    }
     D[i] = d;
   }
   for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
-    const i = y * W + x; let d = D[i];
-    if (x < W - 1) d = Math.min(d, D[i + 1] + 1);
-    if (y < H - 1) { d = Math.min(d, D[i + W] + 1); if (x < W - 1) d = Math.min(d, D[i + W + 1] + 1.414); if (x > 0) d = Math.min(d, D[i + W - 1] + 1.414); }
+    const i = y * W + x; let d = D[i], e;
+    if (x < W - 1 && (e = D[i + 1] + 1) < d) d = e;
+    if (y < H - 1) {
+      if ((e = D[i + W] + 1) < d) d = e;
+      if (x < W - 1 && (e = D[i + W + 1] + 1.414) < d) d = e;
+      if (x > 0 && (e = D[i + W - 1] + 1.414) < d) d = e;
+    }
     D[i] = d;
   }
   // height in mm
   const h = new Float32Array(N);
-  const und = makeTileFbm(63, 6, 3);
-  const pr = 15 * S, gw = 1.5 * S, perfSp = 7 * S, perfR = 1.25 * S, ribP = 9 * S;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x, d = D[i];
-    let v = 0.12 * und(x / W, y / H);
-    if (fabric[i] > 128) v += 0.05; // flat stretch fabric: no padding
-    else {
-      v += 0.85 * smooth(0, pr, d); // padded leather panels puff up between the seams
-      if (pleats[i] > 128) v += 0.55 * Math.abs(Math.sin((y / ribP) * Math.PI)) ** 0.7 - 0.3;
+  const und = halfNoise(63, 6, 3);
+  const pr = 15 * S, gw = 1.5 * S, g3 = 3 * gw, perfSp = 7 * S, perfR2 = (1.25 * S) ** 2, ribP = 9 * S;
+  for (let y = 0; y < H; y++) {
+    const rib = 0.55 * Math.abs(Math.sin((y / ribP) * Math.PI)) ** 0.7 - 0.3;
+    const prow = Math.floor(y / perfSp), pox = (prow % 2) * perfSp * 0.5, pdy = (y % perfSp) - perfSp / 2;
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x, d = D[i], z = zone(x, y);
+      let v = 0.12 * und[z / 3];
+      if (zm[z] > 192) v += 0.05; // flat stretch fabric: no padding
+      else {
+        // padded leather panels puff up between the seams
+        if (d >= pr) v += 0.85; else { const q = d / pr; v += 0.85 * q * q * (3 - 2 * q); }
+        if (zm[z + 1] > 192) v += rib;
+      }
+      if (d < g3) { const q = d / gw; v -= 0.42 * Math.exp(-q * q); } // seam groove
+      if (stitch[i]) v += 0.22 * (stitch[i] / 255);
+      if (zm[z + 2] > 128) { const dx = ((x + pox) % perfSp) - perfSp / 2; if (dx * dx + pdy * pdy < perfR2) v -= 0.55; }
+      h[i] = v;
     }
-    v -= 0.42 * Math.exp(-((d / gw) ** 2)); // seam groove
-    if (stitch[i] > 100) v += 0.22 * (stitch[i] / 255);
-    if (perf[i] > 128) {
-      const row = Math.floor(y / perfSp), ox = (row % 2) * perfSp * 0.5;
-      const dx = ((x + ox) % perfSp) - perfSp / 2, dy = (y % perfSp) - perfSp / 2;
-      if (dx * dx + dy * dy < perfR * perfR) v -= 0.55;
-    }
-    h[i] = v;
   }
   // soft folds where the joints bend: ridges across the limb, wandering a little
-  const wob = makeTileFbm(71, 8, 3);
+  const wob = noiseGrid(71, 8, 3);
   const folds = [];
   for (const s of [-1, 1]) {
     folds.push([limbReg('upper', s), 0.1, 0.4, 0.72, 1.04, 13, 0.5]); // inside of the elbow
@@ -279,27 +343,38 @@ function reliefMaps(res) {
   for (const uc of [0, 0.5]) folds.push([REG.torso, uc - 0.07, uc + 0.07, 0.1, 0.3, 14, 0.4]); // waist sides
   for (const [rg, u0, u1, t0, t1, per, amp] of folds) {
     const [ax, ay] = at(rg, u0, t1), [bx, by] = at(rg, u1, t0);
-    for (let du = -1; du <= 1; du++) {
+    for (const du of shifts([[u0], [u1]])) {
       const shift = du * (rg.R.x1 - rg.R.x0);
       const x0 = Math.floor((Math.min(ax, bx) + shift) * S), x1 = Math.ceil((Math.max(ax, bx) + shift) * S);
       const y0 = Math.floor(Math.min(ay, by) * S), y1 = Math.ceil(Math.max(ay, by) * S);
-      const cx0 = Math.max(x0, Math.floor((rg.R.x0 - GUT) * S)), cx1 = Math.min(x1, Math.ceil((rg.R.x1 + GUT) * S));
-      for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) for (let x = Math.max(0, cx0); x < Math.min(W, cx1); x++) {
-        const fx = (x - x0) / (x1 - x0 || 1), fy = (y - y0) / (y1 - y0 || 1);
-        const env = Math.sin(fx * Math.PI) * Math.sin(fy * Math.PI);
-        const wave = Math.sin(((y / S) / per) * Math.PI * 2 + wob(x / W * 3, y / H * 3) * 5 + fx * 1.4);
-        h[y * W + x] += amp * env * Math.max(0, wave) ** 1.6;
+      const cx0 = Math.max(0, x0, Math.floor((rg.R.x0 - GUT) * S)), cx1 = Math.min(W, x1, Math.ceil((rg.R.x1 + GUT) * S));
+      for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) {
+        const fy = (y - y0) / (y1 - y0 || 1), ey = Math.sin(fy * Math.PI), ph = ((y / S) / per) * Math.PI * 2;
+        for (let x = cx0; x < cx1; x++) {
+          const fx = (x - x0) / (x1 - x0 || 1);
+          const wave = Math.sin(ph + wob((x / W) * 3, (y / H) * 3) * 5 + fx * 1.4);
+          if (wave > 0) h[y * W + x] += amp * Math.sin(fx * Math.PI) * ey * wave ** 1.6;
+        }
       }
     }
   }
   // cavity: how far below its surroundings each texel sits (box blur, two passes)
-  const blur = (src, r) => {
-    const tmp = new Float32Array(N), out = new Float32Array(N), k = 1 / (2 * r + 1);
-    for (let y = 0; y < H; y++) { let acc = 0; for (let x = -r; x <= r; x++) acc += src[y * W + clamp(x, 0, W - 1)]; for (let x = 0; x < W; x++) { tmp[y * W + x] = acc * k; acc += src[y * W + Math.min(W - 1, x + r + 1)] - src[y * W + Math.max(0, x - r)]; } }
-    for (let x = 0; x < W; x++) { let acc = 0; for (let y = -r; y <= r; y++) acc += tmp[clamp(y, 0, H - 1) * W + x]; for (let y = 0; y < H; y++) { out[y * W + x] = acc * k; acc += tmp[Math.min(H - 1, y + r + 1) * W + x] - tmp[Math.max(0, y - r) * W + x]; } }
-    return out;
-  };
-  const hb = blur(h, Math.max(2, Math.round(5 * S)));
+  const r = Math.max(2, Math.round(5 * S)), kb = 1 / (2 * r + 1);
+  const lo = new Int32Array(W), hi = new Int32Array(W);
+  for (let x = 0; x < W; x++) { lo[x] = Math.max(0, x - r); hi[x] = Math.min(W - 1, x + r + 1); }
+  const tmp = new Float32Array(N), hb = new Float32Array(N);
+  for (let y = 0; y < H; y++) {
+    const row = y * W; let acc = 0;
+    for (let x = -r; x <= r; x++) acc += h[row + (x < 0 ? 0 : x)];
+    for (let x = 0; x < W; x++) { tmp[row + x] = acc * kb; acc += h[row + hi[x]] - h[row + lo[x]]; }
+  }
+  // vertical pass with running column sums, row by row (cache friendly)
+  const col = new Float32Array(W);
+  for (let y = -r; y <= r; y++) { const row = (y < 0 ? 0 : y) * W; for (let x = 0; x < W; x++) col[x] += tmp[row + x]; }
+  for (let y = 0; y < H; y++) {
+    const row = y * W, add = hi[y] * W, sub = lo[y] * W;
+    for (let x = 0; x < W; x++) { hb[row + x] = col[x] * kb; col[x] += tmp[add + x] - tmp[sub + x]; }
+  }
   // contact occlusion where the body folds on itself: armpits, crotch, inside the elbows,
   // behind the knees, under the collar
   const zones = [
@@ -317,38 +392,60 @@ function reliefMaps(res) {
     const [cx, cy] = at(rg, u, t), w = (rg.R.x1 - rg.R.x0) * ru, hh = (rg.R.y1 - rg.R.y0) * (rt / (rg.t1 - rg.t0));
     for (let du = -1; du <= 1; du++) {
       const px = (cx + du * (rg.R.x1 - rg.R.x0)) * S, py = cy * S, rx = w * S, ry = hh * S;
-      const xa = Math.max(Math.floor((rg.R.x0 - GUT) * S), Math.floor(px - rx)), xb = Math.min(Math.ceil((rg.R.x1 + GUT) * S), Math.ceil(px + rx));
-      const ya = Math.max(Math.floor((rg.R.y0 - GUT) * S), Math.floor(py - ry)), yb = Math.min(Math.ceil((rg.R.y1 + GUT) * S), Math.ceil(py + ry));
-      for (let y = Math.max(0, ya); y < Math.min(H, yb); y++) for (let x = Math.max(0, xa); x < Math.min(W, xb); x++) {
-        const r = Math.hypot((x - px) / rx, (y - py) / ry);
-        if (r < 1) ao[y * W + x] *= 1 - k * (1 - smooth(0, 1, r));
+      const xa = Math.max(0, Math.floor((rg.R.x0 - GUT) * S), Math.floor(px - rx)), xb = Math.min(W, Math.ceil((rg.R.x1 + GUT) * S), Math.ceil(px + rx));
+      const ya = Math.max(0, Math.floor((rg.R.y0 - GUT) * S), Math.floor(py - ry)), yb = Math.min(H, Math.ceil((rg.R.y1 + GUT) * S), Math.ceil(py + ry));
+      for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
+        const qx = (x - px) / rx, qy = (y - py) / ry, q2 = qx * qx + qy * qy;
+        if (q2 < 1) { const q = Math.sqrt(q2); ao[y * W + x] *= 1 - k * (1 - q * q * (3 - 2 * q)); }
       }
     }
   }
-  // ORM
+  // ORM: r occlusion, g roughness, b aramid fabric
   const { c: oc, g: og } = makeCanvas(W, H);
   const img = og.createImageData(W, H), od = img.data;
-  const rn = makeTileFbm(64, 16, 3);
-  for (let i = 0; i < N; i++) {
-    const x = i % W, y = (i / W) | 0;
-    const cav = clamp(1 - 1.1 * Math.max(0, hb[i] - h[i]), 0.35, 1);
-    let r = 0.48 + 0.05 * rn(x / W, y / H);
-    if (blackL[i] > 128) r += 0.04;
-    if (seat[i] > 128) r = 0.74 + 0.04 * rn(x / W * 4, y / H * 4);
-    if (fabric[i] > 128) r = 0.84;
-    if (D[i] < 2.2 * S) r += 0.1;
-    if (stitch[i] > 100) r = 0.66;
-    if (h[i] < -0.3) r = Math.max(r, 0.78); // perforation holes
-    od[i * 4] = clamp(cav * ao[i], 0, 1) * 255;
-    od[i * 4 + 1] = clamp(r, 0.05, 1) * 255;
-    od[i * 4 + 2] = fabric[i];
-    od[i * 4 + 3] = 255;
+  const rn = halfNoise(64, 16, 3), rn4 = halfNoise(64, 16, 3, 4);
+  const seamR = 2.2 * S;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, z = zone(x, y), fab = zm[z] > 192;
+    let cav = 1 - 1.1 * (hb[i] - h[i]);
+    cav = cav > 1 ? 1 : cav < 0.35 ? 0.35 : cav;
+    let rough = 0.48 + 0.05 * rn[z / 3];
+    if (zm[z + 1] > 64 && zm[z + 1] <= 192) rough += 0.04; // black leather
+    if (zm[z] > 64 && zm[z] <= 192) rough = 0.74 + 0.04 * rn4[z / 3]; // seat
+    if (fab) rough = 0.84;
+    if (D[i] < seamR) rough += 0.1;
+    if (stitch[i] > 100) rough = 0.66;
+    if (h[i] < -0.3 && rough < 0.78) rough = 0.78; // perforation holes
+    const o = i * 4, a = cav * ao[i];
+    od[o] = a * 255; od[o + 1] = (rough > 1 ? 1 : rough) * 255; od[o + 2] = fab ? 255 : 0; od[o + 3] = 255;
   }
   og.putImageData(img, 0, 0);
-  const normal = toTexture(heightToNormal(h, W, H, 0.62 * S * PXM / 1000), { srgb: false, wrap: false });
+  const normal = toTexture(normalFromHeight(h, W, 0.62 * S * PXM / 1000), { srgb: false, wrap: false });
   const orm = toTexture(oc, { srgb: false, wrap: false });
-  RELIEF[res] = { normal, orm };
+  // the stitch rows as a white alpha mask, for the paintwork's thread
+  const { c: sc, g: sg } = makeCanvas(W, H);
+  const simg = sg.createImageData(W, H), sd = simg.data;
+  for (let i = 0; i < N; i++) { const o = i * 4; sd[o] = sd[o + 1] = sd[o + 2] = 255; sd[o + 3] = stitch[i]; }
+  sg.putImageData(simg, 0, 0);
+  RELIEF[res] = { normal, orm, stitches: sc };
   return RELIEF[res];
+}
+
+// height field (mm) -> tangent-space normal map canvas (edges clamped; k = slope scale)
+function normalFromHeight(h, W, k) {
+  const { c, g } = makeCanvas(W, W);
+  const img = g.createImageData(W, W), d = img.data;
+  for (let y = 0; y < W; y++) {
+    const yu = (y > 0 ? y - 1 : 0) * W, yd = (y < W - 1 ? y + 1 : y) * W, row = y * W;
+    for (let x = 0; x < W; x++) {
+      const nx = (h[row + (x > 0 ? x - 1 : 0)] - h[row + (x < W - 1 ? x + 1 : x)]) * k;
+      const ny = (h[yd + x] - h[yu + x]) * k;
+      const il = 1 / Math.sqrt(nx * nx + ny * ny + 1), o = (row + x) * 4;
+      d[o] = (nx * il * 0.5 + 0.5) * 255; d[o + 1] = (ny * il * 0.5 + 0.5) * 255; d[o + 2] = (il * 0.5 + 0.5) * 255; d[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +519,7 @@ function mottle() {
   return c;
 }
 
-function suitColorMap(res, main, second, accent, number, name, design) {
+function suitColorMap(res, main, second, accent, number, name, design, stitches) {
   const S = res / ATLAS;
   const { c, g } = makeCanvas(res, res);
   g.setTransform(S, 0, 0, S, 0, 0);
@@ -450,7 +547,7 @@ function suitColorMap(res, main, second, accent, number, name, design) {
   // seams: a fine dark groove, then the thread of the double stitching (lightening the
   // leather under it, whatever its colour)
   g.save(); g.globalCompositeOperation = 'multiply'; g.strokeStyle = 'rgba(40,40,44,0.55)'; strokeSeams(g, 1.4); g.restore();
-  g.save(); g.globalCompositeOperation = 'overlay'; strokeStitches(g, 'rgba(255,255,255,0.5)'); g.restore();
+  g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.5; g.drawImage(stitches, 0, 0, ATLAS, ATLAS); g.restore();
   // front zip: dark tape, teeth, the puller at the collar
   const T = REG.torso;
   { const [x0, y0] = at(T, 0.75, 0.3), [, y1] = at(T, 0.75, 0.985);
@@ -732,7 +829,7 @@ export function riderMaterials({ livery, number, name, design, visor = 1, hiRes 
   const accent = livery.accent || '#e2231a';
   const key = `${main}|${second}|${accent}|${number}|${name}|${design}`;
   const relief = reliefMaps(resRelief);
-  const suitMap = cached(`suit|${key}|${resColor}`, () => suitColorMap(resColor, main, second, accent, number, name, design));
+  const suitMap = cached(`suit|${key}|${resColor}`, () => suitColorMap(resColor, main, second, accent, number, name, design, relief.stitches));
   const helmetMap = cached(`helmet|${key}|${resColor}`, () => helmetColorMap(resColor / 1024, main, second, accent, number, design));
   const grainGear = cached('grainGear', () => repTex(grainTexture(), 6));
   const grainBoot = cached('grainBoot', () => repTex(grainTexture(), 4));
