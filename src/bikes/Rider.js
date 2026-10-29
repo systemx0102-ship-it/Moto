@@ -37,6 +37,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TORSO, HUMP, COLLAR, T_MIN, T_MAX, limbRegion, kitRegion, HB, TEAM, NAMES, VISORS, riderMaterials, setWet } from './riderLook.js';
+import { Save } from '../core/Settings.js';
+
+// mesh density for the current quality (bajo / medio build lighter riders)
+let DET = 1;
+const dn = (n, min = 4) => Math.max(min, Math.round(n * DET));
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -115,6 +120,7 @@ function surfPoint(len, ring, ant, u, off) {
   return [ox + x + (x / l) * off, t * len, oz + z + (z / l) * off];
 }
 function segment(len, rings, { radial = 28, sub = 3, caps = true, ant = 1, region = null, tMin, tMax, bumps = null } = {}) {
+  radial = dn(radial, 8); sub = dn(sub, 2);
   const R = [];
   for (let i = 0; i < rings.length - 1; i++) {
     const steps = i === rings.length - 2 ? sub + 1 : sub;
@@ -174,6 +180,7 @@ function segment(len, rings, { radial = 28, sub = 3, caps = true, ant = 1, regio
 // leather (rho 0..1 out to the rim, a / b the unit offsets across u / t). Built as polar
 // rings so the rim is smooth; userData.tv carries t for skinning like the limb under it.
 function moulded(len, rings, { ant = -1, region = null, bumps = null, u, t, du, dt, prof, nr = 12, na = 40 }) {
+  nr = dn(nr, 2); na = dn(na, 12);
   const pos = [], idx = [], tv = [], uvs = [];
   const at = (rho, th) => {
     const a = rho * Math.cos(th), b = rho * Math.sin(th);
@@ -431,6 +438,7 @@ function helmetPoint(th, ph, off) {
   return [HC[0] + dx * r, HC[1] + dy * r, HC[2] + dz * r];
 }
 function helmetSurf(th0, th1, ph0, ph1, nth, nph, off, uvFull, thFn = null) {
+  nth = dn(nth, 2); nph = dn(nph, 8);
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= nth; i++) {
     for (let j = 0; j <= nph; j++) {
@@ -456,6 +464,7 @@ function helmetSurf(th0, th1, ph0, ph1, nth, nph, off, uvFull, thFn = null) {
 // (thc, phc), ±dth / ±dph across, `prof(rho, a, b)` metres off the paint; uv from the shell's
 // own wrap (uvFull: the paint continues onto it) or a 0..1 square
 function helmetPatch(thc, phc, dth, dph, prof, { nr = 8, na = 32, uvFull = false } = {}) {
+  nr = dn(nr, 2); na = dn(na, 12);
   const pos = [], uv = [], idx = [];
   const at = (rho, ang) => {
     const a = rho * Math.cos(ang), b = rho * Math.sin(ang), th = thc + b * dth, ph = phc + a * dph;
@@ -556,9 +565,12 @@ function helmetGeometry() {
 
 // ---------------------------------------------------------------------------
 // static geometry (shared by every rider), grouped by material and already skinned
-let GEO = null;
-function geometry() {
-  if (GEO) return GEO;
+// mesh density: by quality, a little lighter for the rivals than for the player's rider
+const GEOS = {};
+function geometry(hiRes) {
+  const q = Save.settings.quality;
+  DET = (q === 'bajo' ? 0.55 : q === 'medio' ? 0.75 : 1) * (hiRes ? 1 : 0.8);
+  if (GEOS[DET]) return GEOS[DET];
   const rest = restPose();
   const out = { suit: [], gear: [], helmet: [], visor: [] };
   // ---- torso: one surface from under the seat to the collar, anatomical sections under
@@ -665,7 +677,7 @@ function geometry() {
     if (!q.index) { const n = q.attributes.position.count; const ia = new Uint32Array(n); for (let i = 0; i < n; i++) ia[i] = i; q.setIndex(new THREE.BufferAttribute(ia, 1)); }
     return q;
   });
-  GEO = {
+  const GEO = GEOS[DET] = {
     rest,
     suit: mergeGeometries(norm(out.suit, false)),
     gear: mergeGeometries(norm(out.gear, true)),
@@ -864,7 +876,7 @@ const STAND_IDLE = [['look', 2.2], ['visor', 1.6], ['flex', 1.4], ['stretch', 2.
 export class Rider {
   // ctx: the bike's build context (seat, grips, pegs, design); groups: assembly groups
   constructor(spec, livery, ctx, groups, opts = {}) {
-    const G = geometry();
+    const G = geometry(!!opts.hiRes);
     const num = String(livery.number || opts.number || spec.short.length + 20);
     const seed = [...(spec.id + num)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
     this.seed = seed;
