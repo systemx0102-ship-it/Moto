@@ -641,8 +641,19 @@ export class Race {
         const front = m.worldPoint([m.wb / 2, 0.02, 0], ef._w);
         ef.skid(b.id + 'f', front.x, front.y, front.z, rx, rz, 0.06);
       } else ef.skidBreak(b.id + 'f');
-      // knee slider on the asphalt: a few sparks and a puff of scuffed plastic left behind
+      // cold air: every breath of a rider at a standstill fogs out of the chin vent
       const rd = m.rider;
+      if (this.env.snow && rd && rd.st.stop > 0.5 && !p.crashed) {
+        const ph = Math.sin(rd.t * 1.9);
+        if (b._breathWas > 0 && ph <= 0) {
+          const head = rd.bones[4];
+          head.updateWorldMatrix(true, false);
+          const q = (this._bv || (this._bv = new THREE.Vector3())).set(0.21, 0.03, 0).applyMatrix4(head.matrixWorld);
+          ef.breath(q.x, q.y, q.z, Math.sin(p.h), Math.cos(p.h));
+        }
+        b._breathWas = ph;
+      }
+      // knee slider on the asphalt: a few sparks and a puff of scuffed plastic left behind
       if (rd && rd.kneeDown > 0.4 && p.v > 12 && !p.offRoad && !p.crashed) {
         rd.root.updateWorldMatrix(true, false);
         const kp = rd.root.localToWorld((this._kv || (this._kv = new THREE.Vector3())).copy(rd.kneePt));

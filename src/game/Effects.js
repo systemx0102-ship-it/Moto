@@ -137,6 +137,14 @@ export class Effects {
       { life: 1.2 + Math.random(), size: 0.5, grow: 2.5, r: col[0], g: col[1], b: col[2], a: 0.45 * amount, drag: 1.6, grav: 0.4 });
   }
 
+  // breath fogging out of a helmet's chin vent in the cold
+  breath(x, y, z, dirx, dirz) {
+    for (let i = 0; i < 3; i++) {
+      this.smoke.emit(x + (Math.random() - 0.5) * 0.03, y - 0.02, z + (Math.random() - 0.5) * 0.03, dirx * (0.35 + Math.random() * 0.2) + (Math.random() - 0.5) * 0.15, -0.05 + Math.random() * 0.15, dirz * (0.35 + Math.random() * 0.2) + (Math.random() - 0.5) * 0.15,
+        { life: 1.1 + Math.random() * 0.6, size: 0.08, grow: 0.55, r: 0.94, g: 0.96, b: 1, a: 0.2, drag: 2.2, grav: -0.12 });
+    }
+  }
+
   spray(x, y, z, vx, vz, amount = 1) {
     this.smoke.emit(x + (Math.random() - 0.5) * 0.3, y + 0.15, z + (Math.random() - 0.5) * 0.3, vx * 0.5 + (Math.random() - 0.5) * 2, 0.8 + Math.random() * 1.2, vz * 0.5 + (Math.random() - 0.5) * 2,
       { life: 0.6 + Math.random() * 0.4, size: 0.4, grow: 2.8, r: 0.75, g: 0.78, b: 0.82, a: 0.28 * amount, drag: 2, grav: 2 });
