@@ -79,31 +79,58 @@ export const DESIGN_STYLE = {
 // ring: [t (of len), front, back, half-width, ox, oz, n]; `ant` = +1 when the bone's +X
 // is anterior (torso), -1 for limbs (their +X points back in the rest pose).
 // Rings are Catmull-Rom interpolated (sub steps) for smooth silhouettes.
-function segment(len, rings, { radial = 28, sub = 3, caps = true, ant = 1, region = null, tMin, tMax } = {}) {
+// bumps: armour under the leather, [{ u, t, du, dt, h, flat }] in the texture's u (0.5 =
+// the outer side of a limb, mirrored for the left ones) and ring t; the surface swells by
+// h (m) over an elliptical plate that is flat out to `flat` (fraction of its radius).
+const wrap01 = (u) => ((u % 1) + 1) % 1;
+const semU = (u, region) => (region && region.mirror ? wrap01(0.5 - u) : u);
+// the cross-section at any t (linear in t between key rings, Catmull-Rom in the shape)
+function ringAt(rings, t) {
+  let i = 0;
+  while (i < rings.length - 2 && t > rings[i + 1][0]) i++;
+  const r0 = rings[Math.max(0, i - 1)], r1 = rings[i], r2 = rings[i + 1], r3 = rings[Math.min(rings.length - 1, i + 2)];
+  const k = clamp((t - r1[0]) / (r2[0] - r1[0] || 1), 0, 1), q = [t];
+  for (let c = 1; c < 7; c++) q.push(catm(r0[c] ?? (c === 6 ? 2.3 : 0), r1[c] ?? (c === 6 ? 2.3 : 0), r2[c] ?? (c === 6 ? 2.3 : 0), r3[c] ?? (c === 6 ? 2.3 : 0), k));
+  return q;
+}
+const bumpAt = (bumps, us, t) => {
+  let h = 0;
+  for (const b of bumps) {
+    let du = us - b.u; du -= Math.round(du);
+    const r = Math.hypot(du / b.du, (t - b.t) / b.dt);
+    if (r < 1) h += b.h * (r <= (b.flat ?? 0.4) ? 1 : smooth(1, b.flat ?? 0.4, r));
+  }
+  return h;
+};
+// point on a segment's surface for geometry u (0..1 round) and t, plus `off` metres along
+// the outward radial direction; returns [x, y, z]
+function surfPoint(len, ring, ant, u, off) {
+  const [t, f, b, w, ox, oz, nn] = ring;
+  const e = 2 / Math.max(1.2, nn);
+  const a = -Math.PI / 2 - u * Math.PI * 2;
+  const c = Math.cos(a), s = Math.sin(a);
+  const depth = c * ant > 0 ? f : b;
+  const x = depth * Math.sign(c) * Math.abs(c) ** e, z = w * Math.sign(s) * Math.abs(s) ** e;
+  const l = Math.hypot(x, z) || 1;
+  return [ox + x + (x / l) * off, t * len, oz + z + (z / l) * off];
+}
+function segment(len, rings, { radial = 28, sub = 3, caps = true, ant = 1, region = null, tMin, tMax, bumps = null } = {}) {
   const R = [];
   for (let i = 0; i < rings.length - 1; i++) {
-    const r0 = rings[Math.max(0, i - 1)], r1 = rings[i], r2 = rings[i + 1], r3 = rings[Math.min(rings.length - 1, i + 2)];
     const steps = i === rings.length - 2 ? sub + 1 : sub;
-    for (let k = 0; k < steps; k++) {
-      const t = k / sub;
-      const q = [];
-      for (let c = 0; c < 7; c++) q.push(catm(r0[c] ?? (c === 6 ? 2.3 : 0), r1[c] ?? (c === 6 ? 2.3 : 0), r2[c] ?? (c === 6 ? 2.3 : 0), r3[c] ?? (c === 6 ? 2.3 : 0), t));
-      R.push(q);
-    }
+    for (let k = 0; k < steps; k++) R.push(ringAt(rings, rings[i][0] + (rings[i + 1][0] - rings[i][0]) * (k / sub)));
   }
   const t0 = tMin ?? rings[0][0], t1 = tMax ?? rings[rings.length - 1][0];
   const pos = [], uv = [], idx = [], tv = [];
   const cols = radial + 1;
-  for (const [t, f, b, w, ox, oz, nn] of R) {
-    const e = 2 / Math.max(1.2, nn);
+  for (const ring of R) {
+    const t = ring[0];
     for (let j = 0; j <= radial; j++) {
       tv.push(t);
-      const a = -Math.PI / 2 - (j / radial) * Math.PI * 2;
-      const c = Math.cos(a), s = Math.sin(a);
-      const depth = c * ant > 0 ? f : b;
-      pos.push(ox + depth * Math.sign(c) * Math.abs(c) ** e, t * len, oz + w * Math.sign(s) * Math.abs(s) ** e);
       let u = j / radial;
-      if (region && region.mirror) u = ((0.5 - u) % 1 + 1) % 1;
+      const us = semU(u, region);
+      pos.push(...surfPoint(len, ring, ant, u, bumps ? bumpAt(bumps, us, t) : 0));
+      if (region && region.mirror) u = wrap01(0.5 - u);
       const vv = clamp((t - t0) / (t1 - t0 || 1), 0, 1);
       if (region) uv.push(region.u0 + (region.u1 - region.u0) * u, region.v0 + (region.v1 - region.v0) * vv);
       else uv.push(u, vv);
@@ -142,6 +169,44 @@ function segment(len, rings, { radial = 28, sub = 3, caps = true, ant = 1, regio
   g.userData.tv = tv;
   return g;
 }
+// A hard part moulded to a segment's surface (sliders, caps): an elliptical shell centred
+// on (u, t) in the texture's u, ±du / ±dt across, standing `prof(rho, a, b)` metres off the
+// leather (rho 0..1 out to the rim, a / b the unit offsets across u / t). Built as polar
+// rings so the rim is smooth; userData.tv carries t for skinning like the limb under it.
+function moulded(len, rings, { ant = -1, region = null, bumps = null, u, t, du, dt, prof, nr = 12, na = 40 }) {
+  const pos = [], idx = [], tv = [], uvs = [];
+  const at = (rho, th) => {
+    const a = rho * Math.cos(th), b = rho * Math.sin(th);
+    const us = u + a * du, tt = t + b * dt;
+    const ug = region && region.mirror ? wrap01(0.5 - us) : wrap01(us);
+    const off = (bumps ? bumpAt(bumps, wrap01(us), tt) : 0) + prof(rho, a, b);
+    pos.push(...surfPoint(len, ringAt(rings, tt), ant, ug, off)); tv.push(tt); uvs.push(0.5 + a * 0.5, 0.5 + b * 0.5);
+  };
+  at(0, 0);
+  for (let i = 1; i <= nr; i++) for (let j = 0; j < na; j++) at(i / nr, (j / na) * Math.PI * 2);
+  for (let j = 0; j < na; j++) idx.push(0, 1 + j, 1 + ((j + 1) % na));
+  for (let i = 1; i < nr; i++) for (let j = 0; j < na; j++) {
+    const a = 1 + (i - 1) * na + j, b = 1 + (i - 1) * na + ((j + 1) % na), c = a + na, d = b + na;
+    idx.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  // wind the shell outward (the u direction flips on the mirrored side)
+  const n = g.attributes.normal, P = g.attributes.position;
+  const k = 1 + Math.floor(nr / 2) * na, [, , , , ox, oz] = ringAt(rings, t);
+  if (n.getX(k) * (P.getX(k) - ox) + n.getZ(k) * (P.getZ(k) - oz) < 0) {
+    const ia = g.index.array; for (let i = 0; i < ia.length; i += 3) { const q = ia[i + 1]; ia[i + 1] = ia[i + 2]; ia[i + 2] = q; }
+    g.computeVertexNormals();
+  }
+  g.userData.tv = tv;
+  return g;
+}
+// slider profiles: a puck with a flat face and a rounded edge that sinks into the leather,
+// optional ribs across (in b) or grooves
+const puck = (thick, edge = 0.25, sink = 0.002) => (rho) => (rho < 1 - edge ? thick : thick * Math.sqrt(Math.max(0, 1 - ((rho - (1 - edge)) / edge) ** 2))) - sink * smooth(1 - edge * 0.5, 1, rho);
 
 // generic helpers for rigid gear (all in the owning bone's local frame)
 function ellipsoid(rx, ry, rz, p = [0, 0, 0], ws = 18, hs = 12) {
@@ -482,11 +547,16 @@ function geometry() {
     [0.965, 0.066, 0.078, 0.098, -0.008, 0, 2.3],
     [1.0, 0.06, 0.066, 0.072, -0.008, 0, 2.2],
     [T_MAX, 0.058, 0.062, 0.064, -0.006, 0, 2.2],
-  ], { radial: 64, sub: 4, ant: 1, region: TORSO, tMin: T_MIN, tMax: T_MAX });
+  ], {
+    radial: 64, sub: 4, ant: 1, region: TORSO, tMin: T_MIN, tMax: T_MAX,
+    // back-protector plate between the shoulder blades, chest-protector pads on the pecs
+    bumps: [{ u: 0.25, t: 0.68, du: 0.12, dt: 0.23, h: 0.009, flat: 0.65 }, { u: 0.69, t: 0.72, du: 0.055, dt: 0.12, h: 0.005, flat: 0.35 }, { u: 0.81, t: 0.72, du: 0.055, dt: 0.12, h: 0.005, flat: 0.35 }],
+  });
   out.suit.push(skinTorso(torso, rest));
-  // airbag / aero hump on the upper back, rising toward the helmet (rigid on the thorax)
-  const hump = segment(0.3, [[0, 0.01, 0.012, 0.045, -0.098, 0, 2.2], [0.18, 0.03, 0.034, 0.08, -0.112, 0, 2.4], [0.45, 0.046, 0.048, 0.094, -0.126, 0, 2.5], [0.72, 0.046, 0.042, 0.086, -0.128, 0, 2.5], [0.9, 0.032, 0.026, 0.062, -0.116, 0, 2.3], [1.0, 0.012, 0.01, 0.034, -0.104, 0, 2.2]], { radial: 40, sub: 4, region: HUMP });
-  hump.translate(0, 0.04, 0);
+  // airbag / aero hump on the upper back (rigid on the thorax): flush with the back at the
+  // bottom, swelling to ~6 cm behind the shoulders, a flattened top just behind the neck
+  const hump = segment(0.26, [[0, 0.03, 0.016, 0.05, -0.094, 0, 2.3], [0.23, 0.04, 0.032, 0.078, -0.098, 0, 2.5], [0.46, 0.05, 0.046, 0.092, -0.102, 0, 2.7], [0.66, 0.055, 0.054, 0.094, -0.104, 0, 2.8], [0.83, 0.052, 0.05, 0.088, -0.1, 0, 2.8], [0.94, 0.045, 0.036, 0.074, -0.094, 0, 2.6], [1.0, 0.03, 0.018, 0.05, -0.09, 0, 2.4]], { radial: 48, sub: 4, region: HUMP });
+  hump.translate(0, 0.03, 0);
   out.suit.push(rigid(hump, rest[BONE.chest], BONE.chest));
   // tall padded collar round the neck: flared into the yoke, rolled edge on top
   const collar = segment(0.074, [[0, 0.084, 0.09, 0.088, -0.01, 0, 2.2], [0.3, 0.073, 0.079, 0.075, -0.007, 0, 2.2], [0.75, 0.065, 0.072, 0.067, -0.005, 0, 2.2], [0.93, 0.065, 0.072, 0.067, -0.005, 0, 2.2], [1, 0.06, 0.067, 0.062, -0.005, 0, 2.2]], { radial: 48, region: COLLAR });
@@ -499,50 +569,48 @@ function geometry() {
 
   for (const s of [-1, 1]) {
     const bi = (n) => boneIndex(s, n);
-    // ---- limbs: [t, front, back, half-width, ox, oz, n]
+    // ---- limbs: [t, front, back, half-width, ox, oz, n]. The armour (shoulder, elbow and
+    // forearm, hip, knee and shin) swells the leather from underneath; the hard sliders are
+    // moulded over it (limb frames: +Y down the limb, -X anterior, +Z = bike +z)
     // upper arm: deltoid round the joint (its top rides the clavicle), biceps, elbow
-    const up = segment(B.upper, [[-0.2, 0.016, 0.016, 0.016, 0, 0, 2], [-0.15, 0.052, 0.056, 0.058, 0, 0, 2.1], [-0.05, 0.072, 0.076, 0.078, 0.002, 0, 2.2], [0.1, 0.07, 0.074, 0.072, 0, 0, 2.3], [0.35, 0.064, 0.061, 0.061, 0, 0, 2.3], [0.62, 0.057, 0.055, 0.055, 0, 0, 2.2], [0.86, 0.053, 0.059, 0.055, 0, 0, 2.2], [1.04, 0.05, 0.055, 0.053, 0, 0, 2.2]], { radial: 36, sub: 4, ant: -1, region: limbRegion('upper', s) });
-    out.suit.push(skinnedN(up, rest[bi('upper')], (t) => {
+    const UPR = [[-0.2, 0.016, 0.016, 0.016, 0, 0, 2], [-0.15, 0.052, 0.056, 0.058, 0, 0, 2.1], [-0.05, 0.072, 0.076, 0.078, 0.002, 0, 2.2], [0.1, 0.07, 0.074, 0.072, 0, 0, 2.3], [0.35, 0.064, 0.061, 0.061, 0, 0, 2.3], [0.62, 0.057, 0.055, 0.055, 0, 0, 2.2], [0.86, 0.053, 0.059, 0.055, 0, 0, 2.2], [1.04, 0.05, 0.055, 0.053, 0, 0, 2.2]];
+    const upB = [{ u: 0.5, t: 0.04, du: 0.2, dt: 0.24, h: 0.009, flat: 0.45 }, { u: 0.36, t: 0.0, du: 0.12, dt: 0.16, h: 0.005, flat: 0.3 }];
+    const upReg = limbRegion('upper', s);
+    const upW = (t) => {
       if (t > 0.86) { const k = clamp(0.5 + 0.5 * ((t - 1) / 0.14), 0, 1); return [[bi('upper'), 1 - k], [bi('fore'), k]]; }
       const c = 0.4 * smooth(0.1, -0.15, t);
       return [[bi('upper'), 1 - c], [bi('clav'), c]];
-    }));
-    const fo = segment(B.fore, [[-0.08, 0.048, 0.053, 0.051, 0, 0, 2.2], [0.1, 0.055, 0.058, 0.061, 0, 0, 2.3], [0.3, 0.052, 0.052, 0.058, 0, 0, 2.3], [0.62, 0.042, 0.039, 0.047, 0, 0, 2.2], [0.85, 0.036, 0.033, 0.043, 0, 0, 2.2], [1.0, 0.033, 0.031, 0.04, 0, 0, 2.2], [1.05, 0.033, 0.031, 0.04, 0, 0, 2.2]], { radial: 36, sub: 4, ant: -1, region: limbRegion('fore', s) });
-    out.suit.push(skinned(fo, rest[bi('fore')], blend(bi('fore'), bi('upper'), bi('hand'), 0.16, 0.95)));
-    // thigh: hip ball round the joint, quads, knee
-    const th = segment(B.thigh, [[-0.24, 0.02, 0.02, 0.02, 0, 0, 2], [-0.17, 0.064, 0.07, 0.068, 0, 0, 2.1], [-0.05, 0.09, 0.094, 0.088, 0, 0, 2.3], [0.2, 0.094, 0.084, 0.084, 0, 0, 2.4], [0.5, 0.083, 0.072, 0.074, 0, 0, 2.3], [0.8, 0.068, 0.06, 0.064, 0, 0, 2.3], [0.97, 0.066, 0.06, 0.063, 0, 0, 2.3], [1.07, 0.06, 0.057, 0.058, 0, 0, 2.3]], { radial: 40, sub: 4, ant: -1, region: limbRegion('thigh', s) });
-    out.suit.push(skinned(th, rest[bi('thigh')], blend(bi('thigh'), null, bi('shin'), 0.28, 0.86)));
-    const sh = segment(B.shin, [[-0.07, 0.056, 0.054, 0.055, 0, 0, 2.3], [0.08, 0.054, 0.062, 0.055, 0, 0, 2.3], [0.25, 0.05, 0.066, 0.053, 0.004, 0, 2.3], [0.45, 0.046, 0.055, 0.047, 0, 0, 2.2], [0.6, 0.042, 0.046, 0.042, 0, 0, 2.2]], { radial: 36, sub: 4, ant: -1, region: limbRegion('shin', s) });
-    out.suit.push(skinned(sh, rest[bi('shin')], blend(bi('shin'), bi('thigh'), null, 0.16, 1)));
-
-    // ---- armour (rigid). Limb frames: +Y down the limb, -X anterior, +Z = bike +z.
-    // shoulder: domed cap with two ribs over the deltoid, outer side, plus the slider strip
-    const cap = ellipsoid(0.052, 0.064, 0.027, [0, 0.0, 0], 22, 12);
-    { const p = cap.attributes.position; for (let i = 0; i < p.count; i++) if (p.getZ(i) < 0) p.setZ(i, p.getZ(i) * 0.2); cap.computeVertexNormals(); }
-    if (s < 0) cap.rotateY(Math.PI);
-    cap.translate(0.004, 0.032, s * 0.056);
-    out.suit.push(rigid(uvTo(cap, limbRegion('upper', s), 0.5, 0.1), rest[bi('upper')], bi('upper')));
-    for (let k = 0; k < 2; k++) {
-      const rib = rbox(0.052, 0.008, 0.006, [0.006, 0.018 + k * 0.03, s * 0.083], [0, 0, 0], 0.4);
-      out.gear.push(rigid(paint(rib, 0x2d2f33), rest[bi('upper')], bi('upper')));
+    };
+    out.suit.push(skinnedN(segment(B.upper, UPR, { radial: 36, sub: 4, ant: -1, region: upReg, bumps: upB }), rest[bi('upper')], upW));
+    // shoulder slider: a hard cap in the team colour, three dark ribs across it
+    const cap = moulded(B.upper, UPR, { region: upReg, bumps: upB, u: 0.5, t: 0.04, du: 0.12, dt: 0.15, prof: puck(0.0045, 0.32) });
+    out.gear.push(paint(skinnedN(cap, rest[bi('upper')], upW), TEAM.second));
+    for (const k of [-1, 0, 1]) {
+      const rib = moulded(B.upper, UPR, { region: upReg, bumps: upB, u: 0.5, t: 0.04 + k * 0.045, du: 0.085 - Math.abs(k) * 0.012, dt: 0.011, nr: 4, na: 24, prof: (rho) => 0.0062 - 0.003 * smooth(0.6, 1, rho) });
+      out.gear.push(paint(skinnedN(rib, rest[bi('upper')], upW), 0x2a2c30));
     }
-    // elbow: armour bulge under the leather + replaceable slider puck on the point of the elbow
-    const elA = ellipsoid(0.03, 0.05, 0.03, [0.04, 0.035, s * 0.008], 16, 10);
-    out.suit.push(rigid(uvTo(elA, limbRegion('fore', s), 0.75, 0.08), rest[bi('fore')], bi('fore')));
-    const puck = rbox(0.056, 0.016, 0.046, [0.062, 0.035, s * 0.014], [0, 0, 0], 0.3);
-    puck.rotateX(s * 0.3);
-    out.gear.push(rigid(paint(puck, 0x2a2b2e), rest[bi('fore')], bi('fore')));
-    // hip armour: flat dome on the outside of the hip joint
-    const hipA = ellipsoid(0.04, 0.065, 0.022, [0.004, 0.035, 0], 16, 10);
-    { const p = hipA.attributes.position; for (let i = 0; i < p.count; i++) if (p.getZ(i) < 0) p.setZ(i, p.getZ(i) * 0.25); hipA.computeVertexNormals(); }
-    if (s < 0) hipA.rotateY(Math.PI);
-    hipA.translate(0, 0, s * 0.076);
-    out.suit.push(rigid(uvTo(hipA, limbRegion('thigh', s), 0.5, 0.12), rest[bi('thigh')], bi('thigh')));
-    // knee: armour bulge + slider on the outer side
-    const kneeA = ellipsoid(0.032, 0.062, 0.054, [-0.052, 0.035, 0], 18, 10);
-    out.suit.push(rigid(uvTo(kneeA, limbRegion('shin', s), 0.22, 0.02), rest[bi('shin')], bi('shin')));
-    const ks = rbox(0.08, 0.018, 0.064, [-0.018, 0.035, s * 0.066], [Math.PI / 2, 0, 0], 0.28);
-    out.gear.push(rigid(paint(ks, 0xdcdfe2), rest[bi('shin')], bi('shin')));
+    // forearm: elbow armour running down into a forearm plate, the slider on the elbow point
+    const FOR = [[-0.08, 0.048, 0.053, 0.051, 0, 0, 2.2], [0.1, 0.055, 0.058, 0.061, 0, 0, 2.3], [0.3, 0.052, 0.052, 0.058, 0, 0, 2.3], [0.62, 0.042, 0.039, 0.047, 0, 0, 2.2], [0.85, 0.036, 0.033, 0.043, 0, 0, 2.2], [1.0, 0.033, 0.031, 0.04, 0, 0, 2.2], [1.05, 0.033, 0.031, 0.04, 0, 0, 2.2]];
+    const foB = [{ u: 0.75, t: 0.09, du: 0.17, dt: 0.19, h: 0.01, flat: 0.45 }, { u: 0.7, t: 0.34, du: 0.13, dt: 0.24, h: 0.005, flat: 0.45 }];
+    const foReg = limbRegion('fore', s), foW = blend(bi('fore'), bi('upper'), bi('hand'), 0.16, 0.95);
+    out.suit.push(skinned(segment(B.fore, FOR, { radial: 36, sub: 4, ant: -1, region: foReg, bumps: foB }), rest[bi('fore')], foW));
+    const elbow = moulded(B.fore, FOR, { region: foReg, bumps: foB, u: 0.75, t: 0.07, du: 0.12, dt: 0.12, prof: (rho, a, b) => puck(0.008, 0.32)(rho) - 0.0012 * (Math.abs(b) < 0.06 && rho < 0.7 ? 1 : 0) });
+    out.gear.push(paint(skinned(elbow, rest[bi('fore')], foW), 0x2b2d31));
+    // thigh: hip ball round the joint (hip armour on the outside), quads, knee
+    const THR = [[-0.24, 0.02, 0.02, 0.02, 0, 0, 2], [-0.17, 0.064, 0.07, 0.068, 0, 0, 2.1], [-0.05, 0.09, 0.094, 0.088, 0, 0, 2.3], [0.2, 0.094, 0.084, 0.084, 0, 0, 2.4], [0.5, 0.083, 0.072, 0.074, 0, 0, 2.3], [0.8, 0.068, 0.06, 0.064, 0, 0, 2.3], [0.97, 0.066, 0.06, 0.063, 0, 0, 2.3], [1.07, 0.06, 0.057, 0.058, 0, 0, 2.3]];
+    const thB = [{ u: 0.5, t: -0.03, du: 0.16, dt: 0.15, h: 0.008, flat: 0.45 }];
+    out.suit.push(skinned(segment(B.thigh, THR, { radial: 40, sub: 4, ant: -1, region: limbRegion('thigh', s), bumps: thB }), rest[bi('thigh')], blend(bi('thigh'), null, bi('shin'), 0.28, 0.86)));
+    // shin: knee cup and shin plate, the knee slider on the outside of the knee
+    const SHR = [[-0.07, 0.056, 0.054, 0.055, 0, 0, 2.3], [0.08, 0.054, 0.062, 0.055, 0, 0, 2.3], [0.25, 0.05, 0.066, 0.053, 0.004, 0, 2.3], [0.45, 0.046, 0.055, 0.047, 0, 0, 2.2], [0.6, 0.042, 0.046, 0.042, 0, 0, 2.2]];
+    const shB = [{ u: 0.3, t: 0.03, du: 0.21, dt: 0.21, h: 0.013, flat: 0.4 }, { u: 0.25, t: 0.3, du: 0.12, dt: 0.28, h: 0.005, flat: 0.5 }];
+    const shReg = limbRegion('shin', s), shW = blend(bi('shin'), bi('thigh'), null, 0.16, 1);
+    out.suit.push(skinned(segment(B.shin, SHR, { radial: 36, sub: 4, ant: -1, region: shReg, bumps: shB }), rest[bi('shin')], shW));
+    const knee = moulded(B.shin, SHR, {
+      region: shReg, bumps: shB, u: 0.44, t: 0.03, du: 0.14, dt: 0.14, nr: 14, na: 48,
+      // a flat face with a crisp edge, two wear grooves across it
+      prof: (rho, a, b) => puck(0.011, 0.18)(rho) - 0.0018 * (rho < 0.74 && Math.abs(Math.abs(b) - 0.24) < 0.045 ? 1 : 0),
+    });
+    out.gear.push(paint(skinned(knee, rest[bi('shin')], shW), TEAM.accent));
     // ---- glove (hand frame: +Y wrist -> grip, +X down/back, grip axis along Z at (0, .063));
     // the index and middle fingers ride their own bone to pull the levers
     gloveGeometry(s).forEach(([g, col, bone]) => out.gear.push(rigid(paint(g, col), rest[bi(bone)], bi(bone))));
@@ -577,13 +645,6 @@ function geometry() {
   };
   for (const k of ['suit', 'gear', 'boot', 'helmet', 'visor']) GEO[k].computeBoundingSphere();
   return GEO;
-}
-
-// map a rigid piece's UVs onto a spot of a limb strip (so armour bulges carry the suit colour)
-function uvTo(g, region, u, v) {
-  const uvA = g.attributes.uv;
-  for (let i = 0; i < uvA.count; i++) uvA.setXY(i, region.u0 + (region.u1 - region.u0) * (u + (uvA.getX(i) - 0.5) * 0.12), region.v0 + (region.v1 - region.v0) * (v + uvA.getY(i) * 0.1));
-  return g;
 }
 
 // Gauntlet glove round the grip. Returns [geometry, colour, bone] in that bone's space: the

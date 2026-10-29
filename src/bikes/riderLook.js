@@ -603,15 +603,17 @@ function suitColorMap(res, main, second, accent, number, name, design, stitches)
       const [hx, hy] = at(rg, 0.25, 0.56); text(hx, hy, 0.105, ink(hc), number, 0, false, '800', 0.2, accent);
       const [nx, ny] = at(rg, 0.25, 0.2); text(nx, ny, 0.024, ink(hc), name, 0, false, '700', 0.15);
     }); }
-  // limbs (outer side, u .5): sponsors running along the arms and thighs; the left strips
-  // are mirrored, so the lettering is flipped there
+  // limbs (outer side, u .5): sponsors running along the arms and thighs. A limb strip runs
+  // from its root at the bottom of the region (t0) to its far end at the top, and its u
+  // runs front to back, so seen from outside it is turned half round (and mirrored again
+  // on the left): the lettering goes in rotated by pi (and flipped on the left)
   for (const s of [-1, 1]) {
-    const U = limbReg('upper', s), F = limbReg('fore', s), TH = limbReg('thigh', s);
-    inRegion(g, U, () => { const [x, y] = at(U, 0.5, 0.42); patch(x, y, 0.1, 0.024, SP(6), Math.PI / 2, s < 0); });
-    inRegion(g, F, () => { const [x, y] = at(F, 0.5, 0.55); patch(x, y, 0.075, 0.019, SP(7), Math.PI / 2, s < 0); });
+    const U = limbReg('upper', s), F = limbReg('fore', s), TH = limbReg('thigh', s), R = Math.PI;
+    inRegion(g, U, () => { const [x, y] = at(U, 0.5, 0.42); patch(x, y, 0.1, 0.024, SP(6), R + Math.PI / 2, s < 0); });
+    inRegion(g, F, () => { const [x, y] = at(F, 0.5, 0.55); patch(x, y, 0.075, 0.019, SP(7), R + Math.PI / 2, s < 0); });
     inRegion(g, TH, () => {
-      const [x, y] = at(TH, 0.5, 0.45); patch(x, y, 0.16, 0.036, SP(2), Math.PI / 2, s < 0);
-      const [nx, ny] = at(TH, 0.5, 0.06); text(nx, ny, 0.045, ink(main), number, 0, s < 0, '800', 0.08, accent);
+      const [x, y] = at(TH, 0.5, 0.45); patch(x, y, 0.16, 0.036, SP(2), R + Math.PI / 2, s < 0);
+      const [nx, ny] = at(TH, 0.5, 0.06); text(nx, ny, 0.045, ink(main), number, R, s < 0, '800', 0.08, accent);
     });
   }
   // wear: fine scuffs where the leather meets the asphalt or the machine (knee and elbow
