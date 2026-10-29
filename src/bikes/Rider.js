@@ -21,7 +21,9 @@
 // with eyes on the start lights and a revving hand, the launch crouch over the tank,
 // downshift throttle blips, standing up over gravel and grass, idle life at a standstill
 // (breathing, glances, visor wipes, hand flexes), victory celebrations (fist pumps, the
-// winner standing to point at the sky, waves to the crowd) and a tumbling crash.
+// winner standing to point at the sky, waves to the crowd) and crashes in world space:
+// a highside flings the body over the front in a curled tumble that lands on the shoulders
+// and rolls onto the back; a lowside drops it on the hip and slides it feet first.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, toTexture, heightToNormal } from '../core/textures.js';
@@ -1105,6 +1107,9 @@ class Spring {
 const UP = new THREE.Vector3(0, 1, 0), ZAX = new THREE.Vector3(0, 0, 1), XAX = new THREE.Vector3(1, 0, 0);
 const _P = V(), _L = V(), _T = V(), _N = V(), _e = V(), _f = V(), _g = V(), _fw = V(), _latP = V(), _latS = V(), _latC = V(), _tmp = V(), _tmp2 = V(), _hd = V(), _hz = V(), _wo = V();
 const _q = new THREE.Quaternion(), _qa = new THREE.Quaternion();
+// body extremities relative to the pelvis in the crash pose: helmet, hands, feet
+const CRASH_PTS = [[0, 0.68, 0], [0.25, 0.42, 0.28], [0.25, 0.42, -0.28], [0.15, -0.86, 0.14], [0.15, -0.86, -0.14]];
+const _cv = V(), _cp = V(), _cq = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cm = new THREE.Matrix4(), _cm2 = new THREE.Matrix4(), _one = new THREE.Vector3(1, 1, 1), _I4 = new THREE.Matrix4();
 // idle repertoire at a standstill (duration s)
 const IDLE = [['look', 2.4], ['visor', 1.7], ['flex', 1.3], ['dash', 1.5], ['stretch', 2.0], ['tank', 1.1], ['look', 2.0]];
 
@@ -1166,7 +1171,7 @@ export class Rider {
     };
     this.sp = { surge: new Spring(70, 11), heave: new Spring(160, 13), sway: new Spring(55, 9), headP: new Spring(120, 12), headR: new Spring(100, 11) };
     this.t = hash(seed * 1.7) * 10;
-    this._ovP = V(); this._ovD = V(1, 0, 0);
+    this._ovP = V(); this._ovD = new THREE.Vector3(1, 0, 0);
     this.update({ speed: 0 }, 1);
   }
 
@@ -1182,6 +1187,10 @@ export class Rider {
     const crashed = !!s.crashed;
     const pitchB = s.pitch || 0;
     if (!!s.wet !== this._wet) { this._wet = !!s.wet; setWet(this.mats, this._wet); }
+    const cr = crashed ? this._crashState(s) : null;
+    const crT = cr ? Math.max(0, s.crashT || 0) : 0;
+    // in the air after a highside the body curls up; on the ground it spreads out to slide
+    const crAir = cr && cr.high ? 1 - smooth(cr.tLand - 0.1, cr.tLand + 0.25, crT) : 0;
 
     // ---------------- signals
     const comp = (s.compF || 0) + (s.compR || 0);
@@ -1378,7 +1387,7 @@ export class Rider {
     let th = Math.max((lo + hi) / 2, tuck * S.tuck * 1.35, (S.lean0 || 0) * moving, st.grid * 0.45 * (S.lean0 > 0.3 ? 1 : 0.4));
     th += surge * 0.6 + wheel * 0.35 + breath + 0.28 * st.launch;
     th = lerp(th, 0.12, sitUp * 0.85);
-    th = clamp(th, -0.35, 1.5) * (1 - st.crash);
+    th = clamp(th, -0.35, 1.5) * (1 - st.crash) + 0.55 * crAir * st.crash;
     chain(th);
     // lateral axes per segment (twist grows up the spine)
     _latP.set(0, 0, 1).addScaledVector(_e, -_e.z).normalize();
@@ -1410,7 +1419,7 @@ export class Rider {
     head.position.copy(headPos);
     const buffet = speed > 42 ? noise1(t * 9.3 + this.seed) * 0.016 * clamp((speed - 42) / 30, 0, 1) * (1 - tuck * 0.5) : 0;
     const yaw = clamp(ca * 0.32 * pe.lookIn * (1 - stop) * (1 - st.look) + headYaw * (1 - st.look) - 1.25 * st.look, -1.4, 1.4);
-    const pitchH = -0.06 + pe.head - 0.1 * tuck + 0.06 * st.brake + headPitch + headLagP * 0.4 + buffet;
+    const pitchH = -0.06 + pe.head - 0.1 * tuck + 0.06 * st.brake + headPitch + headLagP * 0.4 + buffet - 0.5 * crAir * st.crash;
     const rollH = -lean * 0.55 + headRoll + headLagR + buffet * 0.6;
     _x.set(Math.cos(yaw) * Math.cos(pitchH), Math.sin(pitchH), Math.sin(yaw) * Math.cos(pitchH)).normalize();
     _y.copy(UP).applyAxisAngle(_x, rollH);
@@ -1437,8 +1446,11 @@ export class Rider {
         _hz.lerp(_tmp.copy(_latC), w).normalize();
       }
       if (st.crash > 0) {
-        const ct = Math.min(3, s.crashT || 0), fl = Math.exp(-ct * 1.2);
-        wrist.lerp(_tmp.copy(L.sh).add(_tmp2.set(0.18 + 0.2 * Math.sin(ct * 9 + s0) * fl, 0.15 + 0.25 * Math.cos(ct * 7) * fl, s0 * 0.5)), st.crash);
+        // arms forward to protect the head in the air, then spread out to slide
+        const ct = Math.min(3, crT), fl = Math.exp(-ct * 1.2);
+        _tmp2.set(0.05 + 0.2 * Math.sin(ct * 9 + s0) * fl, 0.12 + 0.25 * Math.cos(ct * 7) * fl, s0 * 0.52);
+        _tmp2.lerp(_c.set(0.3, -0.02, s0 * 0.26), crAir);
+        wrist.lerp(_tmp.copy(L.sh).add(_tmp2), st.crash);
       }
       // elbows out and down; tucked in on a straight; the inside one drops in a corner
       _a.set(-0.35 - 0.25 * tuck, -1 - 0.6 * inside + 0.35 * (ha - inside), s0 * ((0.55 - 0.25 * tuck) * pe.elbow + 0.45 * inside));
@@ -1481,8 +1493,11 @@ export class Rider {
       // standstill: left foot down to the road
       if (s0 < 0 && stop > 0.01) ankle.lerp(_tmp.set(pg.x + 0.12, 0.09, -(pg.z + 0.2)), stop);
       if (st.crash > 0) {
-        const ct = Math.min(3, s.crashT || 0), fl = Math.exp(-ct);
-        ankle.lerp(_tmp.copy(L.hp).add(_tmp2.set(0.12 + 0.25 * Math.sin(ct * 6 + s0) * fl, -0.72, s0 * 0.24)), st.crash);
+        // knees drawn up while tumbling, legs out sliding (bent on a lowside)
+        const ct = Math.min(3, crT), fl = Math.exp(-ct);
+        _tmp2.set(0.12 + 0.25 * Math.sin(ct * 6 + s0) * fl, cr && !cr.high ? -0.64 : -0.76, s0 * 0.24);
+        _tmp2.lerp(_c.set(0.32, -0.42, s0 * 0.17), crAir);
+        ankle.lerp(_tmp.copy(L.hp).add(_tmp2), st.crash);
       }
       // knees: forward and gripping the tank, the inside one out toward the kerb
       _a.set(0.9, 0.3 - 0.5 * inside, s0 * (0.12 + 1.45 * inside * pe.knee + 0.8 * toeOut - 0.06 * st.brake));
@@ -1494,15 +1509,83 @@ export class Rider {
       placeSeg(b('foot'), ankle, toe, UP);
     }
 
-    // ---------------- crash: thrown clear, tumbling, then sliding to rest
-    if (st.crash > 0.001) {
-      const ct = Math.min(3, s.crashT || 0), c = st.crash;
-      const spin = (1 - Math.exp(-ct * 1.4)) * 2.2;
-      this.root.position.set(-0.55 * ct * c, (0.5 + 0.35 * Math.max(0, Math.sin(Math.min(ct, 1.2) * 2.6))) * c, -0.15 * ct * c);
-      this.root.rotation.set(spin * 0.35 * c, 0, -(0.6 + spin * 0.5) * c);
-    } else if (this.root.position.lengthSq() > 0 || this.root.rotation.x !== 0) {
-      this.root.position.set(0, 0, 0); this.root.rotation.set(0, 0, 0);
+    // ---------------- crash: the body leaves the machine and travels in world space
+    if (cr) this._crashPlace(cr, crT);
+    else if (this._crash) { this._crash = null; this.root.position.set(0, 0, 0); this.root.quaternion.identity(); }
+  }
+
+  // launch state at the moment the rider lets go: direction, speed, seat height, highside
+  // (flung over the top, tumbling) or lowside (down on the hip beside the machine)
+  _crashState(s) {
+    if (this._crash) return this._crash;
+    const par = this.root.parent;
+    if (par) par.updateWorldMatrix(true, false);
+    const M = par ? par.matrixWorld : _I4;
+    const F = new THREE.Vector3(1, 0, 0).transformDirection(M); F.y = 0;
+    if (F.lengthSq() < 1e-6) F.set(1, 0, 0);
+    F.normalize();
+    const R = V().crossVectors(F, UP).normalize();
+    const pivot = new THREE.Vector3(this.seat.x, this.seat.y + 0.1, 0);
+    const P0 = pivot.clone().applyMatrix4(M);
+    let top = this.root;
+    while (top.parent && !top.parent.isScene) top = top.parent;
+    const kind = s.crashKind, lean0 = clamp(s.lean || 0, -1.2, 1.2);
+    const high = kind ? kind !== 'lowside' && kind !== 'loop' : Math.abs(lean0) < 0.55;
+    const v0 = Math.abs(s.speed || 0);
+    const h0 = Math.max(0.2, P0.y - top.position.y - 0.15);
+    const vy = high ? 1.8 + Math.min(2, v0 * 0.04) : 0;
+    const tLand = high ? (vy + Math.sqrt(vy * vy + 2 * 9.81 * h0)) / 9.81 : 0.34;
+    const off = P0.clone().sub(top.position);
+    this._crash = { F, R, P0, off, pivot, top, high, lean0, side: Math.sign(lean0) || (hash(this.seed) < 0.5 ? -1 : 1), v0, h0, vy, tLand, spin: (hash(this.seed * 3.3 + v0) - 0.5) * 2.4 };
+    return this._crash;
+  }
+
+  // closed-form motion relative to the sliding machine (so replays can scrub and the body
+  // never strays out of shot): flight over the front, bounce, roll onto the back and slide;
+  // or the fall onto the hip and a slide feet first beside it
+  _crashPlace(C, ct) {
+    const tA = C.high ? C.tLand : 0;
+    const dist = C.high ? 2.2 * smooth(0, tA + 0.1, ct) + 1.6 * smooth(tA, tA + 1.2, ct) : -1.2 * smooth(0.1, 1.4, ct);
+    let hgt, lat, roll, tumble, yaw = 0, turn = 0;
+    if (C.high) {
+      if (ct < tA) { hgt = 0.15 + C.h0 + C.vy * ct - 4.905 * ct * ct; tumble = -(Math.PI + 0.6) * (ct / tA); }
+      else {
+        const tau = ct - tA;
+        hgt = 0.15 + 0.2 * Math.abs(Math.sin(tau * 6.5)) * Math.exp(-tau * 5);
+        tumble = -(Math.PI + 0.6) - (Math.PI / 2 - 0.6) * smooth(0, 0.45, tau) + 0.12 * Math.sin(tau * 5) * Math.exp(-tau * 2);
+        yaw = C.spin * (1 - Math.exp(-tau * 1.3));
+      }
+      roll = C.lean0 * (1 - smooth(0, 0.35, ct));
+      lat = -C.side * 1.4 * smooth(0, 0.9, ct);
+    } else {
+      // down on the hip, rolled onto the back and swung round to slide feet first
+      const k = smooth(0, C.tLand, ct);
+      hgt = 0.15 + C.h0 * (1 - k);
+      roll = lerp(C.lean0, C.side * Math.PI / 2, k);
+      turn = C.side * Math.PI / 2 * 0.85 * smooth(0.4, 1.3, ct);
+      tumble = -0.3 * smooth(0, 0.6, ct);
+      yaw = -C.side * Math.PI / 2 * 0.9 * smooth(0.2, 1.5, ct) + C.spin * 0.15 * smooth(0.3, 1.8, ct);
+      lat = C.side * 1.15 * smooth(0, 0.9, ct);
     }
+    // world: T(P) R(yaw) R(heading) R(roll about forward) R(tumble about the side) T(-pivot)
+    const T = C.top.position, k0 = 1 - smooth(0, 0.5, ct);
+    _cp.set(T.x + C.off.x * k0, 0, T.z + C.off.z * k0).addScaledVector(C.F, dist).addScaledVector(C.R, lat);
+    _cp.y = T.y + hgt;
+    _cm.makeBasis(C.F, UP, C.R);
+    _cq.setFromRotationMatrix(_cm);
+    _cq2.setFromAxisAngle(UP, yaw); _cq.premultiply(_cq2);
+    _cq2.setFromAxisAngle(XAX, roll); _cq.multiply(_cq2);
+    _cq2.setFromAxisAngle(UP, turn); _cq.multiply(_cq2);
+    _cq2.setFromAxisAngle(ZAX, tumble); _cq.multiply(_cq2);
+    // never through the road: head, hands and feet stay above it (the body rolls over its
+    // shoulders when it lands upside down)
+    let low = 0;
+    for (const q of CRASH_PTS) { _cv.set(q[0], q[1], q[2]).applyQuaternion(_cq); low = Math.min(low, _cv.y); }
+    _cp.y = Math.max(_cp.y, C.top.position.y + 0.1 - low);
+    _cm.compose(_cp, _cq, _one).multiply(_cm2.makeTranslation(-C.pivot.x, -C.pivot.y, -C.pivot.z));
+    const par = this.root.parent;
+    if (par) { par.updateWorldMatrix(true, false); _cm.premultiply(_cm2.copy(par.matrixWorld).invert()); }
+    _cm.decompose(this.root.position, this.root.quaternion, this.root.scale);
   }
 
   dispose() {

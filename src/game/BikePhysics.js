@@ -428,6 +428,7 @@ export class BikePhysics {
     if (this.crashed || this.shield) return;
     this.crashed = true;
     this.crashT = 0;
+    this.crashKind = kind;
     this.drifting = false;
     this.crashSpin = (Math.random() - 0.5) * 6;
     this.crashSide = this.lean !== 0 ? Math.sign(this.lean) : (Math.random() < 0.5 ? -1 : 1);
@@ -493,6 +494,7 @@ export class BikePhysics {
     out.airborne = this.airborne;
     out.crashed = this.crashed;
     out.crashT = this.crashT;
+    out.crashKind = this.crashKind;
     return out;
   }
 }
