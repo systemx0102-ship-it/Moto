@@ -26,7 +26,8 @@
 // downshift throttle blips, a raised hand in protest after a knock from a rival, standing
 // up over gravel and grass, stoppies braced on locked
 // arms, visor wipes with the left glove on wet straights, idle life at a standstill
-// (breathing, glances, visor wipes, hand flexes, standing up off the seat to stretch),
+// (breathing, glances, visor wipes, hand flexes, standing up off the seat to stretch,
+// cinching a glove strap with the other hand),
 // victory celebrations (fist pumps, both arms up in a V with the machine stopped, the
 // winner standing to point at the sky, waves to the crowd), a relaxed cool-down lap with a
 // hand resting on the thigh, and crashes in world space:
@@ -1203,7 +1204,7 @@ const _q = new THREE.Quaternion(), _qa = new THREE.Quaternion();
 const CRASH_PTS = [[0, 0.68, 0], [0.25, 0.42, 0.28], [0.25, 0.42, -0.28], [0.15, -0.86, 0.14], [0.15, -0.86, -0.14]];
 const _cv = V(), _cp = V(), _cq = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cm = new THREE.Matrix4(), _cm2 = new THREE.Matrix4(), _one = new THREE.Vector3(1, 1, 1), _I4 = new THREE.Matrix4();
 // idle repertoire at a standstill (duration s)
-const IDLE = [['look', 2.4], ['visor', 1.7], ['flex', 1.3], ['dash', 1.5], ['stretch', 2.0], ['tank', 1.1], ['look', 2.0], ['legs', 2.2]];
+const IDLE = [['look', 2.4], ['visor', 1.7], ['flex', 1.3], ['dash', 1.5], ['stretch', 2.0], ['tank', 1.1], ['look', 2.0], ['legs', 2.2], ['gloves', 2.4]];
 // standing beside the machine (showroom)
 const STAND_IDLE = [['look', 2.2], ['visor', 1.6], ['flex', 1.4], ['stretch', 2.0], ['hip', 3.4], ['look', 1.8]];
 
@@ -1401,6 +1402,19 @@ export class Rider {
       const side = hash(this.seed + st.actN) < 0.5 ? -1 : 1;
       if (kind === 'look') { headYaw += side * 0.85 * env; headPitch += 0.05 * env; }
       else if (kind === 'legs') { straddle = env; headPitch -= 0.1 * env; } // up off the seat, both feet down
+      else if (kind === 'gloves') {
+        // both hands off the bars: the right one cinches the left glove's wrist strap
+        const shL = this.limbs[0].sh, shR = this.limbs[1].sh, pull = Math.sin(u * Math.PI * 5) * 0.025;
+        ovW = env;
+        ov.addVectors(shL, shR).multiplyScalar(0.5).add(_tmp.set(0.27, -0.16, -0.05));
+        sitUp = Math.max(sitUp, 0.6 * env);
+        ovD.set(0.45, 0.05, 0.9);
+        ovRW = env;
+        this._ovRP.copy(ov).add(_tmp.set(0.025, 0.035, 0.05 + pull));
+        this._ovRD.set(0.25, 0.05, -0.95);
+        fingL = 0.1; fingR = 0.7;
+        headPitch -= 0.32 * env;
+      }
       else if (kind === 'dash') headPitch -= 0.38 * env;
       else if (kind === 'stretch') { headRoll += Math.sin(u * Math.PI * 2) * 0.35 * env; headPitch -= 0.12 * env; }
       else if (kind === 'flex') fingL = Math.max(0, Math.sin(u * Math.PI * 4)) * 0.9 * env;
