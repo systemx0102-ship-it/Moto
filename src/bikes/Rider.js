@@ -1328,7 +1328,7 @@ export class Rider {
     if (st.wasAir && !s.airborne && !settle) sp.heave.v -= 1.6;
     // kerbs and rough ground buzz through the body and the helmet
     if (!settle && speed > 5 && !s.airborne && (s.onCurb || s.offRoad)) {
-      const amp = (s.onCurb ? 0.28 : 0.18) * clamp(speed / 30, 0.3, 1);
+      const amp = (s.onCurb ? 0.15 : 0.1) * clamp(speed / 30, 0.3, 1); // ~5 mm rms at the seat
       sp.heave.v += (Math.random() - 0.5) * amp; sp.headP.v += (Math.random() - 0.5) * amp * 2;
     }
     // a knock from a rival or the barrier shoves the body away from it and snaps the head
