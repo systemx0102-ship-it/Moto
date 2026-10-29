@@ -236,43 +236,74 @@ export class Terrain {
   _farRing() {
     const far = this.track.theme.far;
     const group = new THREE.Group();
-    if (far.skyline) {
-      // distant city skyline: tall dark boxes with lit windows (merged)
-      return group;
-    }
+    if (far.skyline) return group; // the city skyline is built by the scenery
     if (!far.height) return group;
-    const segs = 160, rows = 6;
-    const radius = this.size * 0.62;
-    const pos = [], col = [], idx = [];
+    // distant ranges: a ring of eroded ridges (domain-warped ridged noise), smooth shaded,
+    // coloured by altitude and slope (vegetation, scree, rock, snow); the aerial perspective
+    // pass hazes them into the distance
+    const segs = 900, rows = 46;
+    const radius = this.size * 0.6, depth = radius * 0.42;
     const n = this.noise;
-    const cBase = new THREE.Color(far.color), cSnow = new THREE.Color(0xf4f8ff);
+    const th = this.track.theme;
+    const veg = new THREE.Color(far.color), rock = new THREE.Color(th.terrain.rockColor || 0x7a756c), snowC = new THREE.Color(0xf2f6fb);
+    if (th.terrain.mesa) veg.lerp(new THREE.Color(0xb86a42), 0.4);
+    const scree = rock.clone().lerp(veg, 0.45);
+    const pos = new Float32Array((rows + 1) * (segs + 1) * 3), col = new Float32Array((rows + 1) * (segs + 1) * 3);
+    const H = new Float32Array((rows + 1) * (segs + 1));
     for (let r = 0; r <= rows; r++) {
-      for (let s = 0; s <= segs; s++) {
-        const a = (s / segs) * Math.PI * 2;
-        const v = r / rows;
-        const ridge = n.ridged(Math.cos(a) * 3 + 10, Math.sin(a) * 3 + 10, 5);
-        let h = Math.pow(ridge, 2.2) * far.height * (0.6 + 0.4 * n.noise(a * 2, 3));
-        if (far.mesa) h = Math.round(h / 40) * 40 * 0.9 + h * 0.1;
-        const rr = radius + v * radius * 0.25;
-        const hh = this.skirtY - 8 + h * Math.sin(v * Math.PI) * (v < 0.5 ? v * 2 : 1);
-        pos.push(this.cx + Math.cos(a) * rr, hh, this.cz + Math.sin(a) * rr);
-        const t = far.snow ? smoothstep(far.height * 0.35, far.height * 0.6, hh) : 0;
-        const c = cBase.clone().lerp(cSnow, t);
-        col.push(c.r, c.g, c.b);
+      const v = r / rows;
+      for (let sg = 0; sg <= segs; sg++) {
+        const a = (sg / segs) * Math.PI * 2;
+        const rr = radius + v * depth;
+        const px = Math.cos(a) * rr, pz = Math.sin(a) * rr;
+        // domain warp then ridged multifractal (sharp crests, eroded gullies)
+        const wx = px / 900 + n.fbm(px / 1400, pz / 1400, 3) * 1.4, wz = pz / 900 + n.fbm(px / 1400 + 9, pz / 1400 + 3, 3) * 1.4;
+        let ridge = n.ridged(wx, wz, 6);
+        ridge = Math.pow(Math.max(0, ridge - 0.25) / 0.75, 1.9);
+        const massif = 0.55 + 0.45 * n.fbm(px / 3000 + 4, pz / 3000 - 2, 3);
+        let h = ridge * far.height * 1.35 * massif;
+        if (far.mesa) { const st = 46; const f = h / st, fl = Math.floor(f); h = (fl + smoothstep(0.7, 0.92, f - fl)) * st; }
+        // rise from the plain in front, fall away behind
+        const env = smoothstep(0, 0.28, v) * (1 - smoothstep(0.75, 1, v) * 0.6);
+        h = h * env;
+        const o = r * (segs + 1) + sg;
+        H[o] = h;
+        pos[o * 3] = this.cx + px; pos[o * 3 + 1] = this.skirtY - 6 + h; pos[o * 3 + 2] = this.cz + pz;
       }
     }
+    const idx = [];
     for (let r = 0; r < rows; r++) {
-      for (let s = 0; s < segs; s++) {
-        const a = r * (segs + 1) + s, b = a + 1, c = a + segs + 1, d = c + 1;
-        idx.push(a, b, c, b, d, c);
+      for (let sg = 0; sg < segs; sg++) {
+        const a = r * (segs + 1) + sg, b = a + 1, c = a + segs + 1, d = c + 1;
+        idx.push(a, c, b, b, c, d);
       }
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide, flatShading: true }));
+    const nrm = g.attributes.normal;
+    // make sure normals face up (index winding may face down)
+    let sy = 0; for (let i = 0; i < nrm.count; i += 97) sy += nrm.getY(i);
+    if (sy < 0) { for (let i = 0; i < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; } g.setIndex(idx); g.computeVertexNormals(); }
+    const c = new THREE.Color();
+    const snowLine = far.height * (th.terrain.followTrack ? 0.42 : 0.62);
+    for (let i = 0; i < nrm.count; i++) {
+      const h = H[i], slope = 1 - nrm.getY(i);
+      const jit = n.noise(pos[i * 3] / 120, pos[i * 3 + 2] / 120);
+      c.copy(veg).lerp(scree, smoothstep(0.18, 0.4, slope + jit * 0.08));
+      c.lerp(rock, smoothstep(0.38, 0.6, slope + jit * 0.06) * 0.85);
+      if (far.snow) {
+        const sn = smoothstep(snowLine - 40, snowLine + 30, h + jit * 35) * (1 - smoothstep(0.55, 0.8, slope));
+        c.lerp(snowC, sn);
+      }
+      c.multiplyScalar(0.85 + jit * 0.12);
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide }));
+    m.name = 'farRange';
+    m.receiveShadow = true;
     group.add(m);
     return group;
   }

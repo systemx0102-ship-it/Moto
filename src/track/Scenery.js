@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { rng, Noise2D, clamp } from '../core/utils.js';
-import { facadeTextures, billboardTexture, neonSignTexture, foliageTexture, treeBarkTexture } from '../core/textures.js';
+import { facadeTextures, billboardTexture, neonSignTexture, foliageTexture, treeBarkTexture, makeCanvas, toTexture, heightToNormal } from '../core/textures.js';
 
 function colorize(geo, color) {
   const c = new THREE.Color(color);
@@ -422,8 +422,8 @@ export class Scenery {
       const geo = mergeGeometries(buckets[v], false);
       const ft = facadeTextures(v + 1, { night, hue: [210, 30, 260, 180][v], glass: v === 2 });
       const mat = new THREE.MeshStandardMaterial({
-        map: ft.map, emissiveMap: ft.emissiveMap, emissive: night ? 0xffffff : 0x000000, emissiveIntensity: night ? 0.75 : 0,
-        roughness: v === 2 ? 0.15 : 0.7, metalness: v === 2 ? 0.7 : 0.1,
+        map: ft.map, emissiveMap: ft.emissiveMap, emissive: night ? 0xffffff : 0x000000, emissiveIntensity: night ? 0.62 : 0,
+        roughnessMap: ft.roughnessMap, roughness: 1, metalness: v === 2 ? 0.55 : 0.05,
       });
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = false; m.receiveShadow = true;
@@ -453,37 +453,171 @@ export class Scenery {
       sky.push(b);
     }
     const ft = facadeTextures(9, { night, hue: 230 });
-    const skyMat = new THREE.MeshStandardMaterial({ map: ft.map, emissiveMap: ft.emissiveMap, emissive: night ? 0xffffff : 0, emissiveIntensity: night ? 0.6 : 0, roughness: 0.8 });
+    const skyMat = new THREE.MeshStandardMaterial({ map: ft.map, emissiveMap: ft.emissiveMap, emissive: night ? 0xffffff : 0, emissiveIntensity: night ? 0.5 : 0, roughnessMap: ft.roughnessMap, roughness: 1 });
     this.group.add(new THREE.Mesh(mergeGeometries(sky, false), skyMat));
   }
 
   _houses(kind) {
     const t = this.track, r = this.r;
-    const walls = [], roofs = [];
+    const villa = kind === 'villa';
+    const walls = [], roofs = [], trims = [];
     const count = Math.round(70 * this.q.density);
+    const wallTex = houseWallTexture(kind), roofTex = roofTexture(kind);
     for (let i = 0; i < count; i++) {
       const c = this._candidate(18, 260);
       if (!c) continue;
-      const w = 8 + r() * 8, d = 7 + r() * 6, h = kind === 'villa' ? 4 + r() * 4 : 5 + r() * 3;
+      const w = 8 + r() * 8, d = 7 + r() * 6, h = villa ? (r() < 0.5 ? 3.2 : 6.2) : 5.4 + r() * 1.2;
       const rot = r() * Math.PI;
+      const xf = new THREE.Matrix4().makeRotationY(rot).premultiply(new THREE.Matrix4().makeTranslation(c.x, c.y - 0.3, c.z));
+      // walls: uv in metres / 4 so each tile holds one window bay and the floors line up
       const wall = new THREE.BoxGeometry(w, h, d);
+      const uv = wall.attributes.uv, nrm = wall.attributes.normal;
+      for (let k = 0; k < uv.count; k++) {
+        const nx = Math.abs(nrm.getX(k)), ny = Math.abs(nrm.getY(k));
+        const fw = ny > 0.5 ? 0 : nx > 0.5 ? d : w;
+        uv.setXY(k, uv.getX(k) * fw / 4, ny > 0.5 ? 0 : uv.getY(k) * h / 3.1);
+      }
       wall.translate(0, h / 2, 0);
-      wall.rotateY(rot); wall.translate(c.x, c.y - 0.3, c.z);
+      wall.applyMatrix4(xf);
       walls.push(wall);
-      const roof = new THREE.ConeGeometry(Math.max(w, d) * 0.75, kind === 'villa' ? 2 : 4, 4, 1);
-      roof.rotateY(Math.PI / 4);
-      roof.scale(w / Math.max(w, d), 1, d / Math.max(w, d));
-      roof.translate(0, h + (kind === 'villa' ? 1 : 2), 0);
-      roof.rotateY(rot); roof.translate(c.x, c.y - 0.3, c.z);
+      // gable roof with eaves overhang (ridge along the long side), tiles / shingles in uv metres
+      const pitch = villa ? 0.36 : 0.62, ov = villa ? 0.45 : 0.9;
+      const along = w >= d, L = (along ? w : d) / 2 + ov, S = (along ? d : w) / 2 + ov, rh = S * pitch;
+      const roof = gableRoof(L, S, rh, 0.14);
+      if (!along) roof.rotateY(Math.PI / 2);
+      roof.translate(0, h, 0);
+      roof.applyMatrix4(xf);
       roofs.push(roof);
+      // chimney + (chalets) wooden balcony across the front
+      const ch = new THREE.BoxGeometry(0.6, rh + 1.2, 0.6);
+      ch.translate((along ? 1 : 0) * L * 0.4, h + rh * 0.6, (along ? 0 : 1) * L * 0.4);
+      ch.applyMatrix4(xf); trims.push(colorize(prep(ch), villa ? 0xe8e2d6 : 0x8a8580));
+      if (!villa) {
+        const bw = (along ? w : d) * 0.9;
+        const deck = new THREE.BoxGeometry(along ? bw : 1.3, 0.12, along ? 1.3 : bw);
+        deck.translate(along ? 0 : (d / 2 + 0.6) * 0 + 0, h * 0.55, 0);
+        const off = (along ? d : w) / 2 + 0.6;
+        deck.translate(along ? 0 : off, 0, along ? off : 0);
+        deck.applyMatrix4(xf); trims.push(colorize(prep(deck), 0x6a4528));
+        const rail = new THREE.BoxGeometry(along ? bw : 0.08, 1.0, along ? 0.08 : bw);
+        rail.translate(along ? 0 : off + 0.6, h * 0.55 + 0.55, along ? off + 0.6 : 0);
+        rail.applyMatrix4(xf); trims.push(colorize(prep(rail), 0x5a3a20));
+      }
     }
     if (!walls.length) return;
-    const wm = new THREE.MeshStandardMaterial({ color: kind === 'villa' ? 0xf2ece0 : 0x8a5a3a, roughness: 0.85 });
-    const rm = new THREE.MeshStandardMaterial({ color: kind === 'villa' ? 0xb8502a : 0xf0f4fa, roughness: 0.8, flatShading: true });
+    const wm = new THREE.MeshStandardMaterial({ map: wallTex.map, normalMap: wallTex.normalMap, roughnessMap: wallTex.roughnessMap, roughness: 1 });
+    const rm = new THREE.MeshStandardMaterial({ map: roofTex.map, normalMap: roofTex.normalMap, roughness: villa ? 0.8 : 0.85, side: THREE.DoubleSide });
     const a = new THREE.Mesh(mergeGeometries(walls, false), wm);
     const b = new THREE.Mesh(mergeGeometries(roofs, false), rm);
-    a.castShadow = b.castShadow = true;
-    a.receiveShadow = b.receiveShadow = true;
-    this.group.add(a, b);
+    const tm = new THREE.Mesh(mergeGeometries(trims, false), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+    a.castShadow = b.castShadow = tm.castShadow = true;
+    a.receiveShadow = b.receiveShadow = tm.receiveShadow = true;
+    this.group.add(a, b, tm);
   }
+}
+
+// gable roof: two pitched slabs (thickness th) plus the gable ends, uv in metres
+function gableRoof(L, S, rh, th) {
+  const g = new THREE.BufferGeometry();
+  const P = [], U = [], I = [];
+  const quad = (a, b, c, d, ua, ub, uc, ud) => { const o = P.length / 3; P.push(...a, ...b, ...c, ...d); U.push(...ua, ...ub, ...uc, ...ud); I.push(o, o + 1, o + 2, o, o + 2, o + 3); };
+  const slope = Math.hypot(S, rh);
+  for (const sd of [-1, 1]) {
+    // top surface of each slab, eave at z = sd*S, ridge at z = 0
+    quad([-L, 0, sd * S], [L, 0, sd * S], [L, rh, 0], [-L, rh, 0], [0, 0], [2 * L, 0], [2 * L, slope], [0, slope]);
+    // underside (soffit), a little lower
+    quad([L, -th, sd * S], [-L, -th, sd * S], [-L, rh - th, 0], [L, rh - th, 0], [0, 0], [2 * L, 0], [2 * L, slope], [0, slope]);
+    // fascia board along the eave
+    quad([-L, -th, sd * S], [L, -th, sd * S], [L, 0, sd * S], [-L, 0, sd * S], [0, 0], [2 * L, 0], [2 * L, 0.1], [0, 0.1]);
+  }
+  for (const e of [-1, 1]) {
+    // gable triangle (wall infill under the roof), set back by the overhang
+    const x = e * (L - 0.5);
+    const o = P.length / 3;
+    P.push(x, 0, -S + 0.5, x, 0, S - 0.5, x, rh * (1 - 0.5 / S), 0);
+    U.push(0, 0, 1, 0, 0.5, 0.5);
+    I.push(o, o + 1, o + 2);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  g.setIndex(I);
+  g.computeVertexNormals();
+  return g;
+}
+
+const _houseCache = new Map();
+// plaster wall with one window bay per 4 m tile (shutters for villas, timber + window boxes for chalets)
+function houseWallTexture(kind) {
+  if (_houseCache.has('w' + kind)) return _houseCache.get('w' + kind);
+  const villa = kind === 'villa';
+  const W = 256, Hh = 200;
+  const { c, g } = makeCanvas(W, Hh);
+  const rc = makeCanvas(W, Hh);
+  const h = new Float32Array(W * Hh);
+  const rr = rng(villa ? 3 : 5);
+  // base: lime plaster (villas) or larch boards over a stone plinth (chalets)
+  g.fillStyle = villa ? '#efe7d6' : '#7a5232'; g.fillRect(0, 0, W, Hh);
+  for (let i = 0; i < 1800; i++) { const v = rr(); g.fillStyle = `rgba(${v < 0.5 ? 60 : 255},${v < 0.5 ? 50 : 250},${v < 0.5 ? 40 : 240},${rr() * 0.07})`; g.fillRect(rr() * W, rr() * Hh, 1 + rr() * 6, 1 + rr() * 6); }
+  if (!villa) for (let x = 0; x < W; x += 16) { g.fillStyle = `rgba(30,18,8,${0.35 + rr() * 0.2})`; g.fillRect(x, 0, 2, Hh); for (let y = 0; y < Hh; y++) h[y * W + x] = -0.5; }
+  // window: frame, glass, glazing bars, sill; shutters for villas
+  const wx = W * 0.32, wy = Hh * 0.22, ww = W * 0.36, wh = Hh * 0.5;
+  if (villa) { g.fillStyle = '#2f5a3a'; g.fillRect(wx - ww * 0.42, wy, ww * 0.4, wh); g.fillRect(wx + ww * 1.02, wy, ww * 0.4, wh); for (let y = wy; y < wy + wh; y += 6) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(wx - ww * 0.42, y, ww * 0.4, 1.5); g.fillRect(wx + ww * 1.02, y, ww * 0.4, 1.5); } }
+  g.fillStyle = villa ? '#f6f4ee' : '#e8e2d2'; g.fillRect(wx - 5, wy - 5, ww + 10, wh + 10);
+  g.fillStyle = '#20262c'; g.fillRect(wx, wy, ww, wh);
+  const grd = g.createLinearGradient(wx, wy, wx + ww, wy + wh); grd.addColorStop(0, 'rgba(160,190,220,0.35)'); grd.addColorStop(0.5, 'rgba(255,255,255,0.05)'); grd.addColorStop(1, 'rgba(120,150,180,0.25)');
+  g.fillStyle = grd; g.fillRect(wx, wy, ww, wh);
+  g.fillStyle = villa ? '#f6f4ee' : '#e8e2d2'; g.fillRect(wx + ww / 2 - 2, wy, 4, wh); g.fillRect(wx, wy + wh * 0.45, ww, 3);
+  g.fillStyle = villa ? '#d8d0c0' : '#a09a90'; g.fillRect(wx - 9, wy + wh + 3, ww + 18, 6);
+  if (!villa) { g.fillStyle = '#5a3a1c'; g.fillRect(wx - 6, wy + wh + 9, ww + 12, 10); for (let k = 0; k < 9; k++) { g.fillStyle = ['#d23a3a', '#e85a8a', '#f0c030'][k % 3]; g.beginPath(); g.arc(wx + 4 + k * ww / 8.5, wy + wh + 9, 4, 0, Math.PI * 2); g.fill(); } }
+  // plinth
+  g.fillStyle = villa ? 'rgba(150,135,110,0.5)' : '#8a8580'; g.fillRect(0, Hh - 14, W, 14);
+  // relief: window recess, sill out
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+    let v = h[y * W + x];
+    if (x > wx && x < wx + ww && y > wy && y < wy + wh) v -= 1.2;
+    if (y > wy + wh + 3 && y < wy + wh + 9 && x > wx - 9 && x < wx + ww + 9) v += 0.6;
+    h[y * W + x] = v;
+  }
+  rc.g.fillStyle = 'rgb(225,225,225)'; rc.g.fillRect(0, 0, W, Hh);
+  rc.g.fillStyle = 'rgb(20,20,20)'; rc.g.fillRect(wx, wy, ww, wh);
+  const tex = { map: toTexture(c), normalMap: toTexture(heightToNormal(h, W, Hh, 2), { srgb: false }), roughnessMap: toTexture(rc.c, { srgb: false }) };
+  _houseCache.set('w' + kind, tex);
+  return tex;
+}
+
+// terracotta pan tiles (villas) or snow-dusted timber shingles (chalets); uv in metres
+function roofTexture(kind) {
+  if (_houseCache.has('r' + kind)) return _houseCache.get('r' + kind);
+  const villa = kind === 'villa';
+  const W = 256, Hh = 256;
+  const { c, g } = makeCanvas(W, Hh);
+  const h = new Float32Array(W * Hh);
+  const rr = rng(villa ? 7 : 9);
+  const rows = villa ? 8 : 10, colsN = villa ? 10 : 7;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < colsN; x++) {
+      const tw = W / colsN, th = Hh / rows;
+      const ox = (y % 2) * tw * 0.5;
+      const base = villa ? [168 + rr() * 30, 74 + rr() * 22, 44 + rr() * 14] : [96 + rr() * 30, 70 + rr() * 20, 50 + rr() * 12];
+      for (let j = 0; j < th; j++) {
+        for (let i = 0; i < tw; i++) {
+          const px = Math.floor((x * tw + i + ox) % W), py = Math.floor(y * th + j);
+          const u = i / tw, v = j / th;
+          const curve = villa ? Math.sin(u * Math.PI) : 1 - Math.abs(u - 0.5) * 0.3;
+          const shade = 0.72 + 0.28 * curve - v * 0.18;
+          const o = (py * W + px) * 4;
+          h[py * W + px] = curve * 0.8 + (1 - v) * 0.4;
+          g.fillStyle = `rgb(${base[0] * shade | 0},${base[1] * shade | 0},${base[2] * shade | 0})`;
+          g.fillRect(px, py, 1, 1);
+          void o;
+        }
+      }
+    }
+  }
+  if (!villa) { g.fillStyle = 'rgba(240,244,250,0.55)'; for (let k = 0; k < 900; k++) g.fillRect(rr() * W, rr() * Hh, 2 + rr() * 6, 1 + rr() * 2); }
+  // weathering streaks
+  for (let k = 0; k < 40; k++) { g.fillStyle = `rgba(30,30,25,${rr() * 0.12})`; g.fillRect(rr() * W, 0, 1 + rr() * 3, Hh); }
+  const tex = { map: toTexture(c, { repeat: [0.5, 0.5] }), normalMap: toTexture(heightToNormal(h, W, Hh, 3), { srgb: false, repeat: [0.5, 0.5] }) };
+  _houseCache.set('r' + kind, tex);
+  return tex;
 }

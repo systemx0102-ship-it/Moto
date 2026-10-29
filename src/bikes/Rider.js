@@ -31,8 +31,8 @@ const B = {
 // riding styles: tuck = how far the rider folds onto the tank at speed, hang = hang-off,
 // ext = arm extension at rest (fraction of full reach), back = allowed backward lean
 const STYLES = {
-  sport: { tuck: 1, hang: 1, ext: 0.8, back: 0, foot: [-0.085, 0.065] },
-  street: { tuck: 0.45, hang: 0.55, ext: 0.9, back: 0.05, foot: [-0.07, 0.07] },
+  sport: { tuck: 1, hang: 1, ext: 0.66, back: 0, foot: [-0.085, 0.065], lean0: 0.55 },
+  street: { tuck: 0.45, hang: 0.55, ext: 0.84, back: 0.05, foot: [-0.07, 0.07], lean0: 0.22 },
   mx: { tuck: 0.25, hang: 0.25, ext: 0.88, back: 0.05, foot: [-0.06, 0.075] },
   cruiser: { tuck: 0.1, hang: 0.15, ext: 0.93, back: 0.32, foot: [-0.02, 0.08] },
 };
@@ -426,9 +426,9 @@ function geometry() {
     // limbs: [t, front, back, half-width, ox, oz, n]
     // upper arm: a deltoid ball round the shoulder joint (rigid to the arm, so it turns
     // inside the torso without pinching), biceps, elbow
-    const up = segment(B.upper, [[-0.2, 0.012, 0.012, 0.012, 0.0, 0, 2], [-0.15, 0.04, 0.044, 0.045, 0.0, 0, 2.1], [-0.05, 0.058, 0.062, 0.062, 0.002, 0, 2.2], [0.12, 0.056, 0.06, 0.058, 0, 0, 2.3], [0.4, 0.051, 0.047, 0.048, 0, 0, 2.2], [0.7, 0.045, 0.043, 0.044, 0, 0, 2.2], [0.92, 0.043, 0.047, 0.044, 0, 0, 2.2], [1.05, 0.041, 0.044, 0.042, 0, 0, 2.2]], { radial: 24, ant: -1, region: limbRegion('upper', s) });
+    const up = segment(B.upper, [[-0.2, 0.012, 0.012, 0.012, 0.0, 0, 2], [-0.15, 0.046, 0.050, 0.051, 0.0, 0, 2.1], [-0.05, 0.066, 0.071, 0.071, 0.002, 0, 2.2], [0.12, 0.064, 0.068, 0.066, 0, 0, 2.3], [0.4, 0.058, 0.054, 0.055, 0, 0, 2.2], [0.7, 0.051, 0.049, 0.050, 0, 0, 2.2], [0.92, 0.049, 0.054, 0.050, 0, 0, 2.2], [1.05, 0.047, 0.050, 0.048, 0, 0, 2.2]], { radial: 24, ant: -1, region: limbRegion('upper', s) });
     out.suit.push(skinned(up, rest[bi('upper')], blend(bi('upper'), null, bi('fore'), 0.24, 0.86)));
-    const fo = segment(B.fore, [[-0.08, 0.04, 0.044, 0.042, 0, 0, 2.2], [0.1, 0.045, 0.047, 0.05, 0, 0, 2.3], [0.3, 0.043, 0.043, 0.048, 0, 0, 2.3], [0.62, 0.035, 0.033, 0.04, 0, 0, 2.2], [0.85, 0.03, 0.028, 0.036, 0, 0, 2.2], [1.0, 0.028, 0.026, 0.034, 0, 0, 2.2], [1.05, 0.028, 0.026, 0.034, 0, 0, 2.2]], { radial: 24, ant: -1, region: limbRegion('fore', s) });
+    const fo = segment(B.fore, [[-0.08, 0.046, 0.051, 0.049, 0, 0, 2.2], [0.1, 0.052, 0.055, 0.058, 0, 0, 2.3], [0.3, 0.050, 0.050, 0.056, 0, 0, 2.3], [0.62, 0.041, 0.038, 0.046, 0, 0, 2.2], [0.85, 0.035, 0.032, 0.042, 0, 0, 2.2], [1.0, 0.032, 0.030, 0.039, 0, 0, 2.2], [1.05, 0.032, 0.030, 0.039, 0, 0, 2.2]], { radial: 24, ant: -1, region: limbRegion('fore', s) });
     out.suit.push(skinned(fo, rest[bi('fore')], blend(bi('fore'), bi('upper'), bi('hand'), 0.16, 0.95)));
     // thigh: hip ball round the joint, quads, knee
     const th = segment(B.thigh, [[-0.24, 0.02, 0.02, 0.02, 0, 0, 2], [-0.17, 0.06, 0.066, 0.064, 0, 0, 2.1], [-0.05, 0.084, 0.09, 0.083, 0, 0, 2.3], [0.2, 0.088, 0.082, 0.08, 0, 0, 2.4], [0.5, 0.078, 0.07, 0.07, 0, 0, 2.3], [0.8, 0.064, 0.058, 0.06, 0, 0, 2.3], [0.97, 0.062, 0.058, 0.06, 0, 0, 2.3], [1.07, 0.058, 0.055, 0.056, 0, 0, 2.3]], { radial: 26, ant: -1, region: limbRegion('thigh', s) });
@@ -783,7 +783,7 @@ function riderMaterials(livery, number) {
     // race leather: atlas colour + panel relief, waxy sheen
     suit: new THREE.MeshPhysicalMaterial({
       map: suitColorMap(main, second, accent, number), normalMap: NR.normalMap, normalScale: new THREE.Vector2(0.55, 0.55), roughnessMap: NR.roughnessMap,
-      roughness: 0.62, metalness: 0, clearcoat: 0.35, clearcoatRoughness: 0.4, sheen: 0.35, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x707070),
+      roughness: 0.66, metalness: 0, clearcoat: 0.14, clearcoatRoughness: 0.55, sheen: 0.55, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x6a6a6a),
     }),
     // gloves, armour plates, sliders, soles, helmet trims: vertex-coloured, leather grain
     gear: new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05, normalMap: rep(L.normalMap, 6), normalScale: new THREE.Vector2(0.3, 0.3), clearcoat: 0.2, clearcoatRoughness: 0.5 }),
@@ -877,7 +877,7 @@ export class Rider {
     const st = this.st, S = this.style, bn = this.bones;
     const lean = s.lean || 0, speed = Math.abs(s.speed || 0);
     st.hang = damp(st.hang, clamp(lean / 0.85, -1, 1), 5, dt);
-    const tuckT = S.tuck * clamp((speed - 22) / 30, 0, 1) * (s.throttle === undefined || s.throttle > 0.4 ? 1 : 0.35) * (s.braking ? 0.2 : 1);
+    const tuckT = S.tuck * clamp((speed - 16) / 26, 0, 1) * (s.throttle === undefined || s.throttle > 0.4 ? 1 : 0.35) * (s.braking ? 0.2 : 1);
     st.tuck = damp(st.tuck, tuckT, 2.5, dt);
     st.brake = damp(st.brake, s.braking && speed > 3 ? 1 : 0, 6, dt);
     st.stop = damp(st.stop, speed < 0.7 && !s.crashed ? 1 : 0, 5, dt);
@@ -910,7 +910,8 @@ export class Rider {
       if (Math.hypot(dl, dz) > reach) lo = mid; else hi = mid;
     }
     // at speed the rider folds onto the tank whatever the arm reach (elbows bend more)
-    const th = Math.max((lo + hi) / 2, st.tuck * S.tuck * 1.4) * (1 - c);
+    const moving = clamp((speed - 1) / 7, 0, 1) * (1 - st.stop);
+    const th = Math.max((lo + hi) / 2, st.tuck * S.tuck * 1.4, (S.lean0 || 0) * moving) * (1 - c);
     const spine = spineAt(th, this._spine);
     const lat = this._lat.set(0, 0, 1).addScaledVector(spine, -spine.z).normalize();
     const lumb = lumbar(th, this._lumb);

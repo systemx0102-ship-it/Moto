@@ -381,39 +381,62 @@ export function armcoTexture() {
 
 // Building facade with windows (day/night variants), returns {map, emissiveMap}
 export function facadeTextures(seed = 1, { night = false, hue = 210, cols = 6, rows = 12, glass = false } = {}) {
-  return cached(`facade:${seed}:${night}:${hue}:${cols}:${rows}:${glass}`, () => {
-    const W = 256, H = 512;
+  // 6 bays x 12 floors over 21 x 42 m: each bay holds two panes split by a mullion,
+  // spandrels between the floors, metal frame lines; at night the rooms glow at varied
+  // colour temperatures (mostly warm white, some cool fluorescent, a few TV-blue), many
+  // dark, blinds half drawn, a ceiling-light gradient in each lit room.
+  return cached(`facade2:${seed}:${night}:${hue}:${cols}:${rows}:${glass}`, () => {
+    const W = 512, H = 1024;
     const r = rng(seed);
-    const map = makeCanvas(W, H);
-    const em = makeCanvas(W, H);
-    const g = map.g, e = em.g;
-    const baseL = 20 + r() * 25;
-    g.fillStyle = `hsl(${hue},${8 + r() * 12}%,${night ? baseL * 0.5 : baseL + 20}%)`;
-    g.fillRect(0, 0, W, H);
+    const map = makeCanvas(W, H), em = makeCanvas(W, H), rough = makeCanvas(W, H);
+    const g = map.g, e = em.g, q = rough.g;
+    const wallL = glass ? 18 + r() * 10 : 34 + r() * 26, wallS = 6 + r() * 10;
+    g.fillStyle = `hsl(${hue},${wallS}%,${wallL}%)`; g.fillRect(0, 0, W, H);
+    // concrete / panel noise
+    for (let i = 0; i < 2600; i++) { g.fillStyle = `rgba(${r() < 0.5 ? 0 : 255},${r() < 0.5 ? 0 : 255},${r() < 0.5 ? 0 : 255},${r() * 0.04})`; g.fillRect(r() * W, r() * H, 2 + r() * 8, 2 + r() * 8); }
     e.fillStyle = '#000'; e.fillRect(0, 0, W, H);
+    q.fillStyle = 'rgb(215,215,215)'; q.fillRect(0, 0, W, H);
     const cw = W / cols, rh = H / rows;
+    const frameCol = `hsl(${hue},8%,${glass ? 30 : 55 + r() * 15}%)`;
     for (let y = 0; y < rows; y++) {
+      // whole floors are sometimes dark (offices at night) or uniformly lit
+      const floorMode = r();
       for (let x = 0; x < cols; x++) {
-        const px = x * cw + cw * 0.15, py = y * rh + rh * 0.18, ww = cw * 0.7, hh = rh * 0.6;
-        const lit = r() < (night ? 0.55 : 0.1);
-        if (glass) {
-          g.fillStyle = `hsl(${hue + 10},40%,${night ? 10 : 30 + r() * 20}%)`;
-        } else {
-          g.fillStyle = night ? '#0b0d12' : `hsl(${hue},25%,${18 + r() * 14}%)`;
-        }
+        const px = x * cw + cw * (glass ? 0.04 : 0.1), py = y * rh + rh * (glass ? 0.06 : 0.16);
+        const ww = cw * (glass ? 0.92 : 0.8), hh = rh * (glass ? 0.82 : 0.62);
+        // glass: dark, slightly tinted, reflective
+        g.fillStyle = `hsl(${hue + 10},${glass ? 30 : 18}%,${night ? 6 + r() * 4 : 14 + r() * 12}%)`;
         g.fillRect(px, py, ww, hh);
-        if (lit) {
-          const warm = r() < 0.6;
-          const col = warm ? `hsl(${35 + r() * 15},90%,${55 + r() * 20}%)` : `hsl(${190 + r() * 40},80%,${60 + r() * 15}%)`;
-          e.fillStyle = col;
-          e.fillRect(px, py, ww, hh);
-          g.fillStyle = col; g.globalAlpha = night ? 0.9 : 0.25; g.fillRect(px, py, ww, hh); g.globalAlpha = 1;
-          // blinds
-          if (r() < 0.4) { e.fillStyle = 'rgba(0,0,0,0.5)'; e.fillRect(px, py, ww, hh * r()); }
-        }
+        q.fillStyle = 'rgb(26,26,26)'; q.fillRect(px, py, ww, hh);
+        // frame + mullion + transom
+        g.strokeStyle = frameCol; g.lineWidth = 3; g.strokeRect(px, py, ww, hh);
+        g.fillStyle = frameCol; g.fillRect(px + ww / 2 - 1.5, py, 3, hh); g.fillRect(px, py + hh * 0.72, ww, 2);
+        q.strokeStyle = 'rgb(110,110,110)'; q.lineWidth = 3; q.strokeRect(px, py, ww, hh);
+        if (!night) continue;
+        const litP = floorMode < 0.18 ? 0.04 : floorMode > 0.85 ? 0.92 : 0.42;
+        if (r() > litP) continue;
+        const t = r();
+        let col;
+        if (t < 0.62) col = [255, 196 + r() * 30, 130 + r() * 50];       // warm white 2700-3500 K
+        else if (t < 0.88) col = [205 + r() * 30, 225 + r() * 20, 255];   // cool fluorescent
+        else if (t < 0.95) col = [120, 160, 255];                         // TV / screen glow
+        else col = [255, 150, 90];                                         // lamp
+        const k = 0.45 + r() * 0.55;
+        // ceiling light: brighter at the top of the window, falling off toward the sill
+        const grd = e.createLinearGradient(0, py, 0, py + hh);
+        grd.addColorStop(0, `rgba(${col[0] * k | 0},${col[1] * k | 0},${col[2] * k | 0},1)`);
+        grd.addColorStop(1, `rgba(${col[0] * k * 0.45 | 0},${col[1] * k * 0.45 | 0},${col[2] * k * 0.45 | 0},1)`);
+        e.fillStyle = grd; e.fillRect(px + 2, py + 2, ww - 4, hh - 4);
+        // blinds / curtains / furniture silhouettes
+        if (r() < 0.45) { const bh = hh * (0.2 + r() * 0.6); e.fillStyle = 'rgba(0,0,0,0.65)'; e.fillRect(px, py, ww, bh); for (let sl = py; sl < py + bh; sl += 3) { e.fillStyle = 'rgba(0,0,0,0.25)'; e.fillRect(px, sl, ww, 1); } }
+        if (r() < 0.3) { e.fillStyle = 'rgba(0,0,0,0.55)'; e.fillRect(px + r() * ww * 0.6, py + hh * (0.55 + r() * 0.2), ww * (0.15 + r() * 0.3), hh * 0.5); }
+        e.fillStyle = frameCol; e.globalAlpha = 0.9; e.fillRect(px + ww / 2 - 1.5, py, 3, hh); e.fillRect(px, py + hh * 0.72, ww, 2); e.globalAlpha = 1;
+        g.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},0.18)`; g.fillRect(px, py, ww, hh);
       }
+      // spandrel / floor slab line
+      g.fillStyle = `rgba(0,0,0,${glass ? 0.35 : 0.18})`; g.fillRect(0, y * rh + rh - 3, W, 3);
     }
-    return { map: toTexture(map.c), emissiveMap: toTexture(em.c) };
+    return { map: toTexture(map.c), emissiveMap: toTexture(em.c), roughnessMap: toTexture(rough.c, { srgb: false }) };
   });
 }
 
