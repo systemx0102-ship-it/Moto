@@ -1326,6 +1326,11 @@ export class Rider {
     st.stop = sm(st.stop, speed < 0.7 && !crashed ? 1 : 0, 5);
     // landing: squat into the pegs
     if (st.wasAir && !s.airborne && !settle) sp.heave.v -= 1.6;
+    // kerbs and rough ground buzz through the body and the helmet
+    if (!settle && speed > 5 && !s.airborne && (s.onCurb || s.offRoad)) {
+      const amp = (s.onCurb ? 0.28 : 0.18) * clamp(speed / 30, 0.3, 1);
+      sp.heave.v += (Math.random() - 0.5) * amp; sp.headP.v += (Math.random() - 0.5) * amp * 2;
+    }
     // a knock from a rival or the barrier shoves the body away from it and snaps the head
     if (s.jolt > 0.02 && !settle) { sp.sway.v -= (s.joltSide || 1) * s.jolt * 1.4; sp.headR.v -= (s.joltSide || 1) * s.jolt * 3; sp.heave.v -= s.jolt * 0.6; }
     st.wasAir = !!s.airborne;

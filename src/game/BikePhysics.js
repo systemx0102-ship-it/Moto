@@ -491,6 +491,7 @@ export class BikePhysics {
     out.drift = this.drifting;
     out.draft = this.draft;
     out.offRoad = this.offRoad;
+    out.onCurb = this.onCurb;
     out.airborne = this.airborne;
     out.crashed = this.crashed;
     out.crashT = this.crashT;
