@@ -228,7 +228,11 @@ export class Race {
     const canDrive = this.phase === 'race' || this.phase === 'finished';
     pi.throttle = inp.throttle; pi.brake = inp.brake; pi.steer = inp.steer; pi.rearBrake = inp.rearBrake;
     pi.nitro = inp.nitro; pi.wheelie = inp.wheelie;
-    if (P.finished && this.phase === 'finished') { this._autopilot(P); }
+    if (P.finished && this.phase === 'finished') {
+      this._autopilot(P);
+      // the winner lifts the front past the line: a one-handed wheelie while punching the air
+      if (this.finishOrder[0] === P && this.phaseT > 0.5 && this.phaseT < 2.2) { pi.wheelie = true; pi.throttle = Math.max(pi.throttle, 0.35); }
+    }
     if (edges.shiftUp) { P.phys.manual = true; P.phys.shift(1); }
     if (edges.shiftDown) { P.phys.manual = true; P.phys.shift(-1); }
     if (edges.camera) { this.cam.next(); Save.settings.camera = this.cam.mode; this.hud.camName(CAM_NAMES[this.cam.mode]); }
@@ -754,7 +758,8 @@ export class Race {
     const blurOn = Save.settings.motionBlur;
     const sp = clamp((p.v - 35) / 55, 0, 1);
     const target = blurOn ? sp * 0.45 + (p.nitroOn ? 0.55 : 0) : 0;
-    fx.uBlur.value = damp(fx.uBlur.value, this.phase === 'race' || this.phase === 'finished' ? target : 0, 4, dt);
+    // speed blur only behind the bike: the celebration and TV shots after the flag go clean
+    fx.uBlur.value = damp(fx.uBlur.value, this.phase === 'race' || (this.phase === 'finished' && this.phaseT < 0.7) ? target : 0, 4, dt);
     fx.uCA.value = 0.0012 + (p.nitroOn ? 0.004 : 0);
     fx.uTint.value.setRGB(0.75, 0.9, 1.25);
     fx.uTintAmt.value = damp(fx.uTintAmt.value, p.nitroOn ? 0.25 : 0, 5, dt);
