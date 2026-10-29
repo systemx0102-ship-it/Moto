@@ -36,9 +36,7 @@
 // grinds dust and grass stains into the leathers for the rest of the race.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { makeCanvas, toTexture, heightToNormal } from '../core/textures.js';
-import { leatherSet, grainSet, rep } from '../core/pbr.js';
-import { makeTileFbm } from '../core/utils.js';
+import { TORSO, HUMP, COLLAR, T_MIN, T_MAX, limbRegion, HB, TEAM, NAMES, VISORS, riderMaterials, setWet } from './riderLook.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -73,22 +71,8 @@ export const DESIGN_STYLE = {
   cruiser: 'cruiser', bobber: 'cruiser', drag: 'cruiser',
 };
 
-// ---------------------------------------------------------------------------
-// Texture atlas for the suit (1024 x 1536): torso on the top part (u round the body:
-// 0 left side, .25 back, .5 right side, .75 front; v up the spine), a strip at the very top
-// for the hump, limbs below in four rows (upper arm, forearm, thigh, shin) x two columns
-// (left, right). Limb strips: u .5 = outer side, .25 front, 0/1 inner side, .75 back (left
-// limbs are mirrored into this).
-const AT = { W: 1024, H: 1536 };
-const TORSO = { u0: 0, u1: 1, v0: 1 / 3, v1: 0.93 };
-const HUMP = { u0: 0, u1: 0.5, v0: 0.94, v1: 1 };
-const COLLAR = { u0: 0.5, u1: 1, v0: 0.94, v1: 1 };
-const T_MIN = -0.15, T_MAX = 1.04; // torso ring range (fractions of TL)
-const LIMB_ROWS = { upper: 3, fore: 2, thigh: 1, shin: 0 };
-const limbRegion = (name, s) => {
-  const r = LIMB_ROWS[name];
-  return { u0: s < 0 ? 0 : 0.5, u1: s < 0 ? 0.5 : 1, v0: (r / 4) * (1 / 3), v1: ((r + 1) / 4) * (1 / 3), mirror: s < 0 };
-};
+// The suit's texture atlas (regions, parametric ranges) lives in riderLook.js with the
+// paintwork and the materials.
 
 // ---------------------------------------------------------------------------
 // Body segment along +Y through anatomical cross-sections.
@@ -407,9 +391,8 @@ function helmetSurf(th0, th1, ph0, ph1, nth, nph, off, uvFull, thFn = null) {
 const EYE = { top: (ph) => 1.13 + 0.12 * ph * ph, bot: (ph) => 1.66 - 0.06 * ph * ph, ph: 1.0 };
 const VIS = { top: (ph) => 1.08 + 0.1 * ph * ph, bot: (ph) => 1.72 - 0.05 * ph * ph, ph: 1.2 };
 
-// lower edge of the shell (theta) round the head: open under the chin, lower over the ears,
-// lowest over the nape
-const HB = (ph) => 2.3 + 0.15 * smooth(0.5, 1.3, Math.abs(ph)) + 0.13 * smooth(1.9, 3.0, Math.abs(ph));
+// lower edge of the shell (HB, theta round the head: open under the chin, lower over the
+// ears, lowest over the nape) is shared with the paintwork
 function helmetGeometry() {
   const parts = { shell: [], visor: [], gear: [] };
   // shell with its eye port cut out (the gasket and visor close it)
@@ -499,14 +482,14 @@ function geometry() {
     [0.965, 0.066, 0.078, 0.098, -0.008, 0, 2.3],
     [1.0, 0.06, 0.066, 0.072, -0.008, 0, 2.2],
     [T_MAX, 0.058, 0.062, 0.064, -0.006, 0, 2.2],
-  ], { radial: 44, sub: 3, ant: 1, region: TORSO, tMin: T_MIN, tMax: T_MAX });
+  ], { radial: 64, sub: 4, ant: 1, region: TORSO, tMin: T_MIN, tMax: T_MAX });
   out.suit.push(skinTorso(torso, rest));
   // airbag / aero hump on the upper back, rising toward the helmet (rigid on the thorax)
-  const hump = segment(0.3, [[0, 0.01, 0.012, 0.045, -0.098, 0, 2.2], [0.18, 0.03, 0.034, 0.08, -0.112, 0, 2.4], [0.45, 0.046, 0.048, 0.094, -0.126, 0, 2.5], [0.72, 0.046, 0.042, 0.086, -0.128, 0, 2.5], [0.9, 0.032, 0.026, 0.062, -0.116, 0, 2.3], [1.0, 0.012, 0.01, 0.034, -0.104, 0, 2.2]], { radial: 28, sub: 3, region: HUMP });
+  const hump = segment(0.3, [[0, 0.01, 0.012, 0.045, -0.098, 0, 2.2], [0.18, 0.03, 0.034, 0.08, -0.112, 0, 2.4], [0.45, 0.046, 0.048, 0.094, -0.126, 0, 2.5], [0.72, 0.046, 0.042, 0.086, -0.128, 0, 2.5], [0.9, 0.032, 0.026, 0.062, -0.116, 0, 2.3], [1.0, 0.012, 0.01, 0.034, -0.104, 0, 2.2]], { radial: 40, sub: 4, region: HUMP });
   hump.translate(0, 0.04, 0);
   out.suit.push(rigid(hump, rest[BONE.chest], BONE.chest));
   // tall padded collar round the neck: flared into the yoke, rolled edge on top
-  const collar = segment(0.074, [[0, 0.084, 0.09, 0.088, -0.01, 0, 2.2], [0.3, 0.073, 0.079, 0.075, -0.007, 0, 2.2], [0.75, 0.065, 0.072, 0.067, -0.005, 0, 2.2], [0.93, 0.065, 0.072, 0.067, -0.005, 0, 2.2], [1, 0.06, 0.067, 0.062, -0.005, 0, 2.2]], { radial: 36, region: COLLAR });
+  const collar = segment(0.074, [[0, 0.084, 0.09, 0.088, -0.01, 0, 2.2], [0.3, 0.073, 0.079, 0.075, -0.007, 0, 2.2], [0.75, 0.065, 0.072, 0.067, -0.005, 0, 2.2], [0.93, 0.065, 0.072, 0.067, -0.005, 0, 2.2], [1, 0.06, 0.067, 0.062, -0.005, 0, 2.2]], { radial: 48, region: COLLAR });
   collar.translate(0, B.chest - 0.034, 0);
   // the rolled top follows the neck, so it stays snug when the head comes up
   out.suit.push(skinned(collar, rest[BONE.chest], (t) => { const k = 0.8 * smooth(0.3, 1, t); return [BONE.chest, 1 - k, BONE.neck, k]; }));
@@ -518,18 +501,18 @@ function geometry() {
     const bi = (n) => boneIndex(s, n);
     // ---- limbs: [t, front, back, half-width, ox, oz, n]
     // upper arm: deltoid round the joint (its top rides the clavicle), biceps, elbow
-    const up = segment(B.upper, [[-0.2, 0.016, 0.016, 0.016, 0, 0, 2], [-0.15, 0.052, 0.056, 0.058, 0, 0, 2.1], [-0.05, 0.072, 0.076, 0.078, 0.002, 0, 2.2], [0.1, 0.07, 0.074, 0.072, 0, 0, 2.3], [0.35, 0.064, 0.061, 0.061, 0, 0, 2.3], [0.62, 0.057, 0.055, 0.055, 0, 0, 2.2], [0.86, 0.053, 0.059, 0.055, 0, 0, 2.2], [1.04, 0.05, 0.055, 0.053, 0, 0, 2.2]], { radial: 26, ant: -1, region: limbRegion('upper', s) });
+    const up = segment(B.upper, [[-0.2, 0.016, 0.016, 0.016, 0, 0, 2], [-0.15, 0.052, 0.056, 0.058, 0, 0, 2.1], [-0.05, 0.072, 0.076, 0.078, 0.002, 0, 2.2], [0.1, 0.07, 0.074, 0.072, 0, 0, 2.3], [0.35, 0.064, 0.061, 0.061, 0, 0, 2.3], [0.62, 0.057, 0.055, 0.055, 0, 0, 2.2], [0.86, 0.053, 0.059, 0.055, 0, 0, 2.2], [1.04, 0.05, 0.055, 0.053, 0, 0, 2.2]], { radial: 36, sub: 4, ant: -1, region: limbRegion('upper', s) });
     out.suit.push(skinnedN(up, rest[bi('upper')], (t) => {
       if (t > 0.86) { const k = clamp(0.5 + 0.5 * ((t - 1) / 0.14), 0, 1); return [[bi('upper'), 1 - k], [bi('fore'), k]]; }
       const c = 0.4 * smooth(0.1, -0.15, t);
       return [[bi('upper'), 1 - c], [bi('clav'), c]];
     }));
-    const fo = segment(B.fore, [[-0.08, 0.048, 0.053, 0.051, 0, 0, 2.2], [0.1, 0.055, 0.058, 0.061, 0, 0, 2.3], [0.3, 0.052, 0.052, 0.058, 0, 0, 2.3], [0.62, 0.042, 0.039, 0.047, 0, 0, 2.2], [0.85, 0.036, 0.033, 0.043, 0, 0, 2.2], [1.0, 0.033, 0.031, 0.04, 0, 0, 2.2], [1.05, 0.033, 0.031, 0.04, 0, 0, 2.2]], { radial: 24, ant: -1, region: limbRegion('fore', s) });
+    const fo = segment(B.fore, [[-0.08, 0.048, 0.053, 0.051, 0, 0, 2.2], [0.1, 0.055, 0.058, 0.061, 0, 0, 2.3], [0.3, 0.052, 0.052, 0.058, 0, 0, 2.3], [0.62, 0.042, 0.039, 0.047, 0, 0, 2.2], [0.85, 0.036, 0.033, 0.043, 0, 0, 2.2], [1.0, 0.033, 0.031, 0.04, 0, 0, 2.2], [1.05, 0.033, 0.031, 0.04, 0, 0, 2.2]], { radial: 36, sub: 4, ant: -1, region: limbRegion('fore', s) });
     out.suit.push(skinned(fo, rest[bi('fore')], blend(bi('fore'), bi('upper'), bi('hand'), 0.16, 0.95)));
     // thigh: hip ball round the joint, quads, knee
-    const th = segment(B.thigh, [[-0.24, 0.02, 0.02, 0.02, 0, 0, 2], [-0.17, 0.064, 0.07, 0.068, 0, 0, 2.1], [-0.05, 0.09, 0.094, 0.088, 0, 0, 2.3], [0.2, 0.094, 0.084, 0.084, 0, 0, 2.4], [0.5, 0.083, 0.072, 0.074, 0, 0, 2.3], [0.8, 0.068, 0.06, 0.064, 0, 0, 2.3], [0.97, 0.066, 0.06, 0.063, 0, 0, 2.3], [1.07, 0.06, 0.057, 0.058, 0, 0, 2.3]], { radial: 26, ant: -1, region: limbRegion('thigh', s) });
+    const th = segment(B.thigh, [[-0.24, 0.02, 0.02, 0.02, 0, 0, 2], [-0.17, 0.064, 0.07, 0.068, 0, 0, 2.1], [-0.05, 0.09, 0.094, 0.088, 0, 0, 2.3], [0.2, 0.094, 0.084, 0.084, 0, 0, 2.4], [0.5, 0.083, 0.072, 0.074, 0, 0, 2.3], [0.8, 0.068, 0.06, 0.064, 0, 0, 2.3], [0.97, 0.066, 0.06, 0.063, 0, 0, 2.3], [1.07, 0.06, 0.057, 0.058, 0, 0, 2.3]], { radial: 40, sub: 4, ant: -1, region: limbRegion('thigh', s) });
     out.suit.push(skinned(th, rest[bi('thigh')], blend(bi('thigh'), null, bi('shin'), 0.28, 0.86)));
-    const sh = segment(B.shin, [[-0.07, 0.056, 0.054, 0.055, 0, 0, 2.3], [0.08, 0.054, 0.062, 0.055, 0, 0, 2.3], [0.25, 0.05, 0.066, 0.053, 0.004, 0, 2.3], [0.45, 0.046, 0.055, 0.047, 0, 0, 2.2], [0.6, 0.042, 0.046, 0.042, 0, 0, 2.2]], { radial: 24, ant: -1, region: limbRegion('shin', s) });
+    const sh = segment(B.shin, [[-0.07, 0.056, 0.054, 0.055, 0, 0, 2.3], [0.08, 0.054, 0.062, 0.055, 0, 0, 2.3], [0.25, 0.05, 0.066, 0.053, 0.004, 0, 2.3], [0.45, 0.046, 0.055, 0.047, 0, 0, 2.2], [0.6, 0.042, 0.046, 0.042, 0, 0, 2.2]], { radial: 36, sub: 4, ant: -1, region: limbRegion('shin', s) });
     out.suit.push(skinned(sh, rest[bi('shin')], blend(bi('shin'), bi('thigh'), null, 0.16, 1)));
 
     // ---- armour (rigid). Limb frames: +Y down the limb, -X anterior, +Z = bike +z.
@@ -602,9 +585,6 @@ function uvTo(g, region, u, v) {
   for (let i = 0; i < uvA.count; i++) uvA.setXY(i, region.u0 + (region.u1 - region.u0) * (u + (uvA.getX(i) - 0.5) * 0.12), region.v0 + (region.v1 - region.v0) * (v + uvA.getY(i) * 0.1));
   return g;
 }
-
-// vertex colours the gear material swaps for the team's colours (main, second, accent)
-const TEAM = { main: 0xff00ff, second: 0x00ffff, accent: 0xffff00 };
 
 // Gauntlet glove round the grip. Returns [geometry, colour, bone] in that bone's space: the
 // hand body, cuff, thumb, ring + little fingers on 'hand'; index + middle (over the lever)
@@ -717,443 +697,6 @@ function bootGeometry(s) {
 }
 
 // ---------------------------------------------------------------------------
-// materials and textures (cached per livery + design)
-const cache = new Map();
-const lum = (hex) => { const c = new THREE.Color(hex); return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
-const SPONSORS = [
-  ['NEXOL', '#ffffff', '#111111'], ['VELOX', '#ffd400', '#111111'], ['ZENTEK', '#e2231a', '#ffffff'], ['TURBOMAX', '#111111', '#ffffff'],
-  ['BAYO', '#1a4fd6', '#ffffff'], ['KRYO', '#19c3e6', '#0b1a22'], ['RAYO', '#ff7a00', '#111111'], ['AURA', '#6b2bd6', '#ffffff'],
-];
-// fictional rider surnames for the back of the suit
-const NAMES = ['VARGAS', 'MORENO', 'KAITO', 'LINDQVIST', 'DUCROS', 'BIANCHI', 'OKAFOR', 'ALVES', 'NAKAMURA', 'SCHNEIDER', 'TORRES', 'DUBOIS', 'KOWALSKI', 'HALVORSEN', 'RINALDI', 'SANTOS'];
-const FONT = '"Barlow Condensed", Arial, sans-serif';
-
-// canvas mapping helpers for the atlas (u, v in atlas space -> pixels)
-const PX = (u) => u * AT.W, PY = (v) => (1 - v) * AT.H;
-const torsoUV = (u, t) => [PX(TORSO.u0 + (TORSO.u1 - TORSO.u0) * u), PY(TORSO.v0 + (TORSO.v1 - TORSO.v0) * ((t - T_MIN) / (T_MAX - T_MIN)))];
-const regionUV = (R, u, v) => [PX(R.u0 + (R.u1 - R.u0) * u), PY(R.v0 + (R.v1 - R.v0) * v)];
-const LIMB_T = { upper: [-0.2, 1.04], fore: [-0.08, 1.05], thigh: [-0.24, 1.07], shin: [-0.07, 0.6] };
-const limbUV = (name, s, u, t) => { const r = limbRegion(name, s); const [t0, t1] = LIMB_T[name]; return [PX(r.u0 + (r.u1 - r.u0) * u), PY(r.v0 + (r.v1 - r.v0) * clamp((t - t0) / (t1 - t0), 0, 1))]; };
-const tp = (pts) => pts.map(([u, t]) => torsoUV(u, t));
-const lp = (name, s, pts) => pts.map(([u, t]) => limbUV(name, s, u, t));
-function fillPoly(g, poly) { g.beginPath(); poly.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }
-
-// construction panels of the suit (leather pieces: the seams follow these), shared by the
-// colour and relief maps
-function suitConstruction() {
-  const P = [];
-  for (const uc of [0.5, 0.0, 1.0]) P.push({ kind: 'side', poly: tp([[uc - 0.1, -0.02], [uc + 0.08, -0.02], [uc + 0.07, 0.35], [uc + 0.1, 0.62], [uc + 0.06, 0.8], [uc - 0.05, 0.82], [uc - 0.08, 0.55], [uc - 0.12, 0.3]]) });
-  P.push({ kind: 'yoke', poly: tp([[0, 0.86], [1, 0.86], [1, T_MAX], [0, T_MAX]]) });
-  P.push({ kind: 'black', poly: tp([[0.08, T_MIN], [0.42, T_MIN], [0.4, -0.02], [0.25, 0.01], [0.1, -0.02]]) });
-  P.push({ kind: 'black', poly: tp([[0.66, T_MIN], [0.84, T_MIN], [0.8, -0.07], [0.7, -0.07]]) });
-  P.push({ kind: 'black', poly: tp([[0, 0.995], [1, 0.995], [1, T_MAX], [0, T_MAX]]) });
-  P.push({ kind: 'backStretch', poly: tp([[0.155, 0.22], [0.345, 0.22], [0.33, 0.4], [0.17, 0.4]]) });
-  P.push({ kind: 'perf', poly: tp([[0.64, 0.46], [0.86, 0.46], [0.86, 0.66], [0.64, 0.66]]) });
-  P.push({ kind: 'perf', poly: tp([[0.16, 0.55], [0.34, 0.55], [0.34, 0.74], [0.16, 0.74]]) });
-  for (const s of [-1, 1]) {
-    for (const name of ['upper', 'fore', 'thigh', 'shin']) {
-      const [t0, t1] = LIMB_T[name];
-      const L = (pts) => lp(name, s, pts);
-      P.push({ kind: 'limb', poly: L([[0.4, t0], [0.6, t0], [0.58, t1], [0.42, t1]]) });
-      if (name === 'upper' || name === 'fore') P.push({ kind: 'stretch', poly: L([[-0.12, name === 'upper' ? 0.7 : t0], [0.12, name === 'upper' ? 0.7 : t0], [0.12, name === 'upper' ? t1 : 0.25], [-0.12, name === 'upper' ? t1 : 0.25]]) });
-      if (name === 'thigh') {
-        P.push({ kind: 'black', poly: L([[-0.14, 0.05], [0.14, 0.05], [0.12, 0.9], [-0.12, 0.9]]) });
-        P.push({ kind: 'stretch', poly: L([[0.66, 0.82], [0.84, 0.82], [0.84, t1], [0.66, t1]]) });
-        P.push({ kind: 'perf', poly: L([[0.16, 0.12], [0.34, 0.12], [0.34, 0.6], [0.16, 0.6]]) });
-      }
-      if (name === 'shin') P.push({ kind: 'stretch', poly: L([[0.12, t0], [0.38, t0], [0.38, 0.12], [0.12, 0.12]]) });
-    }
-  }
-  return P;
-}
-
-// printed graphics per team design: { col: 'second' | 'accent', poly }
-function suitGraphics(design) {
-  const G = [];
-  const limbAll = (name, s, u0, u1, ta, tb, col) => { const [t0, t1] = LIMB_T[name]; G.push({ col, poly: lp(name, s, [[u0, ta ?? t0], [u1, ta ?? t0], [u1, tb ?? t1], [u0, tb ?? t1]]) }); };
-  if (design === 0) {
-    // sweeping swoosh: left shoulder across the chest to the right hip, mirrored on the back
-    G.push({ col: 'second', poly: tp([[0.99, 0.97], [0.9, 0.97], [0.78, 0.76], [0.66, 0.52], [0.57, 0.26], [0.52, 0.08], [0.6, 0.1], [0.69, 0.32], [0.8, 0.56], [0.92, 0.77], [1.0, 0.85]]) });
-    G.push({ col: 'second', poly: tp([[0.49, 0.97], [0.4, 0.97], [0.29, 0.76], [0.17, 0.52], [0.08, 0.26], [0.02, 0.08], [0.1, 0.1], [0.19, 0.32], [0.3, 0.56], [0.42, 0.77], [0.5, 0.85]]) });
-    G.push({ col: 'accent', poly: tp([[0.52, 0.08], [0.55, 0.08], [0.6, 0.24], [0.69, 0.48], [0.8, 0.72], [0.9, 0.9], [0.88, 0.92], [0.78, 0.74], [0.67, 0.5], [0.58, 0.26]]) });
-    G.push({ col: 'accent', poly: tp([[0.02, 0.08], [0.05, 0.08], [0.1, 0.24], [0.19, 0.48], [0.3, 0.72], [0.4, 0.9], [0.38, 0.92], [0.28, 0.74], [0.17, 0.5], [0.08, 0.26]]) });
-    for (const s of [-1, 1]) {
-      for (const n of ['upper', 'fore']) limbAll(n, s, 0.3, 0.7, null, null, 'second');
-      const [t0, t1] = LIMB_T.thigh;
-      G.push({ col: 'second', poly: lp('thigh', s, [[0.36, t0], [0.64, t0], [0.7, 0.5], [0.6, t1], [0.4, t1], [0.3, 0.5]]) });
-      G.push({ col: 'accent', poly: lp('thigh', s, [[0.3, 0.5], [0.36, 0.5], [0.44, t1], [0.4, t1]]) });
-    }
-  } else if (design === 1) {
-    // two-tone split: upper body in the second colour with a V to the sternum
-    G.push({ col: 'second', poly: tp([[0, 0.6], [0.6, 0.6], [0.75, 0.46], [0.9, 0.6], [1, 0.6], [1, T_MAX], [0, T_MAX]]) });
-    G.push({ col: 'accent', poly: tp([[0, 0.58], [0.6, 0.58], [0.75, 0.44], [0.9, 0.58], [1, 0.58], [1, 0.6], [0.9, 0.6], [0.75, 0.46], [0.6, 0.6], [0, 0.6]]) });
-    for (const s of [-1, 1]) {
-      for (const n of ['upper', 'fore']) limbAll(n, s, -0.2, 1.2, null, null, 'second');
-      limbAll('thigh', s, -0.2, 1.2, 0.72, null, 'second');
-      limbAll('thigh', s, -0.2, 1.2, 0.68, 0.72, 'accent');
-      limbAll('shin', s, -0.2, 1.2, null, 0.2, 'second');
-    }
-  } else if (design === 2) {
-    // racing bands: chest band all round, accent waist band, double stripes down the limbs
-    G.push({ col: 'second', poly: tp([[0, 0.6], [1, 0.6], [1, 0.75], [0, 0.75]]) });
-    G.push({ col: 'accent', poly: tp([[0, 0.23], [1, 0.23], [1, 0.29], [0, 0.29]]) });
-    G.push({ col: 'second', poly: tp([[0, 0.86], [1, 0.86], [1, T_MAX], [0, T_MAX]]) });
-    for (const s of [-1, 1]) for (const n of ['upper', 'fore', 'thigh', 'shin']) { limbAll(n, s, 0.36, 0.46, null, null, 'second'); limbAll(n, s, 0.54, 0.64, null, null, 'accent'); }
-  } else if (design === 3) {
-    // arrows: stacked chevrons pointing up the chest and the back, arrowheads down the limbs
-    for (const uc of [0.75, 0.25]) {
-      G.push({ col: 'second', poly: tp([[uc - 0.17, 0.42], [uc, 0.7], [uc + 0.17, 0.42], [uc + 0.17, 0.3], [uc, 0.57], [uc - 0.17, 0.3]]) });
-      G.push({ col: 'accent', poly: tp([[uc - 0.15, 0.52], [uc, 0.78], [uc + 0.15, 0.52], [uc + 0.15, 0.47], [uc, 0.73], [uc - 0.15, 0.47]]) });
-    }
-    G.push({ col: 'second', poly: tp([[0, 0.9], [1, 0.9], [1, T_MAX], [0, T_MAX]]) });
-    for (const s of [-1, 1]) {
-      const [u0, u1] = LIMB_T.upper, [f0] = LIMB_T.fore;
-      G.push({ col: 'second', poly: lp('upper', s, [[0.3, u0], [0.7, u0], [0.7, 0.5], [0.5, 0.75], [0.3, 0.5]]) });
-      G.push({ col: 'accent', poly: lp('upper', s, [[0.3, 0.6], [0.5, 0.85], [0.7, 0.6], [0.7, 0.68], [0.5, u1], [0.3, 0.68]]) });
-      G.push({ col: 'second', poly: lp('fore', s, [[0.32, f0], [0.68, f0], [0.68, 0.4], [0.5, 0.62], [0.32, 0.4]]) });
-      G.push({ col: 'second', poly: lp('thigh', s, [[0.28, 0.95], [0.5, 0.5], [0.72, 0.95], [0.72, 0.78], [0.5, 0.36], [0.28, 0.78]]) });
-      G.push({ col: 'accent', poly: lp('thigh', s, [[0.32, 0.4], [0.5, 0.06], [0.68, 0.4], [0.68, 0.32], [0.5, -0.02], [0.32, 0.32]]) });
-      limbAll('shin', s, -0.2, 1.2, null, 0.12, 'second');
-    }
-  } else {
-    // shards: diagonal cuts across the torso, two-tone sleeves split on a slant
-    G.push({ col: 'second', poly: tp([[0.5, -0.05], [0.66, -0.05], [1.0, 0.72], [0.84, 0.72]]) });
-    G.push({ col: 'accent', poly: tp([[0.6, 0.5], [0.66, 0.5], [0.88, 1.0], [0.82, 1.0]]) });
-    G.push({ col: 'second', poly: tp([[0.0, -0.05], [0.16, -0.05], [0.5, 0.72], [0.34, 0.72]]) });
-    G.push({ col: 'accent', poly: tp([[0.1, 0.5], [0.16, 0.5], [0.38, 1.0], [0.32, 1.0]]) });
-    G.push({ col: 'second', poly: tp([[0.84, 0.72], [1.0, 0.72], [1.0, T_MAX], [0.66, T_MAX]]) });
-    G.push({ col: 'second', poly: tp([[0.34, 0.72], [0.5, 0.72], [0.5, T_MAX], [0.16, T_MAX]]) });
-    for (const s of [-1, 1]) {
-      const [u0, u1] = LIMB_T.upper, [f0, f1] = LIMB_T.fore, [t0, t1] = LIMB_T.thigh;
-      G.push({ col: 'second', poly: lp('upper', s, [[-0.2, u0], [1.2, u0], [1.2, 0.55], [-0.2, 0.35]]) });
-      G.push({ col: 'accent', poly: lp('fore', s, [[-0.2, 0.55], [1.2, 0.35], [1.2, 0.45], [-0.2, 0.65]]) });
-      G.push({ col: 'second', poly: lp('fore', s, [[-0.2, 0.65], [1.2, 0.45], [1.2, f1], [-0.2, f1]]) });
-      G.push({ col: 'second', poly: lp('thigh', s, [[-0.2, 0.62], [1.2, 0.3], [1.2, t1], [-0.2, t1]]) });
-      G.push({ col: 'accent', poly: lp('thigh', s, [[-0.2, 0.55], [1.2, 0.23], [1.2, 0.29], [-0.2, 0.61]]) });
-      void u1; void f0; void t0;
-    }
-  }
-  return G;
-}
-
-function suitColorMap(main, second, accent, number, name, design) {
-  const { c, g } = makeCanvas(AT.W, AT.H);
-  g.fillStyle = main; g.fillRect(0, 0, AT.W, AT.H);
-  const C = suitConstruction();
-  const black = '#141416';
-  // side panels in the second colour (black on the split design), then the team graphics
-  for (const p of C) if (p.kind === 'side') { g.fillStyle = design === 1 ? black : second; fillPoly(g, p.poly); g.fill(); }
-  for (const p of suitGraphics(design)) { g.fillStyle = p.col === 'second' ? second : accent; fillPoly(g, p.poly); g.fill(); }
-  // subtle sheen gradient down the torso (dyed leather is never perfectly flat)
-  { const [, y0] = torsoUV(0, T_MAX), [, y1] = torsoUV(0, T_MIN); const grd = g.createLinearGradient(0, y0, 0, y1); grd.addColorStop(0, 'rgba(255,255,255,0.05)'); grd.addColorStop(1, 'rgba(0,0,0,0.08)'); g.fillStyle = grd; g.fillRect(0, y0, AT.W, y1 - y0); }
-  for (const p of C) {
-    if (p.kind === 'black' || p.kind === 'stretch') { g.fillStyle = black; fillPoly(g, p.poly); g.fill(); }
-    if (p.kind === 'backStretch') { g.fillStyle = main; fillPoly(g, p.poly); g.fill(); g.fillStyle = 'rgba(8,8,10,0.55)'; g.fill(); }
-  }
-  // perforated zones: darker dots
-  for (const p of C) {
-    if (p.kind !== 'perf') continue;
-    g.save(); fillPoly(g, p.poly); g.clip();
-    g.fillStyle = 'rgba(0,0,0,0.16)';
-    for (let y = 0; y < AT.H; y += 4) for (let x = (y / 4) % 2 ? 2 : 0; x < AT.W; x += 4) g.fillRect(x, y, 1.2, 1.2);
-    g.restore();
-  }
-  // stitching: double rows along every construction seam
-  g.setLineDash([5, 4]); g.lineWidth = 1.1;
-  g.strokeStyle = lum(main) > 0.55 ? 'rgba(0,0,0,0.38)' : 'rgba(255,255,255,0.32)';
-  for (const p of C) { fillPoly(g, p.poly); g.stroke(); }
-  g.setLineDash([]);
-  // front zip with its garage at the collar
-  { const [x0, y0] = torsoUV(0.75, 0.3), [, y1] = torsoUV(0.75, 0.99); g.fillStyle = '#0d0d0f'; g.fillRect(x0 - 3, y1, 6, y0 - y1); g.fillStyle = '#6a6c70'; for (let y = y1; y < y0; y += 4) g.fillRect(x0 - 2, y, 4, 1.5); g.fillStyle = '#9a9ca0'; g.fillRect(x0 - 4, y1, 8, 10); }
-  const text = (x, y, size, col, str, rot = 0, mirror = false, font = 'italic 700', maxW = 9999, stroke = null) => {
-    g.save(); g.translate(x, y); g.rotate(rot); if (mirror) g.scale(-1, 1);
-    g.font = `${font} ${size}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    if (stroke) { g.lineWidth = Math.max(2, size * 0.08); g.strokeStyle = stroke; g.strokeText(str, 0, 0, maxW); }
-    g.fillStyle = col; g.fillText(str, 0, 0, maxW); g.restore();
-  };
-  const ink = (bg) => (lum(bg) > 0.55 ? '#111111' : '#ffffff');
-  const patch = (x, y, w, h, sp, mirror = false, round = 4) => {
-    g.fillStyle = sp[1]; g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, round); g.fill();
-    text(x, y + h * 0.04, Math.round(h * 0.76), sp[2], sp[0], 0, mirror, 'italic 800', w * 0.9);
-  };
-  const off = (number.charCodeAt(0) + number.length) % SPONSORS.length;
-  const SP = (k) => SPONSORS[(off + k) % SPONSORS.length];
-  // chest: team mark on the left breast, title sponsor on the right breast, belly sponsor
-  { const [x, y] = torsoUV(0.84, 0.72); text(x, y, 34, ink(design === 1 ? second : main), 'MÍTICO', 0, false, 'italic 800', 110); }
-  { const [x, y] = torsoUV(0.665, 0.72); patch(x, y, 86, 26, SP(0)); }
-  { const [x, y] = torsoUV(0.75, 0.38); patch(x, y, 150, 34, SP(1), false, 6); }
-  { const [x, y] = torsoUV(0.75, 0.2); text(x, y, 26, ink(main), SP(2)[0], 0, false, 'italic 700', 120); }
-  // back: title sponsor across the shoulder blades, name over the yoke, seat sponsor
-  { const [x, y] = torsoUV(0.25, 0.66); patch(x, y, 170, 44, SP(3), false, 6); }
-  { const [x, y] = torsoUV(0.25, 0.92); text(x, y, 52, ink(design === 2 || design === 1 ? second : main), name, 0, false, '800', 230, design === 0 ? accent : null); }
-  { const [x, y] = torsoUV(0.25, 0.06); text(x, y, 30, ink(main), SP(4)[0], 0, false, 'italic 800', 140); }
-  // collar: suit colour (the yoke's on the bands design), dark rolled edge and press stud,
-  // small sponsor at the front, flag stripe at the back
-  { const cc = design === 2 || design === 1 ? second : main;
-    const [x0, y0] = regionUV(COLLAR, 0, 1), [x1, y1] = regionUV(COLLAR, 1, 0); g.fillStyle = cc; g.fillRect(x0, y0, x1 - x0, y1 - y0);
-    const [, ye] = regionUV(COLLAR, 0, 0.86); g.fillStyle = '#17181b'; g.fillRect(x0, y0, x1 - x0, ye - y0);
-    const [, yb] = regionUV(COLLAR, 0, 0.08); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x0, yb, x1 - x0, y1 - yb);
-    const [fx, fy] = regionUV(COLLAR, 0.75, 0.45); text(fx, fy, 24, ink(cc), SP(5)[0], 0, false, 'italic 800', 96);
-    const [sx, sy] = regionUV(COLLAR, 0.69, 0.62); g.fillStyle = '#8a8c90'; g.beginPath(); g.arc(sx, sy, 4, 0, Math.PI * 2); g.fill();
-    const [bx, by] = regionUV(COLLAR, 0.25, 0.45); g.fillStyle = accent; g.fillRect(bx - 30, by - 8, 20, 16); g.fillStyle = second; g.fillRect(bx - 10, by - 8, 20, 16); g.fillStyle = main; g.fillRect(bx + 10, by - 8, 20, 16);
-    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1; g.strokeRect(bx - 30, by - 8, 60, 16); }
-  // hump: big number, the name under it, accent outline
-  { const [x0, y0] = regionUV(HUMP, 0, 1), [x1, y1] = regionUV(HUMP, 1, 0); g.fillStyle = design === 1 ? second : main; g.fillRect(x0, y0, x1 - x0, y1 - y0);
-    const [hx, hy] = regionUV(HUMP, 0.25, 0.55); text(hx, hy, 74, ink(design === 1 ? second : main), number, 0, false, '800', 200, accent);
-    const [nx, ny] = regionUV(HUMP, 0.25, 0.16); text(nx, ny, 20, ink(design === 1 ? second : main), name, 0, false, '700', 160); }
-  // limbs (outer side, u .5): sponsors running down the arms and thighs; left strips are
-  // mirrored, so flip the text there
-  for (const s of [-1, 1]) {
-    { const [ux, uy] = limbUV('upper', s, 0.5, 0.3); g.save(); g.translate(ux, uy); g.rotate(Math.PI / 2); patch(0, 0, 92, 24, SP(6), s < 0); g.restore(); }
-    { const [ux, uy] = limbUV('upper', s, 0.5, 0.06); text(ux, uy, 18, ink(second), 'MÍTICO', 0, s < 0, 'italic 800', 60); }
-    { const [fx, fy] = limbUV('fore', s, 0.5, 0.55); g.save(); g.translate(fx, fy); g.rotate(Math.PI / 2); patch(0, 0, 70, 20, SP(7), s < 0); g.restore(); }
-    { const [tx, ty] = limbUV('thigh', s, 0.5, 0.42); g.save(); g.translate(tx, ty); g.rotate(Math.PI / 2); patch(0, 0, 150, 38, SP(2), s < 0, 6); g.restore(); }
-    { const [tx, ty] = limbUV('thigh', s, 0.5, 0.1); text(tx, ty, 30, ink(main), number, 0, s < 0, '800', 60, accent); }
-  }
-  return toTexture(c, { wrap: false });
-}
-
-// relief + roughness for the suit atlas (shared by every livery): leather grain, panel seams
-// with stitch dimples, perforations, accordion stretch ribs, creases where the joints bend
-let SUIT_NR = null;
-function suitReliefMaps() {
-  if (SUIT_NR) return SUIT_NR;
-  const W = AT.W, H = AT.H;
-  const h = new Float32Array(W * H);
-  const n = makeTileFbm(61, 128, 3), wn = makeTileFbm(73, 16, 3);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) h[y * W + x] = 0.5 + 0.12 * n((x / W) * 1, (y / H) * 1.5);
-  const { g: mg } = makeCanvas(W, H);
-  const C = suitConstruction();
-  const mask = (...kinds) => {
-    mg.fillStyle = '#000'; mg.fillRect(0, 0, W, H); mg.fillStyle = '#fff';
-    for (const p of C) if (kinds.includes(p.kind)) { fillPoly(mg, p.poly); mg.fill(); }
-    return mg.getImageData(0, 0, W, H).data;
-  };
-  const stretch = mask('stretch', 'backStretch'), perf = mask('perf');
-  mg.fillStyle = '#000'; mg.fillRect(0, 0, W, H); mg.strokeStyle = '#fff'; mg.lineWidth = 3;
-  for (const p of C) { fillPoly(mg, p.poly); mg.stroke(); }
-  const seams = mg.getImageData(0, 0, W, H).data;
-  // crease zones: inside of the elbows, behind the knees, the waist sides, the hip fold
-  const creases = [];
-  for (const s of [-1, 1]) {
-    creases.push({ r: [limbUV('upper', s, 0.12, 1.04), limbUV('upper', s, 0.38, 0.72)], f: 0.62 });
-    creases.push({ r: [limbUV('fore', s, 0.12, 0.25), limbUV('fore', s, 0.38, -0.08)], f: 0.62 });
-    creases.push({ r: [limbUV('thigh', s, 0.62, 1.07), limbUV('thigh', s, 0.88, 0.78)], f: 0.5 });
-    creases.push({ r: [limbUV('thigh', s, 0.12, 0.1), limbUV('thigh', s, 0.38, -0.24)], f: 0.45 });
-  }
-  for (const uc of [0.0, 0.5]) creases.push({ r: [torsoUV(uc - 0.06, 0.32), torsoUV(uc + 0.06, 0.14)], f: 0.4 });
-  const rough = makeCanvas(W, H);
-  const rimg = rough.g.createImageData(W, H), rd = rimg.data;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x, k = i * 4;
-    let v = h[i], r = 150;
-    if (stretch[k] > 128) { v += 0.35 * Math.abs(Math.sin(y * 0.55)); r = 205; }
-    if (perf[k] > 128 && (x % 4) === 0 && (y % 4) === 0) { v -= 0.35; r = 215; }
-    if (seams[k] > 100) { v -= 0.45 * (seams[k] / 255); r = 170; }
-    h[i] = v;
-    rd[k] = r; rd[k + 1] = r; rd[k + 2] = r; rd[k + 3] = 255;
-  }
-  // soft folds: wavy ridges across the limb, fading to the zone edges
-  for (const z of creases) {
-    const x0 = Math.min(z.r[0][0], z.r[1][0]), x1 = Math.max(z.r[0][0], z.r[1][0]), y0 = Math.min(z.r[0][1], z.r[1][1]), y1 = Math.max(z.r[0][1], z.r[1][1]);
-    for (let y = Math.max(0, Math.floor(y0)); y < Math.min(H, Math.ceil(y1)); y++) {
-      for (let x = Math.max(0, Math.floor(x0)); x < Math.min(W, Math.ceil(x1)); x++) {
-        const fx = (x - x0) / (x1 - x0 || 1), fy = (y - y0) / (y1 - y0 || 1);
-        const edge = Math.sin(fx * Math.PI) * Math.sin(fy * Math.PI);
-        const wave = Math.sin(y * z.f + wn(x / W * 4, y / H * 4) * 6);
-        h[y * W + x] += 0.32 * edge * Math.max(0, wave) ** 1.5;
-      }
-    }
-  }
-  rough.g.putImageData(rimg, 0, 0);
-  SUIT_NR = { normalMap: toTexture(heightToNormal(h, W, H, 3.4), { srgb: false, wrap: false }), roughnessMap: toTexture(rough.c, { srgb: false, wrap: false }) };
-  return SUIT_NR;
-}
-
-function helmetColorMap(main, second, accent, number, design) {
-  const W = 1024, H = 512;
-  const { c, g } = makeCanvas(W, H);
-  g.fillStyle = main; g.fillRect(0, 0, W, H);
-  // u: 0/1 back, .25 right, .5 front, .75 left (reads correctly from outside); v: 1 crown -> base
-  if (design === 0) {
-    // swept side blades from the chin back over the ears, crown stripe with pinstripes
-    g.fillStyle = second;
-    for (const uc of [0.25, 0.75]) {
-      const d = uc < 0.5 ? -1 : 1;
-      g.beginPath();
-      g.moveTo((0.5 + d * 0.02) * W, H * 0.62);
-      g.bezierCurveTo((uc - d * 0.1) * W, H * 0.4, (uc + d * 0.1) * W, H * 0.3, (uc + d * 0.24) * W, H * 0.42);
-      g.lineTo((uc + d * 0.24) * W, H * 0.6);
-      g.bezierCurveTo((uc + d * 0.1) * W, H * 0.5, (uc - d * 0.02) * W, H * 0.62, (0.5 + d * 0.02) * W, H * 0.74);
-      g.closePath(); g.fill();
-    }
-    for (const [x0, w] of [[0.5, 0.06], [0, 0.06], [1, 0.06]]) { g.fillStyle = second; g.fillRect((x0 - w / 2) * W, 0, w * W, H * 0.36); }
-    g.fillStyle = accent;
-    for (const x0 of [0.5, 0, 1]) { g.fillRect((x0 - 0.034) * W, 0, 5, H * 0.36); g.fillRect((x0 + 0.034) * W - 5, 0, 5, H * 0.36); }
-  } else if (design === 1) {
-    // chevrons pointing back over the crown, solid side panels
-    for (let k = 0; k < 3; k++) {
-      g.fillStyle = k === 1 ? accent : second;
-      const y = H * (0.05 + k * 0.09);
-      for (const [cx, d] of [[0.5, 1], [0, -1], [1, 1]]) {
-        g.beginPath(); g.moveTo((cx - 0.22) * W, y + H * 0.2); g.lineTo(cx * W, y); g.lineTo((cx + 0.22) * W, y + H * 0.2);
-        g.lineTo((cx + 0.22) * W, y + H * 0.26); g.lineTo(cx * W, y + H * 0.06); g.lineTo((cx - 0.22) * W, y + H * 0.26); g.closePath(); g.fill();
-        void d;
-      }
-    }
-    g.fillStyle = second;
-    for (const uc of [0.25, 0.75]) g.fillRect((uc - 0.08) * W, H * 0.46, 0.16 * W, H * 0.22);
-  } else if (design === 3) {
-    // flames licking back from the chin bar over both sides
-    for (const [col, sc, off] of [[second, 1, 0], [accent, 0.72, 0.012]]) {
-      for (const uc of [0.25, 0.75]) {
-        const d = uc < 0.5 ? -1 : 1;
-        g.fillStyle = col;
-        g.beginPath();
-        g.moveTo((0.5 + d * 0.03) * W, H * 0.7);
-        for (let k = 0; k <= 5; k++) {
-          const ut = 0.5 + d * (0.06 + k * 0.075) * sc, peak = H * (0.36 + k * 0.03 + off * 10);
-          g.quadraticCurveTo((ut - d * 0.03) * W, H * 0.5, ut * W, peak);
-          g.quadraticCurveTo((ut + d * 0.01) * W, H * 0.52, (ut + d * 0.03) * W, H * 0.56);
-        }
-        g.lineTo((0.5 + d * 0.48 * sc) * W, H * 0.7);
-        g.closePath(); g.fill();
-      }
-    }
-  } else if (design === 4) {
-    // split crown: the top half in the second colour cut by an accent blade, a centre stripe
-    g.fillStyle = second; g.fillRect(0, 0, W, H * 0.3);
-    g.fillStyle = accent; g.beginPath(); g.moveTo(0, H * 0.3); g.lineTo(W, H * 0.3); g.lineTo(W, H * 0.33); g.lineTo(0, H * 0.33); g.closePath(); g.fill();
-    for (const uc of [0.25, 0.75]) { g.beginPath(); g.moveTo((uc - 0.12) * W, H * 0.33); g.lineTo((uc + 0.1) * W, H * 0.33); g.lineTo((uc - 0.02) * W, H * 0.52); g.closePath(); g.fill(); }
-    g.fillStyle = main; for (const x0 of [0.5, 0, 1]) g.fillRect((x0 - 0.02) * W, 0, 0.04 * W, H * 0.3);
-  } else {
-    // flowing ribbons wrapping the shell with a field of small stars
-    const band = (y0, amp, w, col) => {
-      g.fillStyle = col; g.beginPath(); g.moveTo(0, y0);
-      for (let x = 0; x <= W; x += 16) g.lineTo(x, y0 + Math.sin((x / W) * Math.PI * 4) * amp);
-      for (let x = W; x >= 0; x -= 16) g.lineTo(x, y0 + w + Math.sin((x / W) * Math.PI * 4 + 0.6) * amp);
-      g.closePath(); g.fill();
-    };
-    band(H * 0.18, H * 0.08, H * 0.1, second);
-    band(H * 0.31, H * 0.07, H * 0.04, accent);
-    band(H * 0.5, H * 0.05, H * 0.08, second);
-    g.fillStyle = 'rgba(255,255,255,0.55)';
-    for (let k = 0; k < 40; k++) {
-      const x = hash(k * 3.1) * W, y = H * (0.02 + hash(k * 5.7) * 0.14), r = 2 + hash(k) * 4;
-      g.beginPath(); for (let p = 0; p < 10; p++) { const a = (p / 10) * Math.PI * 2, rr = p % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.closePath(); g.fill();
-    }
-  }
-  // brand above the visor and on the chin bar; number on both sides and at the back
-  const ink = lum(main) > 0.55 ? '#111' : '#fff';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = `italic 800 44px ${FONT}`; g.fillStyle = ink; g.fillText('MÍTICO', 0.5 * W, H * 0.39);
-  g.font = `italic 700 26px ${FONT}`; g.fillText('MÍTICO', 0.5 * W, H * 0.665);
-  g.font = `700 90px ${FONT}`; g.lineWidth = 6; g.strokeStyle = accent;
-  // the back number straddles the seam: one copy centred on each edge, half of each shows
-  g.strokeText(number, 0, H * 0.5); g.fillText(number, 0, H * 0.5); g.strokeText(number, W, H * 0.5); g.fillText(number, W, H * 0.5);
-  g.font = `700 60px ${FONT}`;
-  for (const uc of [0.25, 0.75]) { g.strokeText(number, uc * W, H * 0.58); g.fillText(number, uc * W, H * 0.58); }
-  // sponsor stickers on the sides and the chin
-  const sp = SPONSORS[number.length % SPONSORS.length], sp2 = SPONSORS[(number.length + 3) % SPONSORS.length];
-  for (const uc of [0.33, 0.67]) { g.fillStyle = sp[1]; g.fillRect(uc * W - 34, H * 0.47 - 9, 68, 18); g.fillStyle = sp[2]; g.font = `italic 700 15px ${FONT}`; g.fillText(sp[0], uc * W, H * 0.47 + 1); }
-  for (const uc of [0.42, 0.58]) { g.fillStyle = sp2[1]; g.fillRect(uc * W - 26, H * 0.6 - 7, 52, 14); g.fillStyle = sp2[2]; g.font = `italic 700 12px ${FONT}`; g.fillText(sp2[0], uc * W, H * 0.6 + 1); }
-  // lower rim trim just above the shell's edge (which drops toward the nape)
-  g.fillStyle = '#121214';
-  for (let x = 0; x < W; x += 2) { const ph = (x / W - 0.5) * Math.PI * 2; g.fillRect(x, ((HB(ph) - 0.045) / Math.PI) * H, 2, H); }
-  return toTexture(c, { wrap: true });
-}
-
-// grime ground into the leather by a fall: blotchy dust and grass stains that dull the sheen
-// (userData.dirt.value 0..1, raised by each crash, cleared for a new race)
-function dirtyLeather(mat) {
-  mat.userData.dirt = { value: 0 };
-  mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uDirt = mat.userData.dirt;
-    sh.fragmentShader = `uniform float uDirt;
-float dH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float dN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(dH(i), dH(i + vec2(1.0, 0.0)), f.x), mix(dH(i + vec2(0.0, 1.0)), dH(i + 1.0), f.x), f.y); }
-` + sh.fragmentShader
-      .replace('#include <map_fragment>', `#include <map_fragment>
-      float dirtM = 0.0;
-      if (uDirt > 0.001) {
-        float dm = dN(vMapUv * vec2(34.0, 52.0)) * 0.55 + dN(vMapUv * vec2(110.0, 170.0)) * 0.3 + dN(vMapUv * vec2(330.0, 510.0)) * 0.15;
-        dirtM = smoothstep(1.0 - uDirt * 0.95, 1.0 - uDirt * 0.95 + 0.16, dm);
-        vec3 grime = mix(vec3(0.16, 0.13, 0.1), vec3(0.11, 0.13, 0.07), step(0.6, dN(vMapUv * vec2(9.0, 14.0))));
-        diffuseColor.rgb = mix(diffuseColor.rgb, grime, dirtM * 0.8);
-      }`)
-      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-      roughnessFactor = mix(roughnessFactor, 0.95, dirtM);`);
-  };
-  mat.customProgramCacheKey = () => 'rider-suit-dirt';
-  return mat;
-}
-
-// rain soaks the leathers: darker, glossier; wet gloves and boots shine
-function setWet(m, wet) {
-  m.suit.color.setScalar(wet ? 0.78 : 1);
-  m.suit.roughness = wet ? 0.4 : 0.66;
-  m.suit.clearcoat = wet ? 0.6 : 0.14;
-  m.suit.clearcoatRoughness = wet ? 0.14 : 0.55;
-  m.suit.sheen = wet ? 0.2 : 0.55;
-  m.gear.roughness = wet ? 0.32 : 0.5;
-  m.gear.clearcoat = wet ? 0.55 : 0.2;
-  m.boot.roughness = wet ? 0.22 : 0.36;
-}
-
-function teamGear(mat, main, second, accent) {
-  const u = { uTeamMain: { value: new THREE.Color(main) }, uTeamSecond: { value: new THREE.Color(second) }, uTeamAccent: { value: new THREE.Color(accent) } };
-  mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u);
-    sh.fragmentShader = 'uniform vec3 uTeamMain;\nuniform vec3 uTeamSecond;\nuniform vec3 uTeamAccent;\n' + sh.fragmentShader.replace('#include <color_fragment>', `
-      #if defined( USE_COLOR )
-        vec3 vcT = vColor.rgb;
-        if ( vcT.g < 0.02 && vcT.r > 0.98 && vcT.b > 0.98 ) vcT = uTeamMain;
-        else if ( vcT.r < 0.02 && vcT.g > 0.98 && vcT.b > 0.98 ) vcT = uTeamSecond;
-        else if ( vcT.b < 0.02 && vcT.r > 0.98 && vcT.g > 0.98 ) vcT = uTeamAccent;
-        diffuseColor.rgb *= vcT;
-      #endif`);
-  };
-  mat.customProgramCacheKey = () => 'rider-team-gear';
-  return mat;
-}
-
-// visor tints: dark smoke, blue iridium, gold iridium, silver mirror
-const VISORS = [
-  { color: 0x0b0d11, metalness: 0.35, roughness: 0.04, iridescence: 0 },
-  { color: 0x07090e, metalness: 0.92, roughness: 0.03, iridescence: 1, range: [180, 420] },
-  { color: 0x0a0806, metalness: 0.92, roughness: 0.03, iridescence: 1, range: [480, 820] },
-  { color: 0x3a3e46, metalness: 0.97, roughness: 0.02, iridescence: 0.25, range: [300, 500] },
-];
-function riderMaterials(livery, number, name, design, visor = 1) {
-  const key = `${livery.base}|${livery.second}|${livery.accent}|${number}|${name}|${design}|${visor}`;
-  if (cache.has(key)) return cache.get(key);
-  // very dark liveries get light secondary panels so the suit still reads
-  const main = livery.base;
-  let second = livery.second || '#ffffff';
-  if (Math.abs(lum(second) - lum(main)) < 0.12) second = lum(main) > 0.5 ? '#16171a' : '#e8e9eb';
-  const accent = livery.accent || '#e2231a';
-  const NR = suitReliefMaps();
-  const L = leatherSet();
-  const m = {
-    // race leather: atlas colour + panel relief, satin sheen
-    suit: dirtyLeather(new THREE.MeshPhysicalMaterial({
-      map: suitColorMap(main, second, accent, number, name, design), normalMap: NR.normalMap, normalScale: new THREE.Vector2(0.6, 0.6), roughnessMap: NR.roughnessMap,
-      roughness: 0.66, metalness: 0, clearcoat: 0.14, clearcoatRoughness: 0.55, sheen: 0.55, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x6a6a6a),
-    })),
-    // gloves, armour plates, sliders, soles, helmet trims: vertex-coloured, leather grain;
-    // the TEAM placeholder colours become the livery's
-    gear: teamGear(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05, normalMap: rep(L.normalMap, 6), normalScale: new THREE.Vector2(0.3, 0.3), clearcoat: 0.2, clearcoatRoughness: 0.5 }), main, second, accent),
-    boot: new THREE.MeshPhysicalMaterial({ color: lum(main) < 0.25 ? 0xe9eaec : lum(main) > 0.7 ? 0x16171a : new THREE.Color(main).getHex(), roughness: 0.36, clearcoat: 0.6, clearcoatRoughness: 0.2, normalMap: rep(grainSet(19, 128, 2).normalMap, 4), normalScale: new THREE.Vector2(0.2, 0.2) }),
-    helmet: new THREE.MeshPhysicalMaterial({ map: helmetColorMap(main, second, accent, number, design), roughness: 0.2, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.03 }),
-    // visor: smoked or iridium mirror with a thin-film colour shift
-    visor: (() => { const v = VISORS[visor % VISORS.length]; return new THREE.MeshPhysicalMaterial({ color: v.color, roughness: v.roughness, metalness: v.metalness, iridescence: v.iridescence, iridescenceIOR: 1.9, iridescenceThicknessRange: v.range || [280, 640], envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.0 }); })(),
-  };
-  cache.set(key, m);
-  return m;
-}
-
-// ---------------------------------------------------------------------------
 const _a = V(), _b = V(), _c = V(), _d = V(), _x = V(), _y = V(), _z = V(), _m = new THREE.Matrix4();
 
 // orient a bone/segment from joint a toward joint b; z hint = side axis of the bend plane
@@ -1217,7 +760,7 @@ export class Rider {
     this.seed = seed;
     this.name = opts.name || NAMES[seed % NAMES.length];
     const design = opts.design ?? (seed >>> 3) % 5;
-    const mats = riderMaterials(livery, num, this.name, design, opts.visor ?? (seed >>> 6) % VISORS.length);
+    const mats = riderMaterials({ livery, number: num, name: this.name, design, visor: opts.visor ?? (seed >>> 6) % VISORS.length, hiRes: !!opts.hiRes });
     this.mats = mats;
     mats.suit.userData.dirt.value = 0; // a clean suit for every race
     this.style = STYLES[DESIGN_STYLE[spec.design] || 'street'];

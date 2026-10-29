@@ -85,7 +85,7 @@ export class Race {
     const skill = SKILL[diff] ?? 0.93;
     const playerProbe = new BikePhysics(pSpec, this.track);
     entrants.forEach((e, slot) => {
-      const model = new BikeModel(e.spec, e.livery, { castShadow: q.shadows > 0, rider: true });
+      const model = new BikeModel(e.spec, e.livery, { castShadow: q.shadows > 0, rider: true, riderHiRes: !!e.player });
       this.scene.add(model.root);
       let perf = {};
       if (!e.player) {

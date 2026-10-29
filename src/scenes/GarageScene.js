@@ -206,7 +206,7 @@ export class GarageScene {
     for (const b of this.bikes) b.dispose();
     this.bikes = [];
     // the rider stands beside the machine, idling
-    const m = new BikeModel(spec, livery, { rider: true });
+    const m = new BikeModel(spec, livery, { rider: true, riderHiRes: true });
     m.animate({ speed: 0, steerAngle: 0.18, lean: 0, pitch: 0, stand: true }, 0);
     this.bikeHolder.add(m.root);
     m.root.rotation.y = 0;
@@ -269,7 +269,7 @@ export class GarageScene {
     top3.forEach((e, i) => {
       if (!e) return;
       // riders aboard, celebrating: the winner stands on the pegs and points to the sky
-      const m = new BikeModel(e.spec, e.livery || 0, { rider: true });
+      const m = new BikeModel(e.spec, e.livery || 0, { rider: true, riderHiRes: true });
       m.podium = { steerAngle: 0.25, lean: 0, pitch: i === 0 ? 0.22 : 0, speed: 0, finished: true, place: i + 1, celebrateT: 1 };
       m.podiumPhase = i * 1.7;
       m.animate(m.podium, 0);
