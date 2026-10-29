@@ -1,8 +1,8 @@
-// Race cameras: chase (near/far), onboard, front-wheel and TV cameras.
+// Race cameras: chase (near/far), helmet (onboard), front-wheel and TV cameras.
 import * as THREE from 'three';
 import { clamp, damp, lerp, wrapAngle } from '../core/utils.js';
 
-export const CAM_NAMES = ['PERSECUCIÓN', 'LEJANA', 'A BORDO', 'RUEDA', 'TV'];
+export const CAM_NAMES = ['PERSECUCIÓN', 'LEJANA', 'CASCO', 'RUEDA', 'TV'];
 
 export class CameraController {
   constructor(camera, track) {
@@ -35,8 +35,10 @@ export class CameraController {
     }
   }
 
-  next() { this.mode = (this.mode + 1) % 4; this.initialized = false; }
-  set(mode) { this.mode = mode; this.initialized = false; }
+  next() { this.mode = (this.mode + 1) % 4; this.initialized = false; this._dropPov(); }
+  set(mode) { this.mode = mode; this.initialized = false; this._dropPov(); }
+  // the rider seen through the helmet camera moves its head freely again
+  _dropPov() { if (this._pov && this.mode !== 2) { this._pov.pov = false; this._pov = null; } }
   addShake(a) { this.shake = Math.min(1.5, this.shake + a); }
   // FOV surge peaking at ~deg degrees (critically damped spring)
   fovPunch(deg) { this.fovVel = Math.min(this.fovVel + deg * 8 * Math.E, 30 * 8 * Math.E); }
@@ -92,8 +94,25 @@ export class CameraController {
       this.look.set(ph.x + fx * 6 * back, ph.y + 0.95, ph.z + fz * 6 * back);
       roll = ph.lean * 0.2;
       cam.position.copy(this.pos);
+    } else if (mode === 2 && model.rider && !ph.crashed && !model.rider._standing && back > 0) {
+      // helmet camera at the rider's eyes, just ahead of the visor: the head stays more level
+      // than the machine through a corner and turns into it; the gloves on the levers, the
+      // forearms and the dash fill the lower half of the view
+      const rd = model.rider;
+      if (this._pov !== rd) { if (this._pov) this._pov.pov = false; this._pov = rd; rd.pov = true; }
+      const head = rd.bones[4];
+      head.updateWorldMatrix(true, false);
+      const e = head.matrixWorld.elements;
+      cam.position.set(0.2, 0.12, 0).applyMatrix4(head.matrixWorld);
+      const f = this._f || (this._f = new THREE.Vector3()), u = this._u || (this._u = new THREE.Vector3());
+      f.set(e[0], e[1], e[2]).normalize(); u.set(e[4], e[5], e[6]).normalize();
+      // eyes a little below the head's line: the road ahead with the dash and the gloves
+      this.look.copy(cam.position).addScaledVector(f, 10).addScaledVector(u, -1.6);
+      // roll: the head's up vector against the travel direction's right (-cos yaw, 0, sin yaw)
+      roll = Math.atan2(-u.x * Math.cos(this.yaw) + u.z * Math.sin(this.yaw), u.y);
+      fovT += 16;
     } else if (mode === 2) {
-      // onboard: behind the dash, rolling with the bike
+      // onboard fallback (crashed, looking back): behind the dash, rolling with the bike
       const m = model;
       const ctx = m.ctx;
       const hx = ctx.headTop ? ctx.headTop[0] - 0.42 : 0.1;

@@ -1555,7 +1555,10 @@ export class Rider {
     placeSeg(bn[BONE.neck], _N, headPos, _latC);
     const head = bn[BONE.head];
     head.position.copy(headPos);
-    const buffet = speed > 42 ? noise1(t * 9.3 + this.seed) * 0.016 * clamp((speed - 42) / 30, 0, 1) * (1 - tuck * 0.5) : 0;
+    // seen through the helmet camera (pov): no glances or idle head turns swinging the
+    // player's view, softer buffeting, the head kept nearly level at a standstill
+    if (this.pov) { headYaw = 0; headRoll *= 0.3; headPitch = clamp(headPitch, -0.12, 0.12); }
+    const buffet = speed > 42 ? noise1(t * 9.3 + this.seed) * 0.016 * clamp((speed - 42) / 30, 0, 1) * (1 - tuck * 0.5) * (this.pov ? 0.4 : 1) : 0;
     const yaw = clamp(ca * 0.32 * pe.lookIn * (1 - stop) * (1 - st.look) + headYaw * (1 - st.look) - 1.25 * st.look, -1.4, 1.4);
     const pitchH = -0.06 + pe.head - 0.1 * tuck + 0.06 * st.brake + headPitch + headLagP * 0.4 + buffet - 0.5 * crAir * st.crash;
     const rollH = -lean * 0.55 + headRoll + headLagR + buffet * 0.6;

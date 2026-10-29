@@ -9,6 +9,7 @@ import { Audio } from '../core/Audio.js';
 import { Input } from '../core/Input.js';
 import { formatTime, clamp } from '../core/utils.js';
 import { installRpgUI } from '../rpg/ui/index.js';
+import { CAM_NAMES } from '../game/CameraController.js';
 
 // Line icons (24px grid, stroked) for action buttons; main-menu entries are text only.
 const SVG = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
@@ -362,7 +363,7 @@ export class UI {
     const items = [
       this.btn('Continuar', ICON.play, () => race.togglePause(), 'primary'),
       this.btn('Reiniciar', ICON.retry, () => { this.closeModal(); this.game.restartRace(); }),
-      this.btn('Cambiar cámara', ICON.cam, () => { race.cam.next(); Save.settings.camera = race.cam.mode; race.hud.camName(['PERSECUCIÓN', 'LEJANA', 'A BORDO', 'RUEDA'][race.cam.mode]); }),
+      this.btn('Cambiar cámara', ICON.cam, () => { race.cam.next(); Save.settings.camera = race.cam.mode; race.hud.camName(CAM_NAMES[race.cam.mode]); }),
       this.btn('Ajustes', ICON.settings, () => { this.closeModal(); this.settings(() => { this.hideScreens(); this.pauseMenu(race); }, true); }),
       this.btn('Salir al menú', ICON.exit, () => { this.closeModal(); this.game.exitRace(); }),
     ];
@@ -554,7 +555,7 @@ export class UI {
           row('Línea de trazada', toggle('racingLine')),
           row('Vibración', toggle('vibration')),
           row('Controles táctiles', toggle('touch')),
-          row('Cámara inicial', choice('camera', [[0, 'PERSECUCIÓN'], [1, 'LEJANA'], [2, 'A BORDO'], [3, 'RUEDA']])),
+          row('Cámara inicial', choice('camera', [[0, 'PERSECUCIÓN'], [1, 'LEJANA'], [2, 'CASCO'], [3, 'RUEDA']])),
         );
       } else {
         const ctl = [['Acelerar', 'W / ↑', 'RT'], ['Frenar', 'S / ↓', 'LT'], ['Inclinar', 'A D / ← →', 'Stick izq.'], ['Freno trasero / derrape', 'ESPACIO', 'B'], ['Nitro', 'SHIFT / N', 'A'],
