@@ -67,8 +67,8 @@ function fillPixels(w, h, fn) {
 // ---------------------------------------------------------------------------
 // Road surface: asphalt + markings. u = across road, v = along road.
 export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge = '#f2f2f2', centerDash = false,
-  centerColor = '#f2f2f2', wet = false, rubber = true, patches = false, edgeRed = false } = {}) {
-  const key = `road:${seed}:${size}:${base}:${edge}:${centerDash}:${centerColor}:${wet}:${rubber}:${patches}:${edgeRed}`;
+  centerColor = '#f2f2f2', wet = false, rubber = true, patches = false, edgeRed = false, cracks = false } = {}) {
+  const key = `road:${seed}:${size}:${base}:${edge}:${centerDash}:${centerColor}:${wet}:${rubber}:${patches}:${edgeRed}:${cracks}`;
   return cached(key, () => {
     const W = size, H = size * 2;
     const n1 = makeTileFbm(seed, 8, 6);
@@ -76,26 +76,67 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
     const n3 = makeTileFbm(seed + 21, 2, 3);
     const r = rng(seed);
     const height = new Float32Array(W * H);
+    const wpath = new Float32Array(W * H);
     const rough = makeCanvas(W, H);
     const { c, g } = fillPixels(W, H, (x, y, o) => {
       const u = x / W, v = y / H;
       const big = n3(u, v * 2);
       const grain = n1(u, v * 2) * 0.5 + n2(u, v * 2) * 0.5;
-      const speck = r() < 0.06 ? (r() - 0.3) * 60 : 0;
+      const speck = r() < 0.035 ? (r() - 0.3) * 26 : 0;
       // rubbered-in racing groove in the middle third
       let groove = 0;
       if (rubber) {
         const du = Math.abs(u - 0.5 - big * 0.08);
         groove = Math.exp(-du * du * 30) * 16;
       }
+      // public roads: the wheel paths of each lane are darker and smoother
+      let wp = 0;
+      if (cracks) {
+        for (const c of [0.17, 0.36, 0.64, 0.83]) wp += Math.exp(-(((u - c) / 0.045) ** 2));
+        wp *= 7 * (0.7 + 0.3 * big);
+      }
       const k = 1 + big * 0.12;
-      let rr = base[0] * k + grain * 22 + speck - groove;
-      let gg = base[1] * k + grain * 22 + speck - groove;
-      let bb = base[2] * k + grain * 22 + speck - groove;
+      let rr = base[0] * k + grain * 22 + speck - groove - wp;
+      let gg = base[1] * k + grain * 22 + speck - groove - wp;
+      let bb = base[2] * k + grain * 22 + speck - groove - wp;
       if (patches && big > 0.25) { rr -= 10; gg -= 10; bb -= 8; }
       o[0] = clamp(rr, 0, 255); o[1] = clamp(gg, 0, 255); o[2] = clamp(bb, 0, 255); o[3] = 255;
       height[y * W + x] = grain * 0.5 + (speck > 0 ? 0.25 : 0);
+      wpath[y * W + x] = wp / 7;
     });
+    // paint / tar mask (r: paint, g: tar) for roughness and relief
+    const mask = makeCanvas(W, H);
+    const mg = mask.g;
+    mg.fillStyle = '#000'; mg.fillRect(0, 0, W, H);
+    // patched repairs: rectangles of fresher, darker asphalt with crisp seams
+    if (cracks || patches) {
+      const np = cracks ? 3 : 2;
+      for (let i = 0; i < np; i++) {
+        const pw = W * (0.12 + r() * 0.3), ph = H * (0.04 + r() * 0.1), px = r() * (W - pw), py = r() * (H - ph);
+        g.fillStyle = 'rgba(30,31,34,0.16)'; g.fillRect(px, py, pw, ph);
+        g.strokeStyle = 'rgba(14,14,16,0.5)'; g.lineWidth = 1.5; g.strokeRect(px, py, pw, ph);
+        mg.strokeStyle = '#0f0'; mg.lineWidth = 2; mg.strokeRect(px, py, pw, ph);
+      }
+    }
+    // sealed cracks ("tar snakes"): meandering bands of glossy black sealant
+    if (cracks) {
+      for (let i = 0; i < 9; i++) {
+        let x = r() * W, y = r() * H;
+        const along = r() < 0.6;
+        let a = along ? Math.PI / 2 + (r() - 0.5) * 0.6 : (r() - 0.5) * 0.8;
+        const lw = 2 + r() * 3;
+        g.strokeStyle = 'rgba(10,10,12,0.85)'; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+        mg.strokeStyle = '#0f0'; mg.lineWidth = lw; mg.lineCap = 'round';
+        g.beginPath(); g.moveTo(x, y); mg.beginPath(); mg.moveTo(x, y);
+        const steps = 20 + r() * 40;
+        for (let k2 = 0; k2 < steps; k2++) {
+          a += (r() - 0.5) * 0.9;
+          x += Math.cos(a) * 6; y += Math.sin(a) * 6;
+          g.lineTo(x, y); mg.lineTo(x, y);
+        }
+        g.stroke(); mg.stroke();
+      }
+    }
     // Markings
     g.globalAlpha = 0.92;
     const lw = W * 0.022;
@@ -110,12 +151,15 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
         g.fillStyle = edge;
         g.fillRect(xx, 0, lw, H);
       }
+      mg.fillStyle = '#f00'; mg.fillRect(xx, 0, lw, H);
     };
     drawEdge(edgeOff);
     drawEdge(W - edgeOff - lw);
     if (centerDash) {
       g.fillStyle = centerColor;
       for (let y = 0; y < H; y += H / 2) g.fillRect(W / 2 - lw / 2, y + H * 0.05, lw, H * 0.22);
+      mg.fillStyle = '#f00';
+      for (let y = 0; y < H; y += H / 2) mg.fillRect(W / 2 - lw / 2, y + H * 0.05, lw, H * 0.22);
     }
     // worn paint noise
     g.globalAlpha = 1;
@@ -126,14 +170,17 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
     }
     g.putImageData(img, 0, 0);
 
-    // roughness: wet -> low
+    // roughness: wet -> low; paint is smoother than bare asphalt, sealant glossier still
+    const md = mg.getImageData(0, 0, W, H).data;
     const rg = rough.g;
     const rimg = rg.createImageData(W, H);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
         const hh = height[y * W + x];
+        const paint = md[i] / 255, tar = md[i + 1] / 255;
         let rv = wet ? 120 + hh * 90 : 200 + hh * 50;
+        rv -= wpath[y * W + x] * 22;
         if (wet) {
           const u = x / W, v = y / H;
           // puddles collect in the dips; tyre tracks are drier
@@ -142,7 +189,10 @@ export function roadTextures({ seed = 7, size = 512, base = [52, 54, 58], edge =
           const track = Math.exp(-Math.pow((u - 0.35) * 9, 2)) + Math.exp(-Math.pow((u - 0.65) * 9, 2));
           rv = rv * puddle + track * 30;
         }
+        rv = rv * (1 - paint * 0.3) * (1 - tar * 0.45);
         rimg.data[i] = rv; rimg.data[i + 1] = rv; rimg.data[i + 2] = rv; rimg.data[i + 3] = 255;
+        // paint sits ~0.5 mm proud of the surface; sealant fills the crack flush but smooth
+        height[y * W + x] = paint > 0.5 ? 0.62 + hh * 0.1 : tar > 0.5 ? hh * 0.3 : hh;
       }
     }
     rg.putImageData(rimg, 0, 0);
@@ -162,6 +212,7 @@ const GROUND = {
   wildGrass: { a: [50, 70, 30], b: [88, 98, 46], c: [38, 48, 24], scale: 5, blades: true, pebbles: true, rough: 240, bump: 3 },
   dryGrass: { a: [120, 116, 60], b: [150, 140, 80], c: [92, 88, 48], scale: 6, blades: true, rough: 240, bump: 2.5 },
   sand: { a: [196, 120, 70], b: [222, 156, 98], c: [160, 92, 54], scale: 4, ripples: true, rough: 230, bump: 2 },
+  beachSand: { a: [170, 152, 112], b: [204, 186, 146], c: [142, 128, 96], scale: 5, pebbles: true, rough: 235, bump: 2.2 },
   snow: { a: [228, 234, 244], b: [250, 252, 255], c: [196, 208, 226], scale: 3, rough: 150, bump: 1.5 },
   dirt: { a: [104, 78, 54], b: [134, 102, 70], c: [76, 56, 40], scale: 6, pebbles: true, rough: 240, bump: 3 },
   gravel: { a: [150, 144, 132], b: [184, 178, 166], c: [110, 104, 96], scale: 16, pebbles: true, rough: 245, bump: 4 },

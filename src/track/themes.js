@@ -10,8 +10,8 @@ export const THEMES = {
     lamps: false, billboards: true, buildings: false, water: null,
   },
   coast: {
-    rockGround: 'rock', dirtGround: 'sand', dirtAmt: 0.6,
-    ground: 'dryGrass', runoffGround: 'sand', barrier: 'armco', fence: false,
+    rockGround: 'rock', dirtGround: 'beachSand', dirtAmt: 0.6,
+    ground: 'dryGrass', runoffGround: 'beachSand', barrier: 'armco', fence: false,
     road: { base: [62, 60, 60], edge: '#f2f2f2', centerDash: true, centerColor: '#f4c400', rubber: false },
     terrain: { amp: 30, scale: 380, base: 6, ridged: false, color: 0xa09060, rockColor: 0x9a7a5a, ocean: { dir: [-1, 0.25], start: -260, drop: 0.35 } },
     far: { height: 180, color: 0x7a6a70, snow: false },
@@ -21,7 +21,7 @@ export const THEMES = {
   city: {
     rockGround: 'stone', dirtGround: 'asphaltDark', dirtAmt: 0.0,
     ground: 'asphaltDark', runoffGround: 'asphaltDark', barrier: 'concrete', neonWalls: true, fence: true,
-    road: { base: [44, 46, 50], edge: '#ffffff', centerDash: true, centerColor: '#ffffff', rubber: false, patches: true },
+    road: { base: [44, 46, 50], edge: '#ffffff', centerDash: true, centerColor: '#ffffff', rubber: false, rubberLine: true, patches: true },
     terrain: { amp: 0, scale: 400, base: -0.6, ridged: false, color: 0x303236, rockColor: 0x303236, flat: true },
     far: { height: 0, color: 0x101018, skyline: true },
     trees: { pine: 0, broad: 0, palm: 0, density: 0 }, rocks: 0,

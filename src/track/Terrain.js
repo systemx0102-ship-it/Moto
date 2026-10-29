@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Noise2D, smoothstep, clamp, rng } from '../core/utils.js';
 import { groundTextures } from '../core/textures.js';
+import { groundDetail, asphaltDetail, addSurfaceDetail, DETAIL_KIND } from './surfaceDetail.js';
 
 // Terrain material: anti-tiled base ground + triplanar rock on slopes + macro dirt patches
 export function splatMaterial(theme) {
@@ -45,6 +46,10 @@ export function splatMaterial(theme) {
         #endif`);
   };
   mat.customProgramCacheKey = () => 'splat' + (theme.mow ? 'm' : '');
+  // close-up detail in world space (blades / grains / snow crystals)
+  const kind = DETAIL_KIND[theme.ground] || 'grass';
+  const det = kind === 'asphalt' ? asphaltDetail(9) : groundDetail(kind, 7);
+  addSurfaceDetail(mat, { ...det, world: true, scale: [1 / 0.9, 1 / 0.9], albedo: 0.85, normal: kind === 'snow' ? 0.6 : 1.1, rough: 0.8, fade: [40, 120], key: 'terrain' + kind });
   return mat;
 }
 

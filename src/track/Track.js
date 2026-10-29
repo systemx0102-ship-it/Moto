@@ -7,6 +7,7 @@ import {
   makeCanvas, toTexture, checkerTexture,
 } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
+import { asphaltDetail, rubberTexture, addSurfaceDetail, groundDetail, DETAIL_KIND } from './surfaceDetail.js';
 
 const CELL = 20;
 
@@ -229,7 +230,7 @@ export class Track {
     const roadTex = roadTextures({
       seed: this.def.id.length * 7, size: quality.density > 0.8 ? 512 : 256,
       base: th.road.base.map((v) => Math.round(v * 1.36)), edge: th.road.edge, centerDash: th.road.centerDash, centerColor: th.road.centerColor,
-      wet: this.wet, rubber: th.road.rubber, patches: th.road.patches,
+      wet: this.wet, rubber: false, patches: th.road.patches, cracks: !th.road.rubber,
     });
     const repeats = Math.max(1, Math.round(this.L / (this.W * 2)));
     this.roadMat = new THREE.MeshStandardMaterial({
@@ -237,6 +238,9 @@ export class Track {
       roughness: this.wet ? 0.85 : 1.0, metalness: this.wet ? 0.08 : 0.0, normalScale: new THREE.Vector2(this.wet ? 0.18 : 0.6, this.wet ? 0.18 : 0.6),
       envMapIntensity: this.wet ? 1.15 : 0.42, color: this.wet ? 0x9ea2aa : 0xffeedd,
     });
+    // aggregate detail: ~1 m tiles of stones in bitumen over the large-scale road texture
+    const asph = asphaltDetail(this.def.id.length + 5);
+    addSurfaceDetail(this.roadMat, { ...asph, scale: [this.W / 1.05, this.L / repeats / 1.05], albedo: this.wet ? 0.7 : 1, normal: this.wet ? 0.5 : 1.15, rough: this.wet ? 0.6 : 1, fade: [70, 220], key: 'road' });
     const road = this.ribbon([-this.halfW, this.halfW], 8, (i, d) => 0, (i, u) => [u, (i / this.N) * repeats]);
     const roadMesh = new THREE.Mesh(road, this.roadMat);
     roadMesh.receiveShadow = true;
@@ -259,6 +263,11 @@ export class Track {
       };
       runMat.customProgramCacheKey = () => 'mowRunoff';
     }
+    {
+      const kind = DETAIL_KIND[th.runoffGround || 'grass'] || 'grass';
+      const det = kind === 'asphalt' ? asphaltDetail(13) : groundDetail(kind, 11);
+      addSurfaceDetail(runMat, { ...det, world: true, scale: [1 / 0.85, 1 / 0.85], albedo: 0.85, normal: 1.1, rough: 0.8, fade: [40, 110], key: 'runoff' + kind });
+    }
     const apron = th.apron || 0;
     for (const side of [-1, 1]) {
       const a = side * (this.halfW + apron), b = side * (this.barrierD + 2.5);
@@ -270,8 +279,9 @@ export class Track {
     }
     if (apron) {
       const at = groundTextures('asphaltDark', 21);
-      const apMat = new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, roughness: 0.9 });
-      apMat.color.setRGB(1.75, 1.72, 1.7);
+      const apMat = new THREE.MeshStandardMaterial({ map: at.map, normalMap: at.normalMap, roughnessMap: at.roughnessMap, roughness: 1 });
+      apMat.color.setRGB(1.9, 1.86, 1.82);
+      addSurfaceDetail(apMat, { ...asphaltDetail(17), world: true, scale: [1 / 1.1, 1 / 1.1], albedo: 1, normal: 1.1, rough: 1, fade: [60, 180], key: 'apron' });
       for (const side of [-1, 1]) {
         const a = side * this.halfW, b = side * (this.halfW + apron);
         const m = new THREE.Mesh(this.ribbon(side < 0 ? [b, a] : [a, b], 2, () => -0.004, null, null, true), apMat);
@@ -284,6 +294,7 @@ export class Track {
     if (this.gravelRuns.length) {
       const gt = groundTextures('gravel', 23);
       const gMat = new THREE.MeshStandardMaterial({ map: gt.map, normalMap: gt.normalMap, roughnessMap: gt.roughnessMap, color: 0xd8d2c4 });
+      addSurfaceDetail(gMat, { ...groundDetail('grain', 23), world: true, scale: [1 / 0.6, 1 / 0.6], albedo: 1, normal: 1.4, rough: 0.8, fade: [40, 120], key: 'gravel' });
       for (const run of this.gravelRuns) {
         const side = run.side;
         const a = side * (this.halfW + apron + 1.2), b = side * (this.barrierD - 0.4);
@@ -307,11 +318,66 @@ export class Track {
       m.receiveShadow = true;
       group.add(m);
     }
+    // rubber laid down along the racing line, heavier where riders brake and turn
+    if (th.road.rubber || th.road.rubberLine) group.add(this._buildRubber());
     // barriers
     group.add(this._buildBarriers(quality));
     group.add(this._buildStart());
     this.group = group;
     return group;
+  }
+
+  _buildRubber() {
+    const { x, y, z, rx, rz, bank } = this.c;
+    const N = this.N, cols = 6, half = 1.0;
+    // intensity: corners plus the braking zones that lead into them
+    const k = new Float32Array(N);
+    for (let i = 0; i < N; i++) k[i] = clamp(Math.abs(this.lineK[i]) * 34, 0, 1);
+    const look = Math.round(70 / this.ds);
+    const inten = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      let b = 0;
+      for (let j = 1; j <= look; j += 2) b = Math.max(b, k[(i + j) % N] * (1 - j / look));
+      inten[i] = 0.62 + 0.38 * Math.max(k[i] * 0.85, b);
+    }
+    const pos = new Float32Array(N * (cols + 1) * 3), uv = new Float32Array(N * (cols + 1) * 2), col = new Float32Array(N * (cols + 1) * 4);
+    let p = 0, q = 0, cc = 0;
+    for (let i = 0; i < N; i++) {
+      const tb = Math.tan(bank[i]), dl = clamp(this.lineD[i], -this.halfW + half, this.halfW - half);
+      for (let c = 0; c <= cols; c++) {
+        const u = c / cols, d = dl - half + 2 * half * u;
+        pos[p++] = x[i] + rx[i] * d; pos[p++] = y[i] + d * tb + 0.006; pos[p++] = z[i] + rz[i] * d;
+        uv[q++] = u; uv[q++] = (i * this.ds) / 16;
+        col[cc++] = 1; col[cc++] = 1; col[cc++] = 1; col[cc++] = inten[i];
+      }
+    }
+    const idx = [];
+    for (let r = 0; r < N; r++) {
+      const r2 = (r + 1) % N;
+      for (let c = 0; c < cols; c++) {
+        const a = r * (cols + 1) + c, b = a + 1, c2 = r2 * (cols + 1) + c, d2 = c2 + 1;
+        idx.push(a, c2, b, b, c2, d2);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const n = g.attributes.normal;
+    let sy = 0; for (let i = 0; i < n.count; i++) sy += n.getY(i);
+    if (sy < 0) { for (let i = 0; i < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; } g.setIndex(idx); g.computeVertexNormals(); }
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x0b0b0c, map: rubberTexture(3), vertexColors: true, transparent: true, depthWrite: false,
+      roughness: this.wet ? 0.3 : 0.62, metalness: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+      opacity: this.wet ? 0.6 : 0.9,
+    });
+    const m = new THREE.Mesh(g, mat);
+    m.name = 'rubber';
+    m.receiveShadow = true;
+    m.renderOrder = 1;
+    return m;
   }
 
   // per-vertex [distance along track, tangent x, tangent z] for the mowing-stripe shader
