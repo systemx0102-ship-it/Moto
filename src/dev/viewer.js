@@ -75,7 +75,8 @@ const models = ids.map((id, i) => {
     m.root.position.set((i % cols) * 1.2 - (cols - 1) * 0.6, 0, Math.floor(i / cols) * -2.6);
   }
   // rider/animation state: brakeAmt, curve (corner ahead), grid, finished+place+celebT, lookback,
-  // idle (action index)+idleT, dangle (+-1), drift, air, crash+crashT, wet, nitro, shiftT+shiftDir, sim (s)
+  // idle (action index)+idleT, dangle (+-1), drift, air, crash+crashT, wet, nitro, shiftT+shiftDir,
+  // stand (beside the bike), sim (s)
   const N = (k, d) => (params.has(k) ? +params.get(k) : d);
   const brakeAmt = N('brakeAmt', params.get('brake') === '1' ? 0.85 : 0);
   const state = {
@@ -86,6 +87,7 @@ const models = ids.map((id, i) => {
     dangle: N('dangle', 0), drift: params.get('drift') === '1', airborne: params.get('air') === '1', crashed: params.get('crash') === '1',
     crashT: N('crashT', 0), wet: params.get('wet') === '1', nitro: params.get('nitro') === '1',
     shiftT: params.has('shiftT') ? N('shiftT', 0) : undefined, shiftDir: N('shiftDir', 1),
+    stand: params.get('stand') === '1',
   };
   m.animate(state, 10);
   for (let k = 0; k < N('sim', 0) * 60; k++) m.animate(state, 1 / 60);

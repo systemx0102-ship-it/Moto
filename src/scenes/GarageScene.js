@@ -8,6 +8,8 @@ import { polishedConcreteTexture, softCircleTexture } from '../core/textures.js'
 import { Save } from '../core/Settings.js';
 import { damp, clamp, rng } from '../core/utils.js';
 
+const STAND = { speed: 0, stand: true };
+
 export class GarageScene {
   constructor(engine) {
     this.engine = engine;
@@ -203,8 +205,9 @@ export class GarageScene {
   setBike(spec, livery = 0) {
     for (const b of this.bikes) b.dispose();
     this.bikes = [];
-    const m = new BikeModel(spec, livery);
-    m.animate({ speed: 0, steerAngle: 0.18, lean: 0, pitch: 0 }, 0);
+    // the rider stands beside the machine, idling
+    const m = new BikeModel(spec, livery, { rider: true });
+    m.animate({ speed: 0, steerAngle: 0.18, lean: 0, pitch: 0, stand: true }, 0);
     this.bikeHolder.add(m.root);
     m.root.rotation.y = 0;
     this.bikes.push(m);
@@ -265,8 +268,11 @@ export class GarageScene {
     const xs = [0, -2.3, 2.3], hs = [0.9, 0.6, 0.35];
     top3.forEach((e, i) => {
       if (!e) return;
-      const m = new BikeModel(e.spec, e.livery || 0);
-      m.animate({ speed: 0, steerAngle: 0.25, lean: 0, pitch: i === 0 ? 0.22 : 0 }, 0);
+      // riders aboard, celebrating: the winner stands on the pegs and points to the sky
+      const m = new BikeModel(e.spec, e.livery || 0, { rider: true });
+      m.podium = { steerAngle: 0.25, lean: 0, pitch: i === 0 ? 0.22 : 0, speed: 0, finished: true, place: i + 1, celebrateT: 1 };
+      m.podiumPhase = i * 1.7;
+      m.animate(m.podium, 0);
       m.root.position.set(xs[i], hs[i], 0);
       m.root.rotation.y = Math.PI / 2 + (i === 0 ? 0 : i === 1 ? 0.35 : -0.35);
       m.root.scale.setScalar(0.85);
@@ -311,11 +317,11 @@ export class GarageScene {
     let target = new THREE.Vector3(0, 0.62, 0);
     let yaw = this.yaw, pitch = this.pitch, dist = this.dist;
     if (this.mode === 'menu') {
-      // slow cinematic drift, bike offset to the right of the menu
+      // slow cinematic drift, bike and rider offset to the right of the menu
       yaw = t * 0.12 + 0.6;
       pitch = 0.08 + Math.sin(t * 0.21) * 0.05;
-      dist = 5.2 + Math.sin(t * 0.17) * 0.5;
-      target.set(0, 0.55, 0);
+      dist = 6.1 + Math.sin(t * 0.17) * 0.5;
+      target.set(0, 0.78, 0);
     }
     const cam = this.camera;
     cam.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, 0.25 + Math.sin(pitch) * dist + 0.4, Math.cos(yaw) * Math.cos(pitch) * dist);
@@ -359,6 +365,11 @@ export class GarageScene {
     if (this.bike) {
       // idle engine shiver
       this.bike.root.position.y = Math.sin(t * 40) * 0.0008;
+      // the rider poses beside the machine on the title screen; the garage shows the bike alone
+      const rd = this.bike.rider;
+      if (rd) { rd.root.visible = this.mode === 'menu'; if (rd.root.visible) rd.update(STAND, dt); }
     }
+    // podium riders keep celebrating (pumps, the winner's point to the sky, waves)
+    if (this.mode === 'podium') for (const m of this.bikes) if (m.podium && m.rider) { m.podium.celebrateT = 1 + ((t + m.podiumPhase) % 6.4); m.rider.update(m.podium, dt); }
   }
 }

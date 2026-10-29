@@ -1112,6 +1112,8 @@ const CRASH_PTS = [[0, 0.68, 0], [0.25, 0.42, 0.28], [0.25, 0.42, -0.28], [0.15,
 const _cv = V(), _cp = V(), _cq = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cm = new THREE.Matrix4(), _cm2 = new THREE.Matrix4(), _one = new THREE.Vector3(1, 1, 1), _I4 = new THREE.Matrix4();
 // idle repertoire at a standstill (duration s)
 const IDLE = [['look', 2.4], ['visor', 1.7], ['flex', 1.3], ['dash', 1.5], ['stretch', 2.0], ['tank', 1.1], ['look', 2.0]];
+// standing beside the machine (showroom)
+const STAND_IDLE = [['look', 2.2], ['visor', 1.6], ['flex', 1.4], ['stretch', 2.0], ['hip', 3.4], ['look', 1.8]];
 
 export class Rider {
   // ctx: the bike's build context (seat, grips, pegs, design); groups: assembly groups
@@ -1176,6 +1178,8 @@ export class Rider {
   }
 
   update(s, dt) {
+    if (s.stand) { this._standPose(dt); return; }
+    if (this._standing) { this._standing = false; this.root.position.set(0, 0, 0); this.root.quaternion.identity(); }
     const st = this.st, S = this.style, bn = this.bones, sp = this.sp;
     const settle = !(dt > 0) || dt > 0.25;
     const sm = (cur, tgt, k) => (settle ? tgt : damp(cur, tgt, k, dt));
@@ -1586,6 +1590,119 @@ export class Rider {
     const par = this.root.parent;
     if (par) { par.updateWorldMatrix(true, false); _cm.premultiply(_cm2.copy(par.matrixWorld).invert()); }
     _cm.decompose(this.root.position, this.root.quaternion, this.root.scale);
+  }
+
+  // standing beside the machine in the showroom: the weight drifts from leg to leg, breathing,
+  // the right hand resting on the seat; idle glances, a visor check, glove flexes, a neck
+  // stretch, the left hand on the hip
+  _standPose(dt) {
+    const st = this.st, bn = this.bones;
+    const settle = !(dt > 0) || dt > 0.25;
+    if (!settle) this.t += dt;
+    const t = this.t;
+    this._standing = true;
+    this.root.position.set(this.seat.x + 0.08, 0, -0.5);
+    this.root.rotation.set(0, 0.45, 0);
+    this.root.updateMatrix();
+    if (!settle) {
+      st.idleT += dt;
+      if (st.act < 0 && st.idleT > st.nextAct) { st.actN++; st.act = Math.floor(hash(this.seed + st.actN * 7.3) * STAND_IDLE.length); st.actT = 0; }
+      if (st.act >= 0) {
+        st.actT += dt;
+        if (st.actT > STAND_IDLE[st.act][1]) { st.act = -1; st.idleT = 0; st.nextAct = 1.2 + hash(this.seed + st.actN * 1.3) * 3; }
+      }
+    } else if (st.act >= STAND_IDLE.length) st.act = -1;
+    let headYaw = -0.2 + 0.15 * Math.sin(t * 0.23), headPitch = -0.06, headRoll = 0, fingL = 0.4, kind = '', env = 0, u = 0;
+    if (st.act >= 0) {
+      kind = STAND_IDLE[st.act][0]; u = st.actT / STAND_IDLE[st.act][1];
+      env = smooth(0, 0.2, u) * (1 - smooth(0.8, 1, u));
+      const side = hash(this.seed + st.actN) < 0.5 ? -1 : 1;
+      if (kind === 'look') headYaw += side * 0.75 * env;
+      else if (kind === 'stretch') { headRoll += Math.sin(u * Math.PI * 2) * 0.32 * env; headPitch -= 0.1 * env; }
+      else if (kind === 'flex') fingL = 0.4 + Math.max(0, Math.sin(u * Math.PI * 4)) * 0.5 * env;
+      else if (kind === 'visor') headPitch -= 0.06 * env;
+    }
+    const shift = Math.sin(t * 0.35) * 0.7 + Math.sin(t * 0.13 + 1) * 0.3, breath = Math.sin(t * 1.6);
+    // pelvis over the loaded leg, spine upright with a slight sway, chest lifting on the breath
+    const P = _P.set(0, 0.925 - 0.012 * Math.abs(shift), 0.035 * shift);
+    const segDir = (a, b, out) => out.set(Math.sin(a), Math.cos(a), Math.tan(b)).normalize();
+    const th = 0.03 + 0.012 * breath, latBend = -0.05 * shift, twist = -0.12;
+    segDir(th * 0.5, latBend * 0.3, _e); _L.copy(P).addScaledVector(_e, B.pelvis);
+    segDir(th * 0.95, latBend * 0.7, _f); _T.copy(_L).addScaledVector(_f, B.spine);
+    segDir(th * 1.12, latBend, _g); _N.copy(_T).addScaledVector(_g, B.chest);
+    _latP.set(0, 0, 1).addScaledVector(_e, -_e.z).normalize();
+    _latS.set(Math.sin(twist * 0.45), 0, Math.cos(twist * 0.45)).addScaledVector(_f, -_f.dot(_tmp.set(Math.sin(twist * 0.45), 0, Math.cos(twist * 0.45)))).normalize();
+    _latC.set(Math.sin(twist), 0, Math.cos(twist)).addScaledVector(_g, -_g.dot(_tmp.set(Math.sin(twist), 0, Math.cos(twist)))).normalize();
+    placeSeg(bn[BONE.pelvis], P, _L, _latP);
+    placeSeg(bn[BONE.spine], _L, _T, _latS);
+    placeSeg(bn[BONE.chest], _T, _N, _latC);
+    _fw.crossVectors(_g, _latC).normalize();
+    for (const L of this.limbs) {
+      const s0 = L.s;
+      const elev = -0.06 + (s0 < 0 && kind === 'visor' ? 0.3 * env : 0) + 0.01 * breath;
+      L.c0.copy(_N).addScaledVector(_g, -0.03).addScaledVector(_latC, s0 * 0.025);
+      _tmp.copy(_latC).multiplyScalar(s0).addScaledVector(_g, elev).normalize();
+      L.sh.copy(L.c0).addScaledVector(_tmp, B.clav);
+      placeSeg(bn[boneIndex(s0, 'clav')], L.c0, L.sh, _g);
+    }
+    // neck and head
+    _tmp.copy(_g).multiplyScalar(0.6).addScaledVector(UP, 0.4).normalize();
+    const headPos = _tmp2.copy(_N).addScaledVector(_tmp, B.neck);
+    placeSeg(bn[BONE.neck], _N, headPos, _latC);
+    const head = bn[BONE.head];
+    head.position.copy(headPos);
+    _x.set(Math.cos(headYaw) * Math.cos(headPitch), Math.sin(headPitch), Math.sin(headYaw) * Math.cos(headPitch)).normalize();
+    _y.copy(UP).applyAxisAngle(_x, headRoll);
+    _y.addScaledVector(_x, -_y.dot(_x)).normalize();
+    _z.crossVectors(_x, _y);
+    _m.makeBasis(_x, _y, _z);
+    head.quaternion.setFromRotationMatrix(_m);
+    // arms: right hand flat on the seat, left hanging (or on the hip, or up at the visor)
+    _c.set(this.seat.x + 0.12, this.seat.y + 0.07, -0.08).applyMatrix4(_cm2.copy(this.root.matrix).invert());
+    for (const L of this.limbs) {
+      const s0 = L.s, b = (n) => bn[boneIndex(s0, n)];
+      const wrist = L.wr;
+      if (s0 > 0) {
+        wrist.copy(_c);
+        _hd.set(0.55, -0.8, 0.1).normalize(); _hz.copy(ZAX);
+        _a.set(-0.3, -0.6, 1);
+      } else {
+        const sw = Math.sin(t * 0.9) * 0.015;
+        wrist.copy(L.sh).add(_tmp.set(0.05 + sw, -0.53, -0.08));
+        _hd.set(0.06, -1, 0.04).normalize(); _hz.copy(ZAX);
+        _a.set(-0.6, -0.2, -1);
+        if (kind === 'hip') {
+          wrist.lerp(_tmp.copy(L.hp).add(_tmp2.set(-0.02, 0.1, -0.13)), env);
+          _hd.lerp(_tmp.set(0.3, -0.5, 0.75).normalize(), env).normalize();
+          _a.lerp(_tmp.set(-0.4, -0.1, -1.4), env);
+        } else if (kind === 'visor') {
+          wrist.lerp(_tmp.copy(head.position).add(_tmp2.set(0.2, 0.1, -0.05).applyQuaternion(head.quaternion)), env);
+          _hd.lerp(_tmp.set(0.2, 0.9, 0.3).normalize(), env).normalize();
+        }
+      }
+      ik(L.sh, wrist, B.upper, B.fore, _a, L.el);
+      placeSeg(b('upper'), L.sh, L.el, ZAX);
+      placeSeg(b('fore'), L.el, wrist, ZAX);
+      _tmp.copy(wrist).add(_hd);
+      placeSeg(b('hand'), wrist, _tmp, _hz);
+      const hand = b('hand'), fing = b('fing');
+      fing.position.set(...KNUCKLE).applyQuaternion(hand.quaternion).add(hand.position);
+      _qa.setFromAxisAngle(ZAX, -(s0 > 0 ? 0.1 : fingL));
+      fing.quaternion.copy(hand.quaternion).multiply(_qa);
+    }
+    // legs: feet planted a little apart, the unloaded knee eased forward
+    for (const L of this.limbs) {
+      const s0 = L.s, b = (n) => bn[boneIndex(s0, n)];
+      const load = clamp(0.5 + 0.5 * s0 * shift, 0, 1);
+      L.hp.copy(P).addScaledVector(_latP, s0 * B.hipW).addScaledVector(_e, 0.02);
+      const ankle = L.an.set(0.03 + 0.05 * (1 - load), 0.075, s0 * (B.hipW + 0.055));
+      _a.set(1, 0.1, s0 * 0.15);
+      ik(L.hp, ankle, B.thigh, B.shin, _a, L.kn);
+      placeSeg(b('thigh'), L.hp, L.kn, ZAX);
+      placeSeg(b('shin'), L.kn, ankle, ZAX);
+      const toe = L.toe.set(ankle.x + B.foot * 0.97, 0.02, ankle.z + s0 * 0.05);
+      placeSeg(b('foot'), ankle, toe, UP);
+    }
   }
 
   dispose() {
