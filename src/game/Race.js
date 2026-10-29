@@ -578,6 +578,17 @@ export class Race {
       v.place = v.finished ? this.finishOrder.indexOf(b) + 1 : 0;
       v.lookBack = b.isPlayer && this.phase === 'race' && !!Input.state.lookBack;
       v.wet = !!this.env.wet;
+      // a rival side by side (in this bike's frame: x forward, right = (-cos h, sin h))
+      v.rival = 0;
+      if (!p.crashed && p.v > 12) {
+        const fx = Math.sin(p.h), fz = Math.cos(p.h);
+        for (const o of this.bikes) {
+          if (o === b || o.out || o.phys.crashed) continue;
+          const dx = o.phys.x - p.x, dz = o.phys.z - p.z;
+          const along = dx * fx + dz * fz, side = -dx * fz + dz * fx;
+          if (Math.abs(along) < 2.5 && Math.abs(side) > 0.7 && Math.abs(side) < 4.5) { v.rival = Math.sign(side); break; }
+        }
+      }
       m.animate(v, dt);
       // fade invulnerable bikes
       if (p.ghostT > 0) m.root.visible = Math.floor(p.ghostT * 10) % 2 === 0; else m.root.visible = true;

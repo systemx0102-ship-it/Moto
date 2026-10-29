@@ -17,7 +17,8 @@
 // dangle, throttle twist, brake / clutch finger pulls, gear-lever toe flicks, rear-brake
 // press, wheelie and jump stances, landing squats, spring-driven secondary motion (surge,
 // heave, sway, head lag, wind buffeting), deeper tuck in a slipstream, look-into-the-corner
-// and look-back head turns, glances over the shoulder on the straights, grid ready pose
+// and look-back head turns, glances over the shoulder on the straights and at a rival
+// drawing alongside, grid ready pose
 // with eyes on the start lights and a revving hand, the launch crouch over the tank,
 // downshift throttle blips, standing up over gravel and grass, idle life at a standstill
 // (breathing, glances, visor wipes, hand flexes), victory celebrations (fist pumps, the
@@ -1169,7 +1170,7 @@ export class Rider {
       acc: 0, leanVel: 0, compVel: 0, pv: 0, pl: 0, pc: 0, wasAir: false,
       dangle: 0, dangleSide: 1, legOut: 0, legOutSide: 1, gear: undefined, shiftT: 0, shiftDir: 0, clutchT: 0,
       finT: -1, idleT: 0, nextAct: 0.4 + hash(seed) * 2.2, act: -1, actT: 0, actN: 0, ov: 0,
-      launch: 0, glanceT: 0, nextGlance: 8 + hash(seed * 2.3) * 12, glance: 0, glanceSide: 1,
+      launch: 0, glanceT: 0, nextGlance: 8 + hash(seed * 2.3) * 12, glance: 0, glanceSide: 1, glanceDur: 0.85, glanceAmp: 1.05, rivalWas: 0,
     };
     this.sp = { surge: new Spring(70, 11), heave: new Spring(160, 13), sway: new Spring(55, 9), headP: new Spring(120, 12), headR: new Spring(100, 11) };
     this.t = hash(seed * 1.7) * 10;
@@ -1338,11 +1339,15 @@ export class Rider {
       const calm = speed > 25 && Math.abs(lean) < 0.12 && brk < 0.1 && st.look < 0.1 && finT < 0 && !crashed && !s.airborne;
       if (st.glance <= 0) {
         st.glanceT += calm ? dt : 0;
-        if (st.glanceT > st.nextGlance) { st.glance = 0.85; st.glanceT = 0; st.glanceSide = hash(this.seed + t) < 0.5 ? -1 : 1; st.nextGlance = 9 + hash(this.seed * 1.7 + t) * 14; }
+        if (st.glanceT > st.nextGlance) { st.glance = st.glanceDur = 0.85; st.glanceAmp = 1.05; st.glanceT = 0; st.glanceSide = hash(this.seed + t) < 0.5 ? -1 : 1; st.nextGlance = 9 + hash(this.seed * 1.7 + t) * 14; }
       } else st.glance = Math.max(0, st.glance - dt);
+      // a rival drawing alongside earns a quick sideways look
+      const rv = s.rival || 0;
+      if (rv && rv !== st.rivalWas && st.glance <= 0 && speed > 15 && !crashed && st.look < 0.1) { st.glance = st.glanceDur = 0.7; st.glanceAmp = 0.62; st.glanceSide = rv; }
+      st.rivalWas = rv;
     }
-    const gla = st.glance > 0 ? Math.sin((1 - st.glance / 0.85) * Math.PI) : 0;
-    headYaw += st.glanceSide * 1.05 * gla;
+    const gla = st.glance > 0 ? Math.sin((1 - st.glance / st.glanceDur) * Math.PI) : 0;
+    headYaw += st.glanceSide * st.glanceAmp * gla;
     headPitch += 0.13 * st.grid - 0.05 * gla - 0.06 * st.launch;
 
     // ---------------- pelvis on the seat
