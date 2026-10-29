@@ -1,6 +1,6 @@
 // Fixed-rate recording of bike states for replays and time-trial ghosts.
 export const REC_HZ = 30;
-const F = 14; // floats per bike per frame
+const F = 18; // floats per bike per frame
 
 export class Recorder {
   constructor(nBikes) {
@@ -28,7 +28,8 @@ export class Recorder {
       d[o] = p.x; d[o + 1] = p.y + (p.curbY || 0); d[o + 2] = p.z; d[o + 3] = p.h;
       d[o + 4] = p.lean; d[o + 5] = p.pitch; d[o + 6] = p.steerAngle; d[o + 7] = p.v;
       d[o + 8] = p.rpm; d[o + 9] = p.input.throttle; d[o + 10] = p.compF; d[o + 11] = p.compR;
-      d[o + 12] = (p.nitroOn ? 1 : 0) + (p.crashed ? 2 : 0) + (p.input.brake > 0.1 ? 4 : 0); d[o + 13] = p.s;
+      d[o + 12] = (p.nitroOn ? 1 : 0) + (p.crashed ? 2 : 0) + (p.input.brake > 0.1 ? 4 : 0) + (p.airborne ? 8 : 0) + (p.drifting ? 16 : 0); d[o + 13] = p.s;
+      d[o + 14] = p.gear; d[o + 15] = p.crashT || 0; d[o + 16] = Math.max(p.input.brake, p.input.rearBrake * 0.6); d[o + 17] = p.wheelspin || 0;
     });
     this.frames++;
   }
@@ -51,7 +52,9 @@ export class Recorder {
     out.rpm = L(8); out.throttle = L(9); out.compF = L(10); out.compR = L(11);
     const fl = d[oa + 12];
     out.nitro = (fl & 1) !== 0; out.crashed = (fl & 2) !== 0; out.braking = (fl & 4) !== 0;
+    out.airborne = (fl & 8) !== 0; out.drift = (fl & 16) !== 0;
     out.s = d[oa + 13];
+    out.gear = d[oa + 14]; out.crashT = L(15); out.brake = L(16); out.wheelspin = L(17);
     return out;
   }
 }

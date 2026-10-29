@@ -559,7 +559,8 @@ export class Race {
   }
 
   _syncModels(dt) {
-    const v = this._vis;
+    const v = this._vis, tr = this.track, ks = tr.c.kappaSmooth;
+    const grid = this.phase === 'intro' || this.phase === 'countdown';
     for (const b of this.bikes) {
       const p = b.phys, m = b.model;
       m.root.position.set(p.x, p.y + (p.curbY || 0), p.z);
@@ -567,6 +568,15 @@ export class Race {
       // align with banked surface
       m.root.rotateZ(-(p.proj.bank || 0) * Math.cos(wrapAngle(p.h - Math.atan2(p.proj.tx || 0, p.proj.tz || 1))) * (p.airborne ? 0 : 1));
       p.visual(v);
+      // rider: the corner ~1 s ahead (sign = side to hang off), grid, flag, look-back, rain
+      const fw = Math.sin(p.h) * (p.proj.tx || 0) + Math.cos(p.h) * (p.proj.tz || 1) >= 0 ? 1 : -1;
+      const ahead = fw * Math.round(clamp(p.v * 1.1, 10, 60) / tr.ds);
+      v.curveAhead = clamp(-ks[tr.wrap((p.proj.i || 0) + ahead)] * fw * 35, -1, 1);
+      v.grid = grid;
+      v.finished = !!b.finished && !b.estimated;
+      v.place = v.finished ? this.finishOrder.indexOf(b) + 1 : 0;
+      v.lookBack = b.isPlayer && this.phase === 'race' && !!Input.state.lookBack;
+      v.wet = !!this.env.wet;
       m.animate(v, dt);
       // fade invulnerable bikes
       if (p.ghostT > 0) m.root.visible = Math.floor(p.ghostT * 10) % 2 === 0; else m.root.visible = true;
@@ -798,7 +808,7 @@ export class Race {
   }
 
   _replayUpdate(dt) {
-    const rec = this.recorder;
+    const rec = this.recorder, tr = this.track;
     this.replayT += dt;
     if (this.replayT > rec.duration) this.replayT = 0;
     const tmp = this._rs || (this._rs = {});
@@ -808,7 +818,17 @@ export class Race {
       if (b.out) { const k = this.replayT - b.outRec; m.root.visible = k < 0 || (k < 1.2 && Math.floor(k * 8) % 2 === 0); }
       m.root.position.set(s.x, s.y, s.z);
       m.root.rotation.set(0, s.h, 0);
-      m.animate({ speed: s.speed, lean: s.lean, pitch: s.pitch, steerAngle: s.steerAngle, compF: s.compF, compR: s.compR, braking: s.braking }, dt);
+      const fin = b.finished && !b.estimated && this.replayT >= b.finishTime;
+      const rv = this._rv || (this._rv = {});
+      Object.assign(rv, {
+        speed: s.speed, lean: s.lean, pitch: s.pitch, steerAngle: s.steerAngle, compF: s.compF, compR: s.compR,
+        braking: s.braking, brake: s.brake, throttle: s.throttle, gear: s.gear, nitro: s.nitro, drift: s.drift,
+        airborne: s.airborne, crashed: s.crashed, crashT: s.crashT, wheelSpinExtra: s.wheelspin * 25,
+        finished: fin, place: fin ? this.finishOrder.indexOf(b) + 1 : 0, celebrateT: fin ? this.replayT - b.finishTime : undefined,
+        wet: !!this.env.wet,
+        curveAhead: clamp(-tr.c.kappaSmooth[tr.wrap(Math.floor(s.s / tr.ds) + Math.round(clamp(s.speed * 1.1, 10, 60) / tr.ds))] * 35, -1, 1),
+      });
+      m.animate(rv, dt);
       // feed camera/audio with a fake phys snapshot
       const p = b.phys;
       p.x = s.x; p.y = s.y; p.z = s.z; p.h = p.vh = s.h; p.v = s.speed; p.lean = s.lean; p.rpm = s.rpm; p.input.throttle = s.throttle;

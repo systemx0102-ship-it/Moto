@@ -482,8 +482,14 @@ export class BikePhysics {
     out.pitch = this.pitch;
     out.compF = this.compF; out.compR = this.compR;
     out.braking = this.input.brake > 0.1 || this.input.rearBrake > 0.1;
+    out.brake = Math.max(this.input.brake, this.input.rearBrake * 0.6);
     out.wheelSpinExtra = this.wheelspin * 25 + (this.airborne ? this.input.throttle * 30 : 0);
     out.throttle = this.input.throttle;
+    out.gear = this.gear;
+    out.nitro = this.nitroOn;
+    out.drift = this.drifting;
+    out.draft = this.draft;
+    out.offRoad = this.offRoad;
     out.airborne = this.airborne;
     out.crashed = this.crashed;
     out.crashT = this.crashT;
