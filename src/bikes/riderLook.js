@@ -33,6 +33,17 @@ const LIMBS = {
   shin: [rect(856, 1548, 1268, 1920, true), rect(1288, 1456, 1700, 1836)],
 };
 export const limbRegion = (name, s) => LIMBS[name][s < 0 ? 0 : 1];
+// the leather / microfibre of the gloves and boots, in the strip down the right-hand side
+// and the bottom right corner (their hard parts are separate pieces)
+const KIT = {
+  bootShaft: [rect(1708, 1452, 2044, 1748, true), rect(1708, 1752, 2044, 2044)],
+  bootFoot: [rect(1800, 0, 2044, 236, true), rect(1800, 244, 2044, 480)],
+  gloveCuff: [rect(1800, 496, 2044, 580, true), rect(1800, 588, 2044, 672)],
+  gloveHand: [rect(1800, 688, 2044, 768, true), rect(1800, 776, 2044, 856)],
+  fingers: [rect(1800, 872, 2044, 932), rect(1800, 872, 2044, 932)],
+};
+export const KIT_T = { bootShaft: [0.5, 1.04], bootFoot: [0, 1], gloveCuff: [0, 1], gloveHand: [0, 1], fingers: [0, 1] };
+export const kitRegion = (name, s) => KIT[name][s < 0 ? 0 : 1];
 const GUT = 6; // paint this far past a region's edge (mip bleed)
 
 // painting regions: rectangle + parametric range
@@ -43,6 +54,7 @@ const REG = {
 };
 const LREG = {};
 const limbReg = (name, s) => (LREG[name + s] ||= { R: limbRegion(name, s), t0: LIMB_T[name][0], t1: LIMB_T[name][1], mirror: s < 0 });
+const kitReg = (name, s) => (LREG[name + s] ||= { R: kitRegion(name, s), t0: KIT_T[name][0], t1: KIT_T[name][1], mirror: s < 0 && name !== 'fingers' });
 const at = (rg, u, t) => [rg.R.x0 + (rg.R.x1 - rg.R.x0) * u, rg.R.y1 - (rg.R.y1 - rg.R.y0) * ((t - rg.t0) / (rg.t1 - rg.t0))];
 const m2px = (m) => m * PXM;
 
@@ -120,6 +132,24 @@ function construction() {
     add('line', SH, [[0.36, -0.07], [0.36, 0.6]]); add('line', SH, [[0.66, -0.07], [0.66, 0.6]]);
     add('fabric', SH, [[0.66, -0.08], [0.86, -0.08], [0.86, 0.22], [0.66, 0.22]]);
     add('line', SH, [[-0.01, 0.22], [0.36, 0.22]]);
+  }
+  for (const s of [-1, 1]) {
+    const SF = kitReg('bootShaft', s), FT = kitReg('bootFoot', s), CU = kitReg('gloveCuff', s), HA = kitReg('gloveHand', s);
+    // boot: band at the top, zip down the inner side, vented shin, toe cap, sole edge
+    // (exactly 0..1 round: overlapping copies would add up to the perforation value)
+    add('gloss', SF, [[0, 0.45], [1, 0.45], [1, 1.1], [0, 1.1]]);
+    add('gloss', FT, [[0, -0.05], [1, -0.05], [1, 1.05], [0, 1.05]]);
+    add('line', SF, [[-0.01, 0.565], [1.01, 0.565]]);
+    add('line', SF, [[-0.025, 0.565], [-0.025, 1.04]]); add('line', SF, [[0.025, 0.565], [0.025, 1.04]]);
+    add('perf', SF, [[0.17, 0.62], [0.33, 0.62], [0.33, 0.8], [0.17, 0.8]]);
+    add('line', SF, [[0.6, 0.6], [0.66, 0.85], [0.66, 1.04]]);
+    add('line', FT, [[-0.01, 0.7], [1.01, 0.7]]);
+    add('line', FT, [[0.12, -0.01], [0.12, 1.01]]); add('line', FT, [[0.38, -0.01], [0.38, 1.01]]);
+    add('line', FT, [[0.55, 0.0], [0.62, 0.3], [0.88, 0.3], [0.95, 0.0]]);
+    // glove: cuff panels, the panel on the back of the hand
+    add('line', CU, [[-0.01, 0.15], [1.01, 0.15]]); add('line', CU, [[-0.01, 0.62], [1.01, 0.62]]);
+    add('panel', HA, [[0.12, 0.08], [0.38, 0.08], [0.36, 0.6], [0.14, 0.6]]);
+    add('perf', HA, [[0.62, 0.15], [0.88, 0.15], [0.88, 0.6], [0.62, 0.6]]);
   }
   CONS = P;
   return P;
@@ -264,14 +294,15 @@ function reliefMaps(res) {
   const C = construction();
   // the zone masks, all in one half-resolution canvas (canvas read-backs are the slow part):
   // r: aramid fabric 255 / rubber seat 128; g: leather pleats 255 / black leather 128;
-  // b: perforations (none of the zones sharing a channel overlap)
+  // b: perforations 255 / glossy boot microfibre 128 (zones sharing a channel don't overlap,
+  // except perforated boot panels, which read as perforated)
   const zm = new Uint8Array(hw * hw * 3);
   {
     const { g } = makeCanvas(hw, hw);
     g.setTransform(S / 2, 0, 0, S / 2, 0, 0);
     g.fillStyle = '#000'; g.fillRect(0, 0, ATLAS, ATLAS);
     g.globalCompositeOperation = 'lighter';
-    const col = { fabric: '#ff0000', seat: '#800000', pleats: '#00ff00', black: '#008000', perf: '#0000ff' };
+    const col = { fabric: '#ff0000', seat: '#800000', pleats: '#00ff00', black: '#008000', perf: '#0000ff', gloss: '#000080' };
     for (const p of C) if (col[p.kind]) fillP(g, p.rg, p.pts, col[p.kind]);
     const d = g.getImageData(0, 0, hw, hw).data;
     for (let i = 0, n = hw * hw; i < n; i++) { zm[i * 3] = d[i * 4]; zm[i * 3 + 1] = d[i * 4 + 1]; zm[i * 3 + 2] = d[i * 4 + 2]; }
@@ -325,7 +356,7 @@ function reliefMaps(res) {
       }
       if (d < g3) { const q = d / gw; v -= 0.42 * Math.exp(-q * q); } // seam groove
       if (stitch[i]) v += 0.22 * (stitch[i] / 255);
-      if (zm[z + 2] > 128) { const dx = ((x + pox) % perfSp) - perfSp / 2; if (dx * dx + pdy * pdy < perfR2) v -= 0.55; }
+      if (zm[z + 2] > 192) { const dx = ((x + pox) % perfSp) - perfSp / 2; if (dx * dx + pdy * pdy < perfR2) v -= 0.55; }
       h[i] = v;
     }
   }
@@ -400,7 +431,7 @@ function reliefMaps(res) {
       }
     }
   }
-  // ORM: r occlusion, g roughness, b aramid fabric
+    // ORM: r occlusion, g roughness, b aramid fabric (255) / smooth boot microfibre (128)
   const { c: oc, g: og } = makeCanvas(W, H);
   const img = og.createImageData(W, H), od = img.data;
   const rn = halfNoise(64, 16, 3), rn4 = halfNoise(64, 16, 3, 4);
@@ -413,11 +444,12 @@ function reliefMaps(res) {
     if (zm[z + 1] > 64 && zm[z + 1] <= 192) rough += 0.04; // black leather
     if (zm[z] > 64 && zm[z] <= 192) rough = 0.74 + 0.04 * rn4[z / 3]; // seat
     if (fab) rough = 0.84;
+    if (zm[z + 2] > 64 && zm[z + 2] <= 192) rough = 0.3 + 0.03 * rn[z / 3]; // boot microfibre
     if (D[i] < seamR) rough += 0.1;
     if (stitch[i] > 100) rough = 0.66;
     if (h[i] < -0.3 && rough < 0.78) rough = 0.78; // perforation holes
     const o = i * 4, a = cav * ao[i];
-    od[o] = a * 255; od[o + 1] = (rough > 1 ? 1 : rough) * 255; od[o + 2] = fab ? 255 : 0; od[o + 3] = 255;
+    od[o] = a * 255; od[o + 1] = (rough > 1 ? 1 : rough) * 255; od[o + 2] = fab ? 255 : zm[z + 2] > 64 && zm[z + 2] <= 192 ? 128 : 0; od[o + 3] = 255;
   }
   og.putImageData(img, 0, 0);
   const normal = toTexture(normalFromHeight(h, W, 0.62 * S * PXM / 1000), { srgb: false, wrap: false });
@@ -616,6 +648,36 @@ function suitColorMap(res, main, second, accent, number, name, design, stitches)
       const [nx, ny] = at(TH, 0.5, 0.06); text(nx, ny, 0.045, ink(main), number, R, s < 0, '800', 0.08, accent);
     });
   }
+  // boots: microfibre upper in the boot colour, a team band round the top, the brand down the
+  // outer side, the zip down the inner side; a darker toe cap and sole edge
+  const full = [[-0.05, -0.1], [1.05, -0.1], [1.05, 1.2], [-0.05, 1.2]];
+  const bootCol = lum(main) < 0.25 ? '#e9eaec' : lum(main) > 0.7 ? '#16171a' : main;
+  const bootInk = ink(bootCol);
+  for (const s of [-1, 1]) {
+    const SF = kitReg('bootShaft', s), FT = kitReg('bootFoot', s), R = Math.PI;
+    fillP(g, SF, full, bootCol); fillP(g, FT, full, bootCol);
+    fillP(g, SF, [[-0.05, 0.44], [1.05, 0.44], [1.05, 0.565], [-0.05, 0.565]], accent);
+    fillP(g, SF, [[0.6, 0.6], [0.66, 0.85], [0.66, 1.1], [0.9, 1.1], [0.9, 0.6]], second === bootCol ? accent : second);
+    fillP(g, FT, [[-0.05, 0.7], [1.05, 0.7], [1.05, 1.1], [-0.05, 1.1]], lum(bootCol) > 0.5 ? '#cfd1d4' : '#26272a');
+    fillP(g, FT, [[0.12, -0.1], [0.38, -0.1], [0.38, 1.1], [0.12, 1.1]], '#18181a');
+    fillP(g, FT, [[0.55, -0.1], [0.62, 0.3], [0.88, 0.3], [0.95, -0.1]], second === bootCol ? accent : second);
+    inRegion(g, SF, () => {
+      const [x, y] = at(SF, 0.58, 0.76); text(x, y, 0.022, bootInk, 'MÍTICO', R + Math.PI / 2, s < 0, 'italic 800', 0.12);
+      const [zx, zy0] = at(SF, 0, 0.58), [, zy1] = at(SF, 0, 1.04);
+      g.fillStyle = '#121214'; g.fillRect(zx - 5, zy0, 10, zy1 - zy0); g.fillRect(zx - 5 + (SF.R.x1 - SF.R.x0), zy0, 10, zy1 - zy0);
+      g.fillStyle = '#55575b'; for (let y = zy0; y < zy1; y += 3) { g.fillRect(zx - 2.5, y, 2.5, 1.4); g.fillRect(zx + (SF.R.x1 - SF.R.x0) - 5, y + 1.5, 2.5, 1.4); }
+    });
+  }
+  // gloves: black kangaroo leather, a team panel round the cuff, the second colour on the
+  // back of the hand, the brand on the cuff
+  for (const s of [-1, 1]) {
+    const CU = kitReg('gloveCuff', s), HA = kitReg('gloveHand', s), R = Math.PI;
+    fillP(g, CU, full, BLACK); fillP(g, HA, full, BLACK);
+    fillP(g, CU, [[0.25, 0.15], [1.0, 0.15], [1.0, 0.62], [0.25, 0.62]], main);
+    fillP(g, HA, [[0.12, 0.08], [0.38, 0.08], [0.36, 0.6], [0.14, 0.6]], second);
+    inRegion(g, CU, () => { const [x, y] = at(CU, 0.55, 0.39); text(x, y, 0.018, ink(main), 'MÍTICO', R, s < 0, 'italic 800', 0.08); });
+  }
+  fillP(g, kitReg('fingers', 1), full, BLACK);
   // wear: fine scuffs where the leather meets the asphalt or the machine (knee and elbow
   // sliders, shoulder, the seat)
   const rr = rng(number.charCodeAt(0) * 7 + design);
@@ -781,7 +843,8 @@ float dN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         vec2 dUv = vNormalMapUv * ${(ATLAS / PXM / 0.04).toFixed(2)};
         vec2 dL = texture2D( uGrain, dUv ).xy * 2.0 - 1.0;
         vec2 dF = texture2D( uWeave, dUv * 3.4 ).xy * 2.0 - 1.0;
-        mapN.xy += mix( dL * 0.22, dF * 0.45, ormS.b );
+        float fab = smoothstep( 0.75, 0.95, ormS.b ), mf = smoothstep( 0.3, 0.45, ormS.b ) * ( 1.0 - fab );
+        mapN.xy += mix( dL * mix( 0.22, 0.05, mf ), dF * 0.45, fab );
         mapN = normalize( mapN );
       }`));
   };
@@ -814,7 +877,6 @@ export function setWet(m, wet) {
   m.suit.clearcoat = wet ? 0.5 : 0;
   m.gear.roughness = wet ? 0.32 : 0.5;
   m.gear.clearcoat = wet ? 0.55 : 0.2;
-  m.boot.roughness = wet ? 0.22 : 0.36;
 }
 
 // Every rider gets its own material instances (per-rider grime and wetness); textures are
@@ -834,7 +896,6 @@ export function riderMaterials({ livery, number, name, design, visor = 1, hiRes 
   const suitMap = cached(`suit|${key}|${resColor}`, () => suitColorMap(resColor, main, second, accent, number, name, design, relief.stitches));
   const helmetMap = cached(`helmet|${key}|${resColor}`, () => helmetColorMap(resColor / 1024, main, second, accent, number, design));
   const grainGear = cached('grainGear', () => repTex(grainTexture(), 6));
-  const grainBoot = cached('grainBoot', () => repTex(grainTexture(), 4));
   const v = VISORS[visor % VISORS.length];
   return {
     // race leather: atlas paint, shared relief + occlusion + roughness, micro grain
@@ -845,7 +906,6 @@ export function riderMaterials({ livery, number, name, design, visor = 1, hiRes 
     // gloves, armour plates, sliders, soles, helmet trims: vertex-coloured, leather grain;
     // the TEAM placeholder colours become the livery's
     gear: teamGear(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05, normalMap: grainGear, normalScale: new THREE.Vector2(0.35, 0.35), clearcoat: 0.2, clearcoatRoughness: 0.5 }), main, second, accent),
-    boot: new THREE.MeshPhysicalMaterial({ color: lum(main) < 0.25 ? 0xe9eaec : lum(main) > 0.7 ? 0x16171a : new THREE.Color(main).getHex(), roughness: 0.36, clearcoat: 0.6, clearcoatRoughness: 0.2, normalMap: grainBoot, normalScale: new THREE.Vector2(0.2, 0.2) }),
     helmet: new THREE.MeshPhysicalMaterial({ map: helmetMap, roughness: 0.2, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.03 }),
     // visor: smoked or iridium mirror with a thin-film colour shift
     visor: new THREE.MeshPhysicalMaterial({ color: v.color, roughness: v.roughness, metalness: v.metalness, iridescence: v.iridescence, iridescenceIOR: 1.9, iridescenceThicknessRange: v.range || [280, 640], envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.0 }),

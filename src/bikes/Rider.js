@@ -8,7 +8,7 @@
 // graphic design, chin curtain and a smoked or iridium visor. Fictional brands and names only.
 //
 // Every rigid piece of gear is skinned 100 % to its bone and merged with the body by
-// material, so a whole rider is five draw calls (suit, gear, boots, helmet, visor). Riders
+// material, so a whole rider is four draw calls (suit with gloves and boots, gear, helmet, visor). Riders
 // differ in height (±5 %) and build: the bones carry the scale and the solver uses each
 // rider's own segment lengths.
 //
@@ -36,7 +36,7 @@
 // grinds dust and grass stains into the leathers for the rest of the race.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { TORSO, HUMP, COLLAR, T_MIN, T_MAX, limbRegion, HB, TEAM, NAMES, VISORS, riderMaterials, setWet } from './riderLook.js';
+import { TORSO, HUMP, COLLAR, T_MIN, T_MAX, limbRegion, kitRegion, HB, TEAM, NAMES, VISORS, riderMaterials, setWet } from './riderLook.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -527,7 +527,7 @@ let GEO = null;
 function geometry() {
   if (GEO) return GEO;
   const rest = restPose();
-  const out = { suit: [], gear: [], boot: [], helmet: [], visor: [] };
+  const out = { suit: [], gear: [], helmet: [], visor: [] };
   // ---- torso: one surface from under the seat to the collar, anatomical sections under
   // padded leather: glutes and hip armour, waist, ribs, chest protector over the pecs,
   // shoulder blades and lats, trapezius into the collar. [t, front, back, half-width, ox, oz, n]
@@ -613,13 +613,10 @@ function geometry() {
     out.gear.push(paint(skinned(knee, rest[bi('shin')], shW), TEAM.accent));
     // ---- glove (hand frame: +Y wrist -> grip, +X down/back, grip axis along Z at (0, .063));
     // the index and middle fingers ride their own bone to pull the levers
-    gloveGeometry(s).forEach(([g, col, bone]) => out.gear.push(rigid(paint(g, col), rest[bi(bone)], bi(bone))));
+    const put = ([g, tgt, bone, col]) => (tgt === 'suit' ? out.suit.push(rigid(g, rest[bi(bone)], bi(bone))) : out.gear.push(rigid(paint(g, col), rest[bi(bone)], bi(bone))));
+    gloveGeometry(s).forEach(put);
     // ---- boot: shaft on the shin, foot shell on the foot bone
-    bootGeometry(s).forEach(([g, kind, bone, col]) => {
-      const tgt = kind === 'boot' ? out.boot : out.gear;
-      const geo = kind === 'boot' ? g : paint(g, col);
-      tgt.push(rigid(geo, rest[bi(bone)], bi(bone)));
-    });
+    bootGeometry(s).forEach(put);
   }
   // helmet
   const H = helmetGeometry();
@@ -639,36 +636,51 @@ function geometry() {
     rest,
     suit: mergeGeometries(norm(out.suit, false)),
     gear: mergeGeometries(norm(out.gear, true)),
-    boot: mergeGeometries(norm(out.boot, false)),
     helmet: mergeGeometries(norm(out.helmet, false)),
     visor: mergeGeometries(norm(out.visor, false)),
   };
-  for (const k of ['suit', 'gear', 'boot', 'helmet', 'visor']) GEO[k].computeBoundingSphere();
+  for (const k of ['suit', 'gear', 'helmet', 'visor']) GEO[k].computeBoundingSphere();
   return GEO;
 }
 
-// Gauntlet glove round the grip. Returns [geometry, colour, bone] in that bone's space: the
-// hand body, cuff, thumb, ring + little fingers on 'hand'; index + middle (over the lever)
-// on 'fing', authored relative to the knuckle so the bone can curl them.
+// cut a piece's own 0..1 uv into an atlas rectangle
+function kitUV(g, R) {
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, R.u0 + (R.u1 - R.u0) * uv.getX(i), R.v0 + (R.v1 - R.v0) * uv.getY(i));
+  return g;
+}
+
+// Gauntlet glove round the grip. Returns [geometry, 'suit' | 'gear', bone, colour] in that
+// bone's space: the leather (cuff, hand, fingers) is cut from the suit's atlas, the hard
+// parts (carbon wrist and knuckle guards, TPU plates, palm slider) are moulded on top.
+// Hand frame: +Y wrist -> grip, +X palm side, -X back of the hand, +Z the little-finger side
+// of the right hand; the index + middle fingers (over the lever) on 'fing', relative to the
+// knuckle so the bone can curl them.
 function gloveGeometry(s) {
   const P = [];
   const GC = [0.0, 0.063]; // grip axis (x, y), along z
-  const black = 0x141416, accent = 0x2b2c30, carbon = 0x1b1c1f, palm = 0x3a3b3f;
-  // gauntlet cuff over the forearm, flared, with the velcro strap and a TPU wrist guard
-  const cuff = segment(0.09, [[0, 0.043, 0.043, 0.048, 0, 0, 2.3], [0.55, 0.036, 0.036, 0.042, 0, 0, 2.2], [1, 0.033, 0.033, 0.039, 0, 0, 2.2]], { radial: 18 });
-  cuff.translate(0, -0.09, 0);
-  P.push([cuff, TEAM.main, 'hand']);
-  P.push([segment(0.02, [[0, 0.039, 0.039, 0.045, 0, 0, 2.3], [1, 0.039, 0.039, 0.045, 0, 0, 2.3]], { radial: 18 }).translate(0, -0.052, 0), TEAM.second, 'hand']);
-  P.push([rbox(0.01, 0.05, 0.03, [-0.04, -0.07, s * 0.02], [0, 0, 0.05], 0.4), carbon, 'hand']);
-  // hand body: wrist -> knuckles, riding over the grip (back of the hand up = -X)
-  const hb = segment(0.085, [[0, 0.031, 0.031, 0.041, 0.0, 0, 2.3], [0.35, 0.027, 0.025, 0.047, -0.01, 0, 2.6], [0.75, 0.019, 0.021, 0.048, -0.026, 0, 2.8], [1, 0.017, 0.019, 0.046, -0.033, 0, 2.8]], { radial: 18, ant: -1 });
-  P.push([hb, black, 'hand']);
-  // palm slider + carbon knuckle shell (three ridges) and the back-of-hand panel
-  P.push([rbox(0.008, 0.034, 0.05, [0.02, 0.03, 0], [0, 0, -0.1], 0.4), palm, 'hand']);
-  P.push([rbox(0.013, 0.031, 0.084, [-0.051, 0.072, 0], [0, 0, -0.25], 0.35), carbon, 'hand']);
-  for (let k = -1; k <= 1; k++) P.push([rbox(0.004, 0.026, 0.012, [-0.058, 0.073, k * 0.024], [0, 0, -0.25], 0.4), TEAM.accent, 'hand']);
-  P.push([rbox(0.008, 0.045, 0.06, [-0.046, 0.035, 0], [0, 0, -0.18], 0.4), TEAM.second, 'hand']);
-  // fingers: index + middle reach forward over the lever, ring + little wrap the grip
+  const carbon = 0x1b1c1f, tpu = 0x2d2e32, palm = 0x55575b;
+  const cuffReg = kitRegion('gloveCuff', s), handReg = kitRegion('gloveHand', s), finReg = kitRegion('fingers', s);
+  // gauntlet cuff over the end of the sleeve, flared; carbon wrist guard on the outer side
+  const CUFF = [[0, 0.046, 0.046, 0.052, 0, 0, 2.3], [0.45, 0.04, 0.04, 0.046, 0, 0, 2.3], [0.8, 0.035, 0.035, 0.041, 0, 0, 2.2], [1, 0.033, 0.033, 0.039, 0, 0, 2.2]];
+  P.push([segment(0.1, CUFF, { radial: 28, ant: -1, region: cuffReg }).translate(0, -0.1, 0), 'suit', 'hand']);
+  P.push([moulded(0.1, CUFF, { region: cuffReg, u: 0.5, t: 0.5, du: 0.13, dt: 0.32, nr: 8, na: 32, prof: puck(0.0045, 0.3) }).translate(0, -0.1, 0), 'gear', 'hand', carbon]);
+  // velcro strap round the wrist with its pull tab
+  P.push([segment(0.018, [[0, 0.0372, 0.0372, 0.0432, 0, 0, 2.3], [1, 0.0362, 0.0362, 0.0422, 0, 0, 2.3]], { radial: 28, ant: -1 }).translate(0, -0.03, 0), 'gear', 'hand', 0x1f2023]);
+  P.push([rbox(0.006, 0.02, 0.024, [-0.036, -0.021, s * 0.022], [0, 0, 0], 0.55), 'gear', 'hand', TEAM.main]);
+  // hand body: wrist -> knuckles, riding over the grip
+  const HAND = [[0, 0.031, 0.031, 0.041, 0.0, 0, 2.3], [0.35, 0.027, 0.025, 0.047, -0.01, 0, 2.6], [0.75, 0.019, 0.021, 0.048, -0.026, 0, 2.8], [1, 0.017, 0.019, 0.046, -0.033, 0, 2.8]];
+  P.push([segment(0.085, HAND, { radial: 32, ant: -1, region: handReg }), 'suit', 'hand']);
+  // carbon knuckle guard: a shell over the knuckles with a ridge over each one
+  P.push([moulded(0.085, HAND, {
+    region: handReg, u: 0.25, t: 0.8, du: 0.2, dt: 0.2, nr: 10, na: 40,
+    prof: (rho, a) => puck(0.0045, 0.3)(rho) + 0.0024 * (1 - smooth(0.55, 0.85, rho)) * Math.max(...[-0.6, -0.2, 0.2, 0.6].map((k) => Math.exp(-(((a - k) / 0.14) ** 2)))),
+  }), 'gear', 'hand', carbon]);
+  // TPU plate on the back of the hand, slider on the heel of the palm
+  P.push([moulded(0.085, HAND, { region: handReg, u: 0.25, t: 0.4, du: 0.15, dt: 0.19, nr: 8, na: 32, prof: puck(0.003, 0.35) }), 'gear', 'hand', TEAM.main]);
+  P.push([moulded(0.085, HAND, { region: handReg, u: 0.75, t: 0.28, du: 0.14, dt: 0.22, nr: 8, na: 32, prof: puck(0.004, 0.3) }), 'gear', 'hand', palm]);
+  // fingers: index + middle reach forward over the lever, ring + little wrap the grip; TPU
+  // plates over the first two phalanges
   const K = KNUCKLE;
   for (let k = 0; k < 4; k++) {
     const z = s * [-0.026, -0.009, 0.008, 0.024][k];
@@ -683,78 +695,82 @@ function gloveGeometry(s) {
       const len = k === 2 ? 2.6 : 2.25;
       for (let i = 1; i <= 5; i++) { const a = a0 - (len * i) / 5; pts.push([GC[0] + Math.cos(a) * R, GC[1] + Math.sin(a) * R, z]); }
     }
-    const rad = (t) => (k === 3 ? 0.0088 : 0.0098) * (1 - 0.18 * t);
-    const finger = tubeR(pts, rad, { radial: 8, seg: 12 });
-    // finger armour plates on the first and second phalanx
+    const rad = (t) => (k === 3 ? 0.0086 : 0.0095) * (1 - 0.16 * t) * (1 + 0.06 * Math.sin(t * Math.PI * 3)); // knuckle swell at each joint
+    const finger = kitUV(tubeR(pts, rad, { radial: 10, seg: 16 }), finReg);
     const plates = [];
-    for (const [pi, w] of [[1, 0.016], [2, 0.012]]) {
+    for (const [pi, w] of [[1, 0.015], [2, 0.011]]) {
       const q = pts[pi];
-      plates.push(rbox(0.006, w, 0.013, [q[0] - 0.008, q[1], z], [0, 0, k < 2 ? -0.6 - pi * 0.3 : -1.3 - pi * 0.4], 0.4));
+      plates.push(rbox(0.005, w, 0.0125, [q[0] - 0.0085, q[1], z], [0, 0, k < 2 ? -0.6 - pi * 0.3 : -1.3 - pi * 0.4], 0.6));
     }
     if (k < 2) {
       // lever fingers live on the 'fing' bone (origin at the knuckle)
       finger.translate(-K[0], -K[1], 0);
-      P.push([finger, black, 'fing']);
-      for (const pl of plates) { pl.translate(-K[0], -K[1], 0); P.push([pl, accent, 'fing']); }
+      P.push([finger, 'suit', 'fing']);
+      for (const pl of plates) { pl.translate(-K[0], -K[1], 0); P.push([pl, 'gear', 'fing', tpu]); }
     } else {
-      P.push([finger, black, 'hand']);
-      for (const pl of plates) P.push([pl, accent, 'hand']);
+      P.push([finger, 'suit', 'hand']);
+      for (const pl of plates) P.push([pl, 'gear', 'hand', tpu]);
     }
   }
-  // thumb: from the inside of the palm, under the grip
+  // thumb from the inside of the palm, under the grip, with its slider
   const zt = -s * 0.038;
-  P.push([tubeR([[-0.012, 0.025, zt], [0.008, 0.045, zt * 1.05], [0.024, 0.064, zt * 0.9], [0.026, 0.082, zt * 0.6]], (t) => 0.0115 * (1 - 0.2 * t), { radial: 8, seg: 10 }), black, 'hand']);
+  const tp = [[-0.012, 0.025, zt], [0.008, 0.045, zt * 1.05], [0.024, 0.064, zt * 0.9], [0.026, 0.082, zt * 0.6]];
+  P.push([kitUV(tubeR(tp, (t) => 0.0112 * (1 - 0.2 * t), { radial: 10, seg: 12 }), finReg), 'suit', 'hand']);
+  P.push([rbox(0.005, 0.018, 0.012, [tp[2][0] + 0.009, tp[2][1], tp[2][2]], [0, 0, -0.9], 0.6), 'gear', 'hand', tpu]);
   return P;
 }
 
-// Race boot. Shin frame (shaft): +Y down the shin, -X anterior. Foot frame: +Y heel->toe,
-// +Z up, +X = bike +z. Returns [geometry, 'boot' | 'gear', bone, colour].
+// Race boot. The microfibre upper (shaft, foot shell) is cut from the suit's atlas; the shin
+// plate, calf shell, ankle hinge, straps, toe slider, heel cup and sole are hard parts.
+// Shin frame (shaft): +Y down the shin, -X anterior. Foot frame: +Y heel->toe, +Z up,
+// +X = bike +z. Returns [geometry, 'suit' | 'gear', bone, colour].
 function bootGeometry(s) {
   const P = [];
-  // shaft from mid-calf to the ankle, calf brace at the back, shin plate in front
-  const shaft = segment(B.shin, [[0.5, 0.05, 0.062, 0.052, 0, 0, 2.4], [0.62, 0.049, 0.064, 0.051, 0.002, 0, 2.5], [0.8, 0.045, 0.054, 0.047, 0.002, 0, 2.5], [0.95, 0.045, 0.05, 0.046, 0, 0, 2.4], [1.04, 0.048, 0.052, 0.047, 0, 0, 2.4]], { radial: 24, ant: -1 });
-  P.push([shaft, 'boot', 'shin']);
-  // top rim (rubber band) and shin plate
-  P.push([segment(B.shin, [[0.495, 0.054, 0.066, 0.056, 0, 0, 2.4], [0.52, 0.054, 0.066, 0.056, 0, 0, 2.4]], { radial: 24, ant: -1 }), 'gear', 'shin', 0x151517]);
-  const plate = rbox(0.012, 0.17, 0.06, [-0.052, B.shin * 0.73, 0], [0, 0, 0.04], 0.35);
-  P.push([plate, 'gear', 'shin', TEAM.second]);
-  const brace = rbox(0.014, 0.14, 0.05, [0.066, B.shin * 0.72, 0], [0, 0, -0.06], 0.35);
-  P.push([brace, 'gear', 'shin', 0x1d1e21]);
-  // buckles on the outer side
-  for (let k = 0; k < 3; k++) {
-    const y = B.shin * (0.6 + k * 0.11);
-    P.push([rbox(0.03, 0.012, 0.006, [0.004, y, s * 0.057], [0, 0, 0.12], 0.3), 'gear', 'shin', 0x9ea2a8]);
+  const sfReg = kitRegion('bootShaft', s), ftReg = kitRegion('bootFoot', s);
+  // shaft from mid-calf to the ankle
+  const SHAFT = [[0.5, 0.05, 0.062, 0.052, 0, 0, 2.4], [0.62, 0.049, 0.064, 0.051, 0.002, 0, 2.5], [0.8, 0.045, 0.054, 0.047, 0.002, 0, 2.5], [0.95, 0.045, 0.05, 0.046, 0, 0, 2.4], [1.04, 0.048, 0.052, 0.047, 0, 0, 2.4]];
+  P.push([segment(B.shin, SHAFT, { radial: 32, ant: -1, region: sfReg }), 'suit', 'shin']);
+  // rubber band round the top
+  P.push([segment(B.shin, [[0.495, 0.054, 0.066, 0.056, 0, 0, 2.4], [0.52, 0.054, 0.066, 0.056, 0, 0, 2.4]], { radial: 32, ant: -1 }), 'gear', 'shin', 0x151517]);
+  // shin plate with three vent slots, calf shell, the ankle hinge on the outside
+  P.push([moulded(B.shin, SHAFT, {
+    region: sfReg, u: 0.25, t: 0.74, du: 0.13, dt: 0.19,
+    prof: (rho, a, b) => puck(0.006, 0.3)(rho) - 0.0022 * (rho < 0.7 && Math.abs(a) < 0.45 && [-0.4, 0, 0.4].some((k) => Math.abs(b - k) < 0.07) ? 1 : 0),
+  }), 'gear', 'shin', TEAM.main]);
+  P.push([moulded(B.shin, SHAFT, { region: sfReg, u: 0.75, t: 0.7, du: 0.12, dt: 0.17, prof: puck(0.0055, 0.3) }), 'gear', 'shin', 0x1d1e21]);
+  P.push([moulded(B.shin, SHAFT, { region: sfReg, u: 0.5, t: 0.985, du: 0.07, dt: 0.055, nr: 6, na: 32, prof: (rho) => puck(0.006, 0.4)(rho) + (rho < 0.35 ? 0.0025 : 0) }), 'gear', 'shin', TEAM.accent]);
+  // two straps with alloy buckles toward the front
+  for (let k = 0; k < 2; k++) {
+    const t = 0.64 + k * 0.13;
+    P.push([moulded(B.shin, SHAFT, { region: sfReg, u: 0.37, t, du: 0.09, dt: 0.022, nr: 4, na: 24, prof: puck(0.0025, 0.4) }), 'gear', 'shin', 0x26272b]);
+    P.push([moulded(B.shin, SHAFT, { region: sfReg, u: 0.4, t, du: 0.03, dt: 0.026, nr: 4, na: 20, prof: puck(0.004, 0.4) }), 'gear', 'shin', 0x9ea2a8]);
   }
-  // ankle brace pivot disc on the outer side
-  P.push([new THREE.CylinderGeometry(0.02, 0.022, 0.006, 18).rotateX(Math.PI / 2).translate(0.006, B.shin * 0.99, s * 0.052), 'gear', 'shin', TEAM.accent]);
-  // foot shell: heel cup -> instep -> toe box (x lateral, z up)
-  const foot = segment(0.285, [
+  // foot shell: heel cup -> instep -> toe box. Built along +Y with "front" = +X, then turned
+  // so its +X becomes +Z (up)
+  const FOOT = [
     [0, 0.026, 0.026, 0.026, 0, -0.01, 2.2], [0.08, 0.056, 0.058, 0.038, 0, -0.012, 2.6], [0.3, 0.052, 0.056, 0.042, 0, -0.014, 2.8],
     [0.55, 0.038, 0.046, 0.044, 0, -0.024, 3.0], [0.76, 0.03, 0.04, 0.043, 0, -0.03, 3.0], [0.92, 0.024, 0.034, 0.037, 0, -0.034, 2.8], [1.0, 0.014, 0.026, 0.02, 0, -0.04, 2.3],
-  ].map(([t, up, dn, w, ox, oz, n]) => [t, up, dn, w, oz, ox, n]), { radial: 22, ant: 1 });
-  // the segment is built along +Y with "front" = +X; rotate so its +X becomes +Z (up)
-  foot.rotateY(-Math.PI / 2);
-  foot.translate(0, -0.075, 0);
-  P.push([foot, 'boot', 'foot']);
-  // sole with heel step
+  ].map(([t, up, dn, w, ox, oz, n]) => [t, up, dn, w, oz, ox, n]);
+  const turn = (g) => g.rotateY(-Math.PI / 2).translate(0, -0.075, 0);
+  P.push([turn(segment(0.285, FOOT, { radial: 32, sub: 4, ant: 1, region: ftReg })), 'suit', 'foot']);
+  // toe slider on the outer side of the toe box
+  P.push([turn(moulded(0.285, FOOT, { ant: 1, region: ftReg, u: 0, t: 0.83, du: 0.09, dt: 0.13, nr: 8, na: 32, prof: puck(0.0055, 0.3) })), 'gear', 'foot', 0xd8dbde]);
   // sole: footprint outline (heel, waist, ball, toe) with a heel step
   const fp = [];
-  for (let i = 0; i < 28; i++) {
-    const a = (i / 28) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
     const yy = 0.068 + 0.138 * sn; // -0.07 .. 0.206
     const t = (yy + 0.07) / 0.276;
     const w = 0.03 + 0.016 * Math.sin(Math.PI * Math.min(1, t * 1.15)) - (t > 0.35 && t < 0.55 ? 0.006 : 0);
     fp.push([w * c / Math.max(0.2, Math.abs(c) ** 0.3), yy]);
   }
-  const sole = new THREE.ExtrudeGeometry(new THREE.Shape(fp.map(([x, y]) => new THREE.Vector2(x, y))), { depth: 0.008, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 1, curveSegments: 1 });
+  const sole = new THREE.ExtrudeGeometry(new THREE.Shape(fp.map(([x, y]) => new THREE.Vector2(x, y))), { depth: 0.008, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 2, curveSegments: 1 });
   sole.translate(0, 0, -0.083);
   P.push([sole, 'gear', 'foot', 0x121213]);
-  const heel = rbox(0.05, 0.06, 0.012, [0, -0.04, -0.084], [0, 0, 0], 0.3);
-  P.push([heel, 'gear', 'foot', 0x121213]);
-  // toe slider on the outer side of the toe box, heel cup
-  P.push([rbox(0.012, 0.055, 0.026, [s * 0.04, 0.165, -0.052], [0, 0, 0.1], 0.4), 'gear', 'foot', 0xd8dbde]);
-  P.push([rbox(0.07, 0.03, 0.05, [0, -0.064, -0.038], [0, 0, 0], 0.45), 'gear', 'foot', 0x26272a]);
-  return P.map(([g, kind, bone, col]) => [g, kind, bone, col]);
+  P.push([rbox(0.05, 0.06, 0.012, [0, -0.04, -0.084], [0, 0, 0], 0.4), 'gear', 'foot', 0x121213]);
+  // heel cup
+  P.push([rbox(0.07, 0.03, 0.05, [0, -0.064, -0.038], [0, 0, 0], 0.6), 'gear', 'foot', 0x26272a]);
+  return P;
 }
 
 // ---------------------------------------------------------------------------
@@ -843,7 +859,7 @@ export class Rider {
     this.root.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones);
     this.meshes = [];
-    for (const k of ['suit', 'gear', 'boot', 'helmet', 'visor']) {
+    for (const k of ['suit', 'gear', 'helmet', 'visor']) {
       const sm = new THREE.SkinnedMesh(G[k], mats[k]);
       sm.castShadow = cast && k !== 'visor'; sm.receiveShadow = true; sm.frustumCulled = false;
       sm.name = `rider:${k}`;
