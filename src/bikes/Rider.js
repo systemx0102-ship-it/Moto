@@ -20,9 +20,11 @@
 // and look-back head turns, glances over the shoulder on the straights and at a rival
 // drawing alongside, grid ready pose
 // with eyes on the start lights and a revving hand, the launch crouch over the tank,
-// downshift throttle blips, standing up over gravel and grass, idle life at a standstill
+// downshift throttle blips, standing up over gravel and grass, stoppies braced on locked
+// arms, visor wipes with the left glove on wet straights, idle life at a standstill
 // (breathing, glances, visor wipes, hand flexes), victory celebrations (fist pumps, the
-// winner standing to point at the sky, waves to the crowd) and crashes in world space:
+// winner standing to point at the sky, waves to the crowd), a relaxed cool-down lap with a
+// hand resting on the thigh, and crashes in world space:
 // a highside flings the body over the front in a curled tumble that lands on the shoulders
 // and rolls onto the back; a lowside drops it on the hip and slides it feet first.
 import * as THREE from 'three';
@@ -1227,7 +1229,7 @@ export class Rider {
       acc: 0, leanVel: 0, compVel: 0, pv: 0, pl: 0, pc: 0, wasAir: false,
       dangle: 0, dangleSide: 1, legOut: 0, legOutSide: 1, gear: undefined, shiftT: 0, shiftDir: 0, clutchT: 0,
       finT: -1, idleT: 0, nextAct: 0.4 + hash(seed) * 2.2, act: -1, actT: 0, actN: 0, ov: 0,
-      launch: 0, glanceT: 0, nextGlance: 8 + hash(seed * 2.3) * 12, glance: 0, glanceSide: 1, glanceDur: 0.85, glanceAmp: 1.05, rivalWas: 0,
+      launch: 0, wipe: 0, wipeT: 0, nextWipe: 5 + hash(seed * 4.1) * 8, glanceT: 0, nextGlance: 8 + hash(seed * 2.3) * 12, glance: 0, glanceSide: 1, glanceDur: 0.85, glanceAmp: 1.05, rivalWas: 0,
     };
     this.sp = { surge: new Spring(70, 11), heave: new Spring(160, 13), sway: new Spring(55, 9), headP: new Spring(120, 12), headR: new Spring(100, 11) };
     this.t = hash(seed * 1.7) * 10;
@@ -1295,7 +1297,8 @@ export class Rider {
     const pe = this.persona;
     const h = st.hang * S.hang * pe.hang, ha = Math.abs(h);
     // tuck behind the screen on the straights (deeper on nitro), not while braking or leaned over
-    const tuckT = S.tuck * clamp((speed - 16) / 26, 0, 1) * (thr > 0.4 ? 1 : 0.35) * (1 - 0.85 * smooth(0.05, 0.4, brk)) * (1 - 0.6 * smooth(0.25, 0.8, Math.abs(lean))) + (s.nitro ? 0.15 * S.tuck : 0) + 0.1 * S.tuck * clamp(s.draft || 0, 0, 1);
+    const cool = finT > 7.5 ? smooth(7.5, 8.5, finT) : 0; // cool-down lap after the flag
+    const tuckT = (S.tuck * clamp((speed - 16) / 26, 0, 1) * (thr > 0.4 ? 1 : 0.35) * (1 - 0.85 * smooth(0.05, 0.4, brk)) * (1 - 0.6 * smooth(0.25, 0.8, Math.abs(lean))) + (s.nitro ? 0.15 * S.tuck : 0) + 0.1 * S.tuck * clamp(s.draft || 0, 0, 1)) * (1 - 0.85 * cool);
     st.tuck = sm(st.tuck, clamp(tuckT * pe.tuck, 0, 1.15) * (1 - st.stop), 2.6);
     st.brake = sm(st.brake, brk * smooth(2, 8, speed), 7);
     // MotoGP leg dangle: inside leg off the peg under hard braking into a corner
@@ -1314,6 +1317,8 @@ export class Rider {
     // launch: weight thrown forward over the tank to keep the front down
     st.launch = sm(st.launch, !crashed && !s.airborne && thr > 0.6 && speed < 22 && speed > 0.5 && st.acc > 4 ? 1 : 0, st.launch > 0.5 ? 2.5 : 6);
     const wheel = clamp(pitchB / 0.5, 0, 1.3);
+    // stoppie: arms locked against the bars, hips back and up, the body leaning back
+    const stoppie = clamp(-pitchB / 0.35, 0, 1.2);
 
     // ---------------- secondary motion
     const surge = sp.surge.step(clamp(-st.acc * 0.011, -0.12, 0.2) * (1 - st.stop), dt);
@@ -1361,6 +1366,18 @@ export class Rider {
       }
       if (st.actT > dur) { st.act = -1; st.idleT = 0; st.nextAct = 2.5 + hash(this.seed + st.actN * 1.3) * 4.5; }
     }
+    // rain on a straight: the left glove sweeps the water off the visor now and then
+    if (!settle) {
+      const calmW = s.wet && speed > 18 && Math.abs(lean) < 0.1 && brk < 0.1 && !crashed && finT < 0 && st.stop < 0.1;
+      if (st.wipe > 0) st.wipe = Math.max(0, st.wipe - dt);
+      else if (calmW) { st.wipeT += dt; if (st.wipeT > st.nextWipe) { st.wipe = 0.75; st.wipeT = 0; st.nextWipe = 8 + hash(this.seed * 2.9 + t) * 12; } }
+    }
+    if (st.wipe > 0) {
+      const u = 1 - st.wipe / 0.75, env = smooth(0, 0.2, u) * (1 - smooth(0.75, 1, u));
+      ovW = env;
+      ov.set(0, 0, 0).add(bn[BONE.head].position).add(_tmp.set(0.2, 0.09, -0.06 + Math.sin(u * Math.PI * 2) * 0.1).applyQuaternion(bn[BONE.head].quaternion));
+      ovD.set(0.2, 0.9, 0.3);
+    }
     // victory: sit up, punch the air, the winner stands and points to the sky, then waves
     if (finT >= 0) {
       const win = s.place === 1;
@@ -1388,6 +1405,18 @@ export class Rider {
       }
       headYaw += -0.55 * on * (finT < 5.6 ? 1 : 0.5) + (win && finT > 3.6 && finT < 5.6 ? 0.55 * on : 0);
       headPitch += (win && finT > 3.6 && finT < 5.6 ? 0.45 : 0.12) * on;
+      // cool-down lap: sitting up, relaxed, the left hand resting on the thigh now and then
+      if (cool > 0) {
+        sitUp = Math.max(sitUp, 0.55 * cool);
+        const ru = finT > 9 ? ((finT - 9) % 6.5) / 2.6 : 2;
+        if (ru < 1) {
+          const env = cool * smooth(0, 0.2, ru) * (1 - smooth(0.8, 1, ru));
+          ovW = Math.max(ovW, env);
+          ov.copy(this.limbs[0].hp).add(_tmp.set(0.2, 0.03, -0.1));
+          ovD.set(0.8, -0.5, 0.1);
+          fingL = 0.3;
+        }
+      }
     }
 
     // a glance over the shoulder now and then on a straight (who's behind?); eyes up to the
@@ -1410,8 +1439,8 @@ export class Rider {
     // ---------------- pelvis on the seat
     const stop = st.stop, tuck = st.tuck;
     const P = _P.set(
-      this.seat.x - 0.035 * ha - 0.025 * tuck + 0.05 * st.brake * (1 - ha) + surge * 0.12 + 0.03 * st.stand + 0.03 * wheel - 0.02 * sitUp + 0.045 * st.launch,
-      this.seat.y + 0.075 - 0.025 * ha + 0.22 * st.stand + heave - 0.004 * stop + breath * 0.3,
+      this.seat.x - 0.035 * ha - 0.025 * tuck + 0.05 * st.brake * (1 - ha) + surge * 0.12 + 0.03 * st.stand + 0.03 * wheel - 0.02 * sitUp + 0.045 * st.launch - 0.06 * stoppie,
+      this.seat.y + 0.075 - 0.025 * ha + 0.22 * st.stand + heave - 0.004 * stop + breath * 0.3 + 0.05 * stoppie,
       h * 0.13 + sway * 0.5 - 0.025 * stop,
     );
     // grips follow the steering; wrists just behind and above them, the right one rolling
@@ -1439,7 +1468,7 @@ export class Rider {
       segDir(th * 1.12, latBend, _g); _N.copy(_T).addScaledVector(_g, B.chest);
       return _tmp2.copy(_N).addScaledVector(_g, -B.shoulderDrop);
     };
-    const ext = clamp(S.ext - 0.2 * tuck + 0.1 * st.brake + 0.04 * stop + 0.08 * st.stand + 0.05 * wheel, 0.52, 0.97);
+    const ext = clamp(S.ext - 0.2 * tuck + 0.1 * st.brake + 0.04 * stop + 0.08 * st.stand + 0.05 * wheel + 0.12 * stoppie, 0.52, 0.97);
     const reach = (B.upper + B.fore) * ext;
     const gmx = (gl.x + gr.x) / 2, gmy = (gl.y + gr.y) / 2, half = Math.abs(gr.z - gl.z) / 2 - (0.025 + B.clav);
     let lo = -S.back, hi = 1.45;
@@ -1451,7 +1480,7 @@ export class Rider {
     }
     const moving = clamp((speed - 1) / 7, 0, 1) * (1 - stop);
     let th = Math.max((lo + hi) / 2, tuck * S.tuck * 1.35, (S.lean0 || 0) * moving, st.grid * 0.45 * (S.lean0 > 0.3 ? 1 : 0.4));
-    th += surge * 0.6 + wheel * 0.35 + breath + 0.28 * st.launch;
+    th += surge * 0.6 + wheel * 0.35 + breath + 0.28 * st.launch - 0.3 * stoppie;
     th = lerp(th, 0.12, sitUp * 0.85);
     th = clamp(th, -0.35, 1.5) * (1 - st.crash) + 0.55 * crAir * st.crash;
     chain(th);
