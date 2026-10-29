@@ -635,6 +635,14 @@ export class Race {
         const front = m.worldPoint([m.wb / 2, 0.02, 0], ef._w);
         ef.skid(b.id + 'f', front.x, front.y, front.z, rx, rz, 0.06);
       } else ef.skidBreak(b.id + 'f');
+      // knee slider on the asphalt: a few sparks and a puff of scuffed plastic left behind
+      const rd = m.rider;
+      if (rd && rd.kneeDown > 0.4 && p.v > 12 && !p.offRoad && !p.crashed) {
+        rd.root.updateWorldMatrix(true, false);
+        const kp = rd.root.localToWorld((this._kv || (this._kv = new THREE.Vector3())).copy(rd.kneePt));
+        if (Math.random() < 0.45 * rd.kneeDown) ef.sparks(kp.x, kp.y + 0.02, kp.z, Math.random() < 0.3 ? 2 : 1, 0, 0, 2.5);
+        if (Math.random() < 0.2 * rd.kneeDown) ef.dust(kp.x, kp.y, kp.z, Math.sin(p.vh) * p.v * 0.5, Math.cos(p.vh) * p.v * 0.5, [0.78, 0.78, 0.8], 0.16);
+      }
       if (p.offRoad && p.v > 4 && !p.airborne) {
         const n = clamp(p.v / 20, 0.2, 1.5);
         if (Math.random() < n) ef.dust(rear.x, rear.y, rear.z, Math.sin(p.vh) * p.v, Math.cos(p.vh) * p.v, dustCol, clamp(n, 0.4, 1));

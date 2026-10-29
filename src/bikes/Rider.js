@@ -13,7 +13,8 @@
 // Animation is procedural and layered every frame on top of two-bone IK (seat under the
 // pelvis, hands on the grips following the steering, balls of the feet on the pegs):
 // tuck behind the screen, hang-off with the inside knee and elbow out and the head kept
-// level, corner anticipation, braking sit-up with the arms bracing and the MotoGP leg
+// level, the knee slider reaching down to scrape the asphalt (never through it), corner
+// anticipation, braking sit-up with the arms bracing and the MotoGP leg
 // dangle, throttle twist, brake / clutch finger pulls, gear-lever toe flicks, rear-brake
 // press, wheelie and jump stances, landing squats, spring-driven secondary motion (surge,
 // heave, sway, head lag, wind buffeting), deeper tuck in a slipstream, look-into-the-corner
@@ -1263,6 +1264,7 @@ export class Rider {
     this.sp = { surge: new Spring(70, 11), heave: new Spring(160, 13), sway: new Spring(55, 9), headP: new Spring(120, 12), headR: new Spring(100, 11) };
     this.t = hash(seed * 1.7) * 10;
     this._ovP = V(); this._ovD = new THREE.Vector3(1, 0, 0);
+    this.kneeDown = 0; this.kneePt = V(); // inside knee slider on the asphalt (0..1), rider space
     this._ovRP = V(); this._ovRD = new THREE.Vector3(1, 0, 0); // right arm, only with the machine stopped
     this.update({ speed: 0 }, 1);
   }
@@ -1610,6 +1612,7 @@ export class Rider {
 
     // ---------------- legs: balls of the feet on the pegs, knees into the tank
     const pg = this.pegs;
+    this.kneeDown = 0;
     for (const L of this.limbs) {
       const s0 = L.s;
       const b = (n) => bn[boneIndex(s0, n)];
@@ -1645,6 +1648,35 @@ export class Rider {
       // knees: forward and gripping the tank, the inside one out toward the kerb
       _a.set(0.9, 0.3 - 0.5 * inside, s0 * (0.12 + 1.45 * inside * pe.knee + 0.8 * toeOut - 0.06 * st.brake));
       ik(L.hp, ankle, B.thigh, B.shin, _a, L.kn);
+      // the knee slider rides on the asphalt, never through it, and past ~40° of lean the
+      // inside knee reaches down for it. Height above the road of a bike-space point is
+      // y cos(lean) - z sin(lean); the knee swings about the hip-ankle axis (lengths kept)
+      if (!crashed && !s.airborne) {
+        const cl = Math.cos(lean), sl = Math.sin(lean);
+        const hgt = (q) => q.y * cl - (q.z + s0 * 0.07) * sl - 0.009;
+        let hk = hgt(L.kn);
+        const seek = inside > 0.3 ? smooth(0.66, 0.8, Math.abs(lean)) : 0;
+        const target = hk < 0.004 ? 0.004 : seek > 0 && hk < 0.09 ? lerp(hk, 0.004, seek) : null;
+        if (target !== null) {
+          _b.subVectors(ankle, L.hp).normalize();
+          _c.copy(L.hp).addScaledVector(_b, _d.subVectors(L.kn, L.hp).dot(_b)); // axis foot of the knee
+          _d.subVectors(L.kn, _c);
+          _x.crossVectors(_b, _d);
+          const up = _y.set(0, cl, -sl);
+          const A = _d.dot(up), Bv = _x.dot(up), R = Math.hypot(A, Bv), hc = hgt(_c);
+          if (R > 1e-5) {
+            // h(th) = hc + R cos(th - del): take the crossing of the target nearest th = 0
+            const del = Math.atan2(Bv, A), a1 = Math.acos(clamp((target - hc) / R, -1, 1));
+            const wrapA = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+            const t1 = wrapA(del - a1), t2 = wrapA(del + a1);
+            const th = Math.abs(t1) < Math.abs(t2) ? t1 : t2;
+            L.kn.copy(_c).addScaledVector(_d, Math.cos(th)).addScaledVector(_x, Math.sin(th));
+            hk = hgt(L.kn);
+          }
+        }
+        // contact for the scrape effects (the inside knee only)
+        if (inside > 0.3) { this.kneeDown = clamp(1 - hk / 0.02, 0, 1); this.kneePt.copy(L.kn).add(_tmp.set(-0.01, -0.035, s0 * 0.07)); }
+      }
       placeSeg(b('thigh'), L.hp, L.kn, ZAX);
       placeSeg(b('shin'), L.kn, ankle, ZAX);
       // foot points forward along the bike (outward when off the peg), toe on the lever
