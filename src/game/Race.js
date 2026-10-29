@@ -271,7 +271,8 @@ export class Race {
 
     // ---- camera
     if (this.phase === 'race' || this.phase === 'countdown') this.cam.update(dt, P, { lookBack: inp.lookBack });
-    else if (this.phase === 'finished') this.cam.update(dt, P, { forceMode: this.phaseT < 2.5 ? 0 : 4 });
+    // past the flag: a moment behind, then from the front for the celebration, then TV
+    else if (this.phase === 'finished') this.cam.update(dt, P, { forceMode: this.phaseT < 0.7 ? 0 : this.phaseT < 6.4 ? 5 : 4 });
     this.recorder.record(canDrive ? dt : 0, this.bikes);
     if (this.mode === 'trial' && canDrive) this._ghostUpdate(dt);
 
@@ -299,10 +300,11 @@ export class Race {
   }
 
   _autopilot(b) {
-    // after the flag: gentle cruise along the racing line
+    // after the flag: gentle cruise along the racing line, rolling off the throttle down to
+    // ~110 km/h while the rider celebrates
     if (!b.autoAI) b.autoAI = new AIController(b.phys, this.track, { skill: 0.8, seed: 99 });
     b.autoAI.update(DT, this.active);
-    b.phys.input.throttle *= 0.6;
+    b.phys.input.throttle *= b.finished && b.phys.v > 30 ? 0 : 0.6;
   }
 
   _placeIntroCamera(t) {

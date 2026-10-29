@@ -133,6 +133,15 @@ export class CameraController {
       this.look.copy(m.worldPoint([m.spec.model.wb / 2 + 10, 0.3, 0], new THREE.Vector3()));
       roll = ph.lean * 0.5;
       fovT += 4;
+    } else if (mode === 5) {
+      // celebration: a tracking shot from ahead and to the side (the open side of the track),
+      // framing the rider's upper body
+      if (this._lastMode !== 5) this._celSide = -Math.sign(ph.proj.d || 1);
+      const side = this._celSide, rx = -Math.cos(this.yaw), rz = Math.sin(this.yaw);
+      cam.position.set(ph.x + fx * 4.4 + rx * side * 2.3, ph.y + 1.45, ph.z + fz * 4.4 + rz * side * 2.3);
+      this.look.set(ph.x + fx * 0.25, ph.y + 1.1, ph.z + fz * 0.25);
+      roll = 0;
+      fovT = 42;
     } else if (mode === 4) {
       // TV: nearest trackside camera, zooming to frame the bike
       let best = this.tvSpots[0], bd = Infinity;
@@ -150,6 +159,7 @@ export class CameraController {
       roll = 0;
     }
     this.initialized = true;
+    this._lastMode = mode;
     // shake
     if (this.shake > 0) {
       const s = this.shake * 0.12;
