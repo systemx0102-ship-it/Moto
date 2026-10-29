@@ -9,6 +9,10 @@ import { Save } from './Settings.js';
 import { setMaxAnisotropy } from './textures.js';
 import { clamp } from './utils.js';
 import { LensFX } from './postfx/LensFX.js';
+import { AtmospherePass } from './postfx/Atmosphere.js';
+import { installShadowCascade } from './shadowCascade.js';
+
+installShadowCascade();
 import { FXAAShader } from './postfx/fxaa.js';
 import { resolveGrade } from './postfx/grades.js';
 
@@ -206,8 +210,8 @@ export class Engine {
     r.shadowMap.enabled = q.shadows > 0;
     r.shadowMap.needsUpdate = true;
     if (this.composer) { this.composer.dispose?.(); this.composer = null; }
-    this.lens?.dispose(); this.bloom?.dispose?.(); this.aaPass?.dispose?.(); this.finalPass?.dispose?.(); this.gtao?.dispose?.();
-    this.lens = null; this.aaPass = null; this.gtao = null;
+    this.lens?.dispose(); this.bloom?.dispose?.(); this.aaPass?.dispose?.(); this.finalPass?.dispose?.(); this.gtao?.dispose?.(); this.atmoPass?.dispose();
+    this.lens = null; this.aaPass = null; this.gtao = null; this.atmoPass = null;
     const tier = q.post ? (TIER[Save.settings.quality] || 2) : 0;
     this.tier = tier;
     if (q.post) {
@@ -215,7 +219,13 @@ export class Engine {
       const rt = new THREE.WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), {
         type: THREE.HalfFloatType, samples: q.msaa,
       });
+      // scene depth for the aerial perspective pass
+      rt.depthTexture = new THREE.DepthTexture(Math.max(1, size.x), Math.max(1, size.y));
+      rt.depthTexture.type = THREE.UnsignedIntType;
       const composer = new EffectComposer(r, rt);
+      // the cloned target would share the depth texture's source (= one GL texture): give it its own
+      composer.renderTarget2.depthTexture = new THREE.DepthTexture(Math.max(1, size.x), Math.max(1, size.y));
+      composer.renderTarget2.depthTexture.type = THREE.UnsignedIntType;
       this.renderPass = new RenderPass(this.scene, this.camera);
       composer.addPass(this.renderPass);
       // ground-truth ambient occlusion for the showroom (scenes flagged userData.ao): dark
@@ -226,6 +236,10 @@ export class Engine {
       this.gtao.blendIntensity = 1;
       this.gtao.enabled = !!this.scene?.userData?.ao;
       composer.addPass(this.gtao);
+      // aerial perspective / height haze from the depth buffer (track scenes with an atmosphere)
+      this.atmoPass = new AtmospherePass();
+      this.atmoPass.camera = this.camera;
+      composer.addPass(this.atmoPass);
       // lens work reads the clean HDR frame (before bloom) at 1/4 res
       this.lens = new LensFX(tier);
       composer.addPass(this.lens.prepass);
@@ -244,7 +258,15 @@ export class Engine {
       this.bloom = null; this.finalPass = null;
     }
     this._applyLook();
+    this._applyAtmo();
     this.resize();
+  }
+
+  // the depth-based haze replaces the built-in fog when post-processing runs
+  _applyAtmo() {
+    const scene = this.scene, atmo = scene?.userData?.atmo;
+    if (this.atmoPass) { this.atmoPass.setAtmo(atmo || null); this.atmoPass.camera = this.camera; }
+    if (atmo && scene.fog) scene.fog.density = this.atmoPass ? 0 : atmo.fogDensity;
   }
 
   setScene(scene, camera = this.camera) {
@@ -257,6 +279,7 @@ export class Engine {
     this.camera = camera;
     if (this.renderPass) { this.renderPass.scene = scene; this.renderPass.camera = camera; }
     if (this.gtao) { this.gtao.scene = scene; this.gtao.camera = camera; this.gtao.enabled = !!scene.userData.ao; }
+    this._applyAtmo();
     if (this.finalPass) this.finalPass.uniforms.uShimmer.value = 0;
     this.resize();
   }

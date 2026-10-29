@@ -702,7 +702,7 @@ export class Race {
     const eng = this.game.engine, T = this.ts.env.T;
     eng.setGrade(this.def.time, this.ts.env.weather);
     if (T.night) eng.setSun(this._moonDir || (this._moonDir = new THREE.Vector3().setFromSphericalCoords(1, 55 * Math.PI / 180, (T.sunAzim + 40) * Math.PI / 180)), 0x9ab4ff, 0.4);
-    else eng.setSun(this.ts.env.sunDir, T.sunColor, clamp(1 - (W.gray || 0) * 1.3, 0, 1));
+    else eng.setSun(this.ts.env.sunDir, this.ts.env.sunColor || T.sunColor, clamp(1 - (W.gray || 0) * 1.3, 0, 1));
     if (fx.uShimmer) fx.uShimmer.value = damp(fx.uShimmer.value, p.nitroOn && (this.phase === 'race' || this.phase === 'finished') ? 1 : 0, 5, dt);
   }
 

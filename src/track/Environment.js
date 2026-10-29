@@ -4,8 +4,16 @@ import { TIMES, WEATHER } from './themes.js';
 import { starsTexture, cloudTexture, softCircleTexture, litCloudTexture, flareTexture } from '../core/textures.js';
 import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { rng, clamp } from '../core/utils.js';
+import { PhysicalSky } from './PhysicalSky.js';
+import { STATIC_LAYER } from '../core/shadowCascade.js';
+import { THEMES } from './themes.js';
 
 const DEG = Math.PI / 180;
+// linear diffuse albedo of the dominant ground per theme (feeds sky/ground bounce)
+const GROUND_ALBEDO = {
+  grass: [0.07, 0.12, 0.04], wildGrass: [0.07, 0.1, 0.045], dryGrass: [0.2, 0.17, 0.08], sand: [0.42, 0.24, 0.13],
+  snow: [0.8, 0.82, 0.86], asphaltDark: [0.05, 0.05, 0.055], forest: [0.06, 0.08, 0.04],
+};
 
 export class Environment {
   constructor(engine, scene, track, quality) {
@@ -37,10 +45,21 @@ export class Environment {
 
     // sky
     const envScene = new THREE.Scene();
+    const coverage = Math.max(W.clouds, T.overcast ? 0.95 : 0);
+    const theme = THEMES[this.track.def.theme] || {};
     if (!T.night) {
-      this.sky = this._skyDome(4500);
+      // physically based atmosphere; the cloud layer lives in the same shader
+      const dark = clamp((coverage - 0.75) * 2.2, 0, 1) * (W.lightning ? 1 : W.rain ? 0.8 : 0.55);
+      this.psky = new PhysicalSky({
+        sunDir: this.sunDir, mie: (T.turbidity || 2.2) * 0.5 * (W.fogLight ? 3 : W.overcast ? 1.6 : 1), ozone: 1,
+        sunIntensity: T.sun, camH: 120 + Math.max(0, (theme.terrain?.base || 0)),
+        groundAlbedo: GROUND_ALBEDO[theme.ground] || GROUND_ALBEDO.grass,
+        coverage: W.clouds !== undefined ? clamp(coverage * (coverage > 0.6 ? 1 : 1.25), 0, 1) : 0.35,
+        cloudDens: coverage > 0.8 ? 1.6 : 1, dark, detail: q.post, cloudH: coverage > 0.8 ? 1100 : 1700,
+      });
+      this.sky = this.psky.dome(4500);
       scene.add(this.sky);
-      envScene.add(this._skyDome(900));
+      envScene.add(this.psky.dome(900));
     } else {
       this.sky = this._nightSky(4200);
       scene.add(this.sky);
@@ -54,8 +73,8 @@ export class Environment {
         envScene.add(m);
       }
     }
-    // ground hemisphere for env
-    const groundCol = new THREE.Color(T.hemiGround).multiplyScalar(T.night ? 0.3 : 0.8);
+    // ground hemisphere for env: the lit ground seen through the atmosphere
+    const groundCol = this.psky ? this.psky.groundColor() : new THREE.Color(T.hemiGround).multiplyScalar(T.night ? 0.3 : 0.8);
     const gmesh = new THREE.Mesh(new THREE.SphereGeometry(800, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), new THREE.MeshBasicMaterial({ color: groundCol, side: THREE.BackSide }));
     envScene.add(gmesh);
     const pm = new THREE.PMREMGenerator(r);
@@ -64,36 +83,18 @@ export class Environment {
     scene.environmentIntensity = T.env * (W.overcast ? 1.1 : 1);
     pm.dispose();
 
-    // clouds
-    const coverage = Math.max(W.clouds, T.overcast ? 0.95 : 0);
-    if (!T.night || coverage > 0.6) {
-      const dense = coverage > 0.8;
+    // night / storm-night clouds keep the painted dome
+    if (T.night && coverage > 0.6) {
       const thetaLen = Math.PI * 0.46;
-      // sun position in dome texture space (SphereGeometry: x = -cos(phi) sin(theta), z = sin(phi) sin(theta))
       const sd = this.sunDir;
       const phi = Math.atan2(sd.z, -sd.x);
       const sunU = ((phi / (Math.PI * 2)) % 1 + 1) % 1;
       const sunY = Math.min(1.3, Math.acos(Math.max(-1, Math.min(1, sd.y))) / thetaLen);
-      const sunset = T.sunElev < 12 && !T.night;
-      let lit = sunset ? (T.sunAzim < 180 ? 0xffd2c0 : 0xffb070) : 0xffffff;
-      let shadow = sunset ? 0x5a4a60 : 0x8a96aa;
-      if (T.night) { lit = 0x2a2e3a; shadow = 0x0c0e14; }
-      else if (dense) { lit = W.lightning ? 0x6a7280 : 0xa4acb8; shadow = W.lightning ? 0x2a3038 : 0x5a626e; }
-      const ct = litCloudTexture(this.track.def.id.length + 3, coverage, sunU, sunY, lit, shadow, dense ? 0.55 : 0.35);
-      const cmat = new THREE.MeshBasicMaterial({
-        map: ct, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false, opacity: dense ? 0.97 : 0.92,
-      });
-      const cg = new THREE.SphereGeometry(3000, 64, 16, 0, Math.PI * 2, 0, thetaLen);
-      this.clouds = new THREE.Mesh(cg, cmat);
+      const ct = litCloudTexture(this.track.def.id.length + 3, coverage, sunU, sunY, 0x2a2e3a, 0x0c0e14, 0.55);
+      const cmat = new THREE.MeshBasicMaterial({ map: ct, transparent: true, depthWrite: false, side: THREE.BackSide, fog: false, opacity: 0.97 });
+      this.clouds = new THREE.Mesh(new THREE.SphereGeometry(3000, 64, 16, 0, Math.PI * 2, 0, thetaLen), cmat);
       this.clouds.renderOrder = -1;
       scene.add(this.clouds);
-      if (dense) {
-        const c2 = this.clouds.clone();
-        c2.material = cmat.clone(); c2.material.opacity = 0.75;
-        c2.scale.setScalar(0.92);
-        this.clouds2 = c2;
-        scene.add(c2);
-      }
     }
     // sun lens flare when the sun is visible
     if (!T.night && (W.gray || 0) < 0.4 && q.post) {
@@ -110,7 +111,12 @@ export class Environment {
 
     // fog: overcast weather pulls the fog colour toward a neutral grey
     const fogCol = new THREE.Color(T.fog[0]);
-    if (W.gray) {
+    if (this.psky) {
+      // haze takes the colour of the horizon sky (the aerial perspective pass refines it per pixel)
+      const h = this.psky.horizon;
+      fogCol.setRGB(h[0], h[1], h[2]);
+    }
+    if (W.gray && !this.psky) {
       const l = fogCol.r * 0.3 + fogCol.g * 0.59 + fogCol.b * 0.11;
       const grey = new THREE.Color(l, l * 1.02, l * 1.06);
       if (W.fogLight && !T.night) grey.multiplyScalar(1.25);
@@ -120,14 +126,32 @@ export class Environment {
     scene.fog = new THREE.FogExp2(fogCol, T.fog[1] * W.fogMul);
     scene.background = T.night ? new THREE.Color(0x02030a) : null;
     this.fogBase = scene.fog.density;
+    // aerial perspective (post pass): exponential haze thinning with altitude, lit by the sky
+    let minY = Infinity;
+    for (const y of this.track.c.y) minY = Math.min(minY, y);
+    scene.userData.atmo = {
+      sky: this.psky ? this.psky.lut : null, sunDir: this.sunDir.clone(), fogColor: fogCol.clone(), fogDensity: scene.fog.density,
+      density: T.fog[1] * W.fogMul * (T.night ? 0.9 : 0.55), falloff: W.fogLight ? 700 : W.overcast ? 520 : 380, baseY: minY - 5,
+      tint: this.psky ? [0.86, 0.95, 1.12] : [1, 1, 1],
+    };
 
     // lights
     const hemi = new THREE.HemisphereLight(T.hemiSky, T.hemiGround, T.hemi * W.hemiMul);
-    if (W.gray) hemi.color.lerp(new THREE.Color(0xc8ccd4), W.gray * 0.6);
+    if (this.psky) {
+      // fill from the actual sky and ground radiance (normalised; the IBL carries most of the ambient)
+      const a = this.psky.skyAvg, g = this.psky.groundL;
+      const la = Math.max(1e-4, a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722), lg = Math.max(1e-4, g[0] * 0.2126 + g[1] * 0.7152 + g[2] * 0.0722);
+      hemi.color.setRGB(a[0] / la, a[1] / la, a[2] / la);
+      hemi.groundColor.setRGB(g[0] / lg, g[1] / lg, g[2] / lg).multiplyScalar(Math.min(1, lg / la));
+      hemi.intensity *= 0.75;
+      if (W.gray) hemi.color.lerp(new THREE.Color(0xc8ccd4), W.gray * 0.5);
+    } else if (W.gray) hemi.color.lerp(new THREE.Color(0xc8ccd4), W.gray * 0.6);
     scene.add(hemi);
     this.hemi = hemi;
     this.hemiBase = hemi.intensity;
-    const sun = new THREE.DirectionalLight(T.sunColor, T.sun * W.sunMul);
+    // sunlight: colour from the atmosphere's transmittance (white at noon, amber at dusk)
+    this.sunColor = this.psky ? this.psky.sunColor.clone() : new THREE.Color(T.sunColor);
+    const sun = new THREE.DirectionalLight(this.sunColor, T.sun * W.sunMul);
     sun.castShadow = q.shadows > 0;
     if (sun.castShadow) {
       sun.shadow.mapSize.set(q.shadows, q.shadows);
@@ -138,6 +162,25 @@ export class Environment {
     }
     scene.add(sun, sun.target);
     this.sun = sun;
+    // far cascade: zero-intensity shadow caster over a few hundred metres of static scenery
+    if (sun.castShadow && q.shadows >= 1024) {
+      const far = new THREE.DirectionalLight(0xffffff, 0);
+      far.castShadow = true;
+      const size = Math.min(4096, q.shadows * 2);
+      far.shadow.mapSize.set(size, size);
+      const ext = size >= 4096 ? 320 : 240;
+      Object.assign(far.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: 1400 });
+      far.shadow.camera.layers.set(STATIC_LAYER);
+      far.shadow.bias = -0.00012;
+      far.shadow.normalBias = 0.22;
+      far.shadow.radius = 1.5;
+      far.shadow.autoUpdate = false;
+      far.shadow.needsUpdate = true;
+      scene.add(far, far.target);
+      this.sunFar = far;
+      this.farExt = ext;
+      this._farC = new THREE.Vector3(1e9, 0, 0);
+    }
 
     // weather particles
     const dens = clamp(q.density, 0.4, 1.3);
@@ -153,46 +196,6 @@ export class Environment {
       scene.add(pl);
       this.lampLights.push(pl);
     }
-  }
-
-  // Art-directed analytic sky: zenith/horizon gradient, sun disk and halo, overcast greying.
-  _skyDome(radius) {
-    const T = this.T, W = this.W;
-    const P = T.sky || { zenith: 0x1d5ccc, horizon: 0xb4d2f0, ground: 0x6a7480, glow: 0.8, hglow: 0.3, k: 2.3 };
-    const lin = (hex) => new THREE.Color(hex); // Color() converts sRGB hex to linear working space
-    const g = W.gray || 0;
-    const grey = new THREE.Color(0x8c949e);
-    const zen = lin(P.zenith).lerp(grey.clone().multiplyScalar(0.85), g);
-    const hor = lin(P.horizon).lerp(grey.clone().multiplyScalar(1.15), g * 0.9);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uZenith: { value: zen.multiplyScalar(P.k) }, uHorizon: { value: hor.multiplyScalar(P.k) }, uGround: { value: lin(P.ground).multiplyScalar(P.k * 0.6) },
-        uSunDir: { value: this.sunDir.clone() }, uSunColor: { value: new THREE.Color(T.sunColor) },
-        uGlow: { value: P.glow * (1 - g * 0.85) }, uHGlow: { value: P.hglow * (1 - g * 0.7) }, uDisk: { value: 1 - g * 0.97 },
-      },
-      vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
-      fragmentShader: `uniform vec3 uZenith, uHorizon, uGround, uSunDir, uSunColor; uniform float uGlow, uHGlow, uDisk; varying vec3 vDir;
-        void main(){
-          vec3 d = normalize(vDir);
-          float h = d.y;
-          float t = pow(clamp(h, 0.0, 1.0), 0.42);
-          vec3 col = mix(uHorizon, uZenith, t);
-          col = mix(col, uGround, smoothstep(0.0, -0.06, h));
-          float sd = max(dot(d, uSunDir), 0.0);
-          // warm band along the horizon in the sun's direction
-          float az = max(dot(normalize(vec2(d.x, d.z) + 1e-5), normalize(vec2(uSunDir.x, uSunDir.z) + 1e-5)), 0.0);
-          col += uSunColor * pow(az, 4.0) * pow(1.0 - clamp(h, 0.0, 1.0), 6.0) * uHGlow * 0.6;
-          col += uSunColor * (pow(sd, 6.0) * 0.18 + pow(sd, 48.0) * 0.5) * uGlow;
-          col += uSunColor * smoothstep(0.99955, 0.99975, sd) * 40.0 * uDisk;
-          gl_FragColor = vec4(col, 1.0);
-          #include <colorspace_fragment>
-        }`,
-      side: THREE.BackSide, depthWrite: false, fog: false,
-    });
-    const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 24), mat);
-    m.renderOrder = -2;
-    m.frustumCulled = false;
-    return m;
   }
 
   _nightSky(radius) {
@@ -304,7 +307,25 @@ export class Environment {
     const fx = Math.round(f.x / texel) * texel, fz = Math.round(f.z / texel) * texel;
     sun.target.position.set(fx, f.y, fz);
     sun.position.set(fx + this.lightDir.x * 200, f.y + this.lightDir.y * 200, fz + this.lightDir.z * 200);
+    if (this.sunFar) {
+      // re-render the far map only when the view has moved well inside it
+      camera.getWorldDirection(this._fw || (this._fw = new THREE.Vector3()));
+      const e = this.farExt, fw = this._fw;
+      const l = Math.hypot(fw.x, fw.z) || 1;
+      const cx = f.x + (fw.x / l) * e * 0.5, cz = f.z + (fw.z / l) * e * 0.5;
+      if (Math.hypot(cx - this._farC.x, cz - this._farC.z) > e * 0.28) {
+        const ft = (e * 2) / this.sunFar.shadow.mapSize.x;
+        const sx = Math.round(cx / ft) * ft, sz = Math.round(cz / ft) * ft;
+        this._farC.set(sx, f.y, sz);
+        this.sunFar.target.position.set(sx, f.y, sz);
+        this.sunFar.position.set(sx + this.lightDir.x * 600, f.y + this.lightDir.y * 600, sz + this.lightDir.z * 600);
+        this.sunFar.target.updateMatrixWorld();
+        this.sunFar.updateMatrixWorld();
+        this.sunFar.shadow.needsUpdate = true;
+      }
+    }
     if (this.sky) this.sky.position.copy(camera.position);
+    if (this.psky) this.psky.update(dt);
     if (this.flare) this.flare.position.copy(camera.position).addScaledVector(this.sunDir, 2500);
     if (this.clouds) { this.clouds.position.set(camera.position.x, 0, camera.position.z); this.clouds.rotation.y += dt * 0.0006; }
     if (this.clouds2) { this.clouds2.position.set(camera.position.x, 0, camera.position.z); this.clouds2.rotation.y += dt * 0.0011; }
@@ -353,5 +374,6 @@ export class Environment {
 
   dispose() {
     this.envRT?.dispose();
+    this.psky?.dispose();
   }
 }

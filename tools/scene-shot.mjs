@@ -4,7 +4,7 @@
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
-const [out = '/tmp/shots', track = 'gp', quality = 'alto', style = 'anime', time = 'auto', weather = 'auto'] = process.argv.slice(2);
+const [out = '/tmp/shots', track = 'gp', quality = 'alto', style = 'real', time = 'auto', weather = 'auto'] = process.argv.slice(2);
 fs.mkdirSync(out, { recursive: true });
 const W = 1100, H = 620;
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
@@ -23,7 +23,7 @@ p.on('pageerror', (e) => errors.push('pageerror: ' + e.message + '\n' + (e.stack
 await p.goto('file://' + path.resolve('dist/index.html'));
 await p.waitForFunction(() => window.__ready, null, { timeout: 120000 });
 await p.waitForTimeout(1500);
-await p.screenshot({ path: `${out}/menu.png` });
+await p.screenshot({ path: `${out}/menu.png`, timeout: 240000 });
 await p.evaluate((t) => { const g = window.__game; g.ui._lastTrack = t; g.ui.trackSelect('race'); }, track);
 await p.waitForTimeout(800);
 await p.evaluate(() => { window.__game.ui.nav[0].click(); });
@@ -43,7 +43,7 @@ const sim = (secs, keys = {}) => p.evaluate(({ secs, keys }) => {
     if (g.state !== 'race') break;
   }
 }, { secs, keys });
-const shot = async (name) => { await p.evaluate(() => window.__game.engine.render()); await p.screenshot({ path: `${out}/${name}.png` }); };
+const shot = async (name) => { await p.evaluate(() => window.__game.engine.render()); await p.screenshot({ path: `${out}/${name}.png`, timeout: 240000 }); };
 // place the camera relative to the player bike: f = forward, r = right, u = up (metres)
 const cam = (f, r, u, lf, lr, lu, fov = 50) => p.evaluate(({ f, r, u, lf, lr, lu, fov }) => {
   const g = window.__game, P = g.race.player, root = P.model.root, c = g.engine.camera;

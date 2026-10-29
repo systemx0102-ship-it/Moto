@@ -10,6 +10,7 @@ import { WEATHER } from '../track/themes.js';
 import { Save } from '../core/Settings.js';
 import { nextFrame } from '../core/utils.js';
 import { waterNormalTexture } from '../core/textures.js';
+import { STATIC_LAYER } from '../core/shadowCascade.js';
 
 export class TrackScene {
   static async create(engine, def, onProgress = () => {}) {
@@ -52,6 +53,8 @@ export class TrackScene {
       ts.terrain.waterMat.needsUpdate = true;
       ts.waterNormal = wn;
     }
+    // everything built so far is static scenery: the far shadow cascade renders it
+    ts.scene.traverse((o) => o.layers.enable(STATIC_LAYER));
     onProgress(0.75, 'Compilando sombreadores…');
     await nextFrame();
     return ts;
