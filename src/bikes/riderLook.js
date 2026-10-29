@@ -792,6 +792,15 @@ function helmetColorMap(scale, main, second, accent, number, design) {
   // lower rim trim just above the shell's edge (which drops toward the nape)
   g.fillStyle = '#121214';
   for (let x = 0; x < W; x += 2) { const ph = (0.5 - x / W) * Math.PI * 2; g.fillRect(x, ((HB(ph) - 0.045) / Math.PI) * H, 2, H); }
+  // homologation sticker at the nape
+  g.fillStyle = '#e8e8e6'; g.fillRect(0.97 * W, H * 0.69, 0.03 * W, 10); g.fillRect(0, H * 0.69, 0.006 * W, 10);
+  // decal for the strip across the top of the visor (u .33-.67, v .025-.095 of this map):
+  // gloss black with the sponsor in white, mirrored so it reads from the front
+  { const y0 = (1 - 0.095) * H, y1 = (1 - 0.025) * H, x0 = 0.33 * W, x1 = 0.67 * W;
+    g.fillStyle = '#121214'; g.fillRect(x0 - 4, y0 - 2, x1 - x0 + 8, y1 - y0 + 4);
+    g.save(); g.translate((x0 + x1) / 2, (y0 + y1) / 2); g.scale(-1, 1);
+    g.font = `italic 800 ${Math.round((y1 - y0) * 0.72)}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#f2f2f2'; g.fillText(sp2[0], 0, 1, (x1 - x0) * 0.8); g.restore(); }
   return toTexture(c, { wrap: true });
 }
 

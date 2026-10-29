@@ -452,6 +452,36 @@ function helmetSurf(th0, th1, ph0, ph1, nth, nph, off, uvFull, thFn = null) {
   g.computeVertexNormals();
   return g;
 }
+// a piece moulded to the shell (vent plates, pivot covers, the spoiler): polar rings round
+// (thc, phc), ±dth / ±dph across, `prof(rho, a, b)` metres off the paint; uv from the shell's
+// own wrap (uvFull: the paint continues onto it) or a 0..1 square
+function helmetPatch(thc, phc, dth, dph, prof, { nr = 8, na = 32, uvFull = false } = {}) {
+  const pos = [], uv = [], idx = [];
+  const at = (rho, ang) => {
+    const a = rho * Math.cos(ang), b = rho * Math.sin(ang), th = thc + b * dth, ph = phc + a * dph;
+    pos.push(...helmetPoint(th, ph, prof(rho, a, b)));
+    uv.push(uvFull ? 0.5 - ph / (Math.PI * 2) : 0.5 + a * 0.5, uvFull ? 1 - th / Math.PI : 0.5 + b * 0.5);
+  };
+  at(0, 0);
+  for (let i = 1; i <= nr; i++) for (let j = 0; j < na; j++) at(i / nr, (j / na) * Math.PI * 2);
+  for (let j = 0; j < na; j++) idx.push(0, 1 + ((j + 1) % na), 1 + j);
+  for (let i = 1; i < nr; i++) for (let j = 0; j < na; j++) {
+    const a = 1 + (i - 1) * na + j, b = 1 + (i - 1) * na + ((j + 1) % na), c = a + na, d = b + na;
+    idx.push(a, b, c, b, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  // face away from the head's centre
+  const n = g.attributes.normal, P = g.attributes.position, k = 1 + Math.floor(nr / 2) * na;
+  if (n.getX(k) * (P.getX(k) - HC[0]) + n.getY(k) * (P.getY(k) - HC[1]) + n.getZ(k) * (P.getZ(k) - HC[2]) < 0) {
+    const ia = g.index.array; for (let i = 0; i < ia.length; i += 3) { const q = ia[i + 1]; ia[i + 1] = ia[i + 2]; ia[i + 2] = q; }
+    g.computeVertexNormals();
+  }
+  return g;
+}
 // eye port: top/bottom edge (theta) as a function of phi
 const EYE = { top: (ph) => 1.13 + 0.12 * ph * ph, bot: (ph) => 1.66 - 0.06 * ph * ph, ph: 1.0 };
 const VIS = { top: (ph) => 1.08 + 0.1 * ph * ph, bot: (ph) => 1.72 - 0.05 * ph * ph, ph: 1.2 };
@@ -491,27 +521,30 @@ function helmetGeometry() {
   parts.gear.push(paint(tubeR(edge, 0.0022, { radial: 5, seg: 30 }), 0x101012));
   const tab = rbox(0.012, 0.01, 0.03, helmetPoint(VIS.bot(-0.45) + 0.012, -0.45, 0.007), [0, 0, 0.3]);
   parts.gear.push(paint(tab, 0x101012));
+  // a sponsor strip across the top of the visor (its decal lives in the bottom band of the
+  // shell's paint, below the rim, which the shell never shows)
+  { const strip = helmetSurf(0, 0, -1.08, 1.08, 2, 36, 0.0068, false, (fr, ph) => VIS.top(ph) + 0.012 + 0.07 * fr);
+    const uvA = strip.attributes.uv;
+    for (let i = 0; i < uvA.count; i++) uvA.setXY(i, 0.33 + 0.34 * uvA.getX(i), 0.025 + 0.07 * uvA.getY(i));
+    parts.shell.push(strip); }
   for (const s of [-1, 1]) {
     const p = helmetPoint(1.38, s * 1.02, 0.007);
     parts.gear.push(paint(new THREE.CylinderGeometry(0.0035, 0.0035, 0.009, 8).rotateX(Math.PI / 2).translate(...p), 0x1a1a1c));
-    // visor pivot cover: flat oval disc on the side
-    const pv = helmetPoint(1.33, s * 1.32, 0.004);
-    const disc = new THREE.CylinderGeometry(0.015, 0.017, 0.004, 20).rotateX(Math.PI / 2).scale(1.3, 1, 1);
-    disc.translate(...pv);
-    parts.gear.push(paint(disc, 0x141416));
+    // visor pivot: a moulded cover over the end of the visor with a raised boss and a screw
+    parts.gear.push(paint(helmetPatch(1.33, s * 1.32, 0.085, 0.12, (rho) => puck(0.0082, 0.35)(rho) + (rho < 0.42 ? 0.0016 : 0), { nr: 7, na: 36 }), 0x202124));
+    parts.gear.push(paint(helmetPatch(1.33, s * 1.32, 0.022, 0.03, (rho) => 0.0105 - 0.001 * rho, { nr: 3, na: 16 }), 0x8c8f94));
   }
-  // top intakes: dark slots at the front of the two scoops, rear exhaust slots
+  // top intakes: the dark mouths of the two scoops ahead of the crown; rear exhausts
   for (const s of [-1, 1]) {
-    const p = helmetPoint(0.5, s * 0.42, 0.004);
-    parts.gear.push(paint(rbox(0.004, 0.006, 0.026, p, [0, 0, -0.9]), 0x0d0d0e));
-    const q = helmetPoint(1.75, Math.PI - s * 0.32, 0.001);
-    parts.gear.push(paint(rbox(0.008, 0.01, 0.028, q, [0, 0, 0.6]), 0x0d0d0e));
+    parts.gear.push(paint(helmetPatch(0.6, s * 0.42, 0.035, 0.085, (rho) => 0.0045 - 0.002 * rho, { nr: 4, na: 24 }), 0x0d0d0e));
+    parts.gear.push(paint(helmetPatch(1.75, Math.PI - s * 0.32, 0.05, 0.09, (rho, a, b) => 0.0025 - 0.0015 * rho + (Math.abs(b) < 0.25 ? -0.001 : 0), { nr: 4, na: 24 }), 0x0d0d0e));
   }
-  // spoiler gurney lip
-  { const pts = []; for (let j = 0; j <= 12; j++) { const ph = Math.PI - 0.55 + (1.1 * j) / 12; pts.push(helmetPoint(1.0, ph, 0.012)); } parts.gear.push(paint(tubeR(pts, 0.003, { radial: 5, seg: 12, flat: 0.5 }), 0x101012)); }
-  // chin vent grille on the chin bar
-  parts.gear.push(paint(rbox(0.006, 0.022, 0.044, helmetPoint(1.98, 0, -0.0005), [0, 0, 0.6]), 0x111113));
-  for (let k = 0; k < 3; k++) parts.gear.push(paint(rbox(0.003, 0.0025, 0.04, helmetPoint(1.94 + k * 0.035, 0, 0.0025), [0, 0, 0.6]), 0x2a2b2e));
+  // rear spoiler: a wing standing off the back of the crown with a crisp trailing edge, in
+  // the shell's paint
+  parts.shell.push(helmetPatch(1.02, Math.PI, 0.19, 0.5, (rho, a, b) => 0.015 * smooth(-1, 0.55, b) * (1 - smooth(0.82, 0.97, b)) * (1 - smooth(0.7, 1, Math.abs(a))) - 0.001, { nr: 10, na: 48, uvFull: true }));
+  // chin vent: a dark grille with three slats
+  parts.gear.push(paint(helmetPatch(1.96, 0, 0.09, 0.2, (rho) => puck(0.0025, 0.3)(rho), { nr: 5, na: 32 }), 0x111113));
+  for (let k = -1; k <= 1; k++) parts.gear.push(paint(helmetPatch(1.96 + k * 0.042, 0, 0.012, 0.16, (rho) => 0.0035 - 0.001 * rho, { nr: 2, na: 16 }), 0x2a2b2e));
   // neck roll round the open base, liner just inside
   parts.gear.push(paint(helmetSurf(0, 0, -Math.PI, Math.PI, 3, 48, -0.008, false, (fr, ph) => HB(ph) - 0.06 + 0.12 * fr), 0x161617));
   // chin curtain: black fabric closing the opening under the chin bar
