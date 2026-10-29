@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { buildCenterline, smooth1D } from './trackgen.js';
 import { THEMES } from './themes.js';
 import {
-  roadTextures, groundTextures, curbTexture, concreteTexture, tireWallTexture, armcoTexture,
+  roadTextures, groundTextures, curbTexture, concreteTexture, tireWallTexture, tireWallSet, armcoTexture,
   makeCanvas, toTexture, checkerTexture,
 } from '../core/textures.js';
 import { clamp } from '../core/utils.js';
@@ -581,8 +581,8 @@ export class Track {
           add(this.extrude([{ a: [d - side * 0.01, 0.12], b: [d - side * 0.01, 0.16], n: [-side, 0] }], 4), nm, false);
         }
       } else if (th.barrier === 'tirewall') {
-        const tex = tireWallTexture();
-        const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 });
+        const tw = tireWallSet();
+        const mat = new THREE.MeshStandardMaterial({ map: tw.map, normalMap: tw.normalMap, roughnessMap: tw.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(1.2, 1.2) });
         add(this.extrude([
           { a: [d, 0], b: [d, 0.95], n: [-side, 0] },
           { a: [d, 0.95], b: [d + side * 0.9, 0.95], n: [0, 1], u: [0, 0.3] },

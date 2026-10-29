@@ -268,31 +268,71 @@ export class Scenery {
 
   _grandstands() {
     const t = this.track;
-    const mat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.7, metalness: 0.2 });
-    const seatCols = [0xc8102e, 0x123fb0, 0xf2f2f2, 0xffd400];
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide });
-    for (const [s0, side, len] of [[-180, 1, 160], [60, 1, 120], [-60, -1, 60]]) {
+    const concrete = new THREE.MeshStandardMaterial({ color: 0xa8a8a2, roughness: 0.85, metalness: 0 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0xc4c8cc, roughness: 0.35, metalness: 0.8 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xe6e8ea, roughness: 0.45, metalness: 0.5, side: THREE.DoubleSide });
+    for (const [s0, side, len, seed] of [[-180, 1, 160, 1], [60, 1, 120, 2], [-60, -1, 60, 3]]) {
       const p = t.pointAt(s0 + len / 2, side * (t.barrierD + 14));
       const g = new THREE.Group();
-      const steps = 10;
+      const steps = 12;
+      // spectators: one crowd texture per stand, tiled every 6 m along each riser
+      const crowd = crowdTexture(seed);
+      const crowdMat = new THREE.MeshStandardMaterial({ map: crowd, roughness: 0.9 });
+      const riserGeos = [], treadGeos = [];
       for (let k = 0; k < steps; k++) {
-        const st = new THREE.Mesh(new THREE.BoxGeometry(len, 0.6, 1.4), k % 2 ? mat : new THREE.MeshStandardMaterial({ color: seatCols[k % 4], roughness: 0.6 }));
-        st.position.set(0, 0.3 + k * 0.6, side * k * 1.2);
-        st.castShadow = true; st.receiveShadow = true;
-        g.add(st);
+        const z = side * k * 1.1, y = k * 0.55;
+        // riser with people seated on the step below it, tread (concrete)
+        const riser = new THREE.PlaneGeometry(len, 1.15);
+        const uv = riser.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * len / 6 + k * 0.37, uv.getY(i));
+        riser.rotateY(side > 0 ? Math.PI : 0);
+        riser.translate(0, y + 0.5, z - side * 0.55);
+        riserGeos.push(riser);
+        const tread = new THREE.BoxGeometry(len, 0.12, 1.1);
+        tread.translate(0, y - 0.06, z);
+        treadGeos.push(tread);
       }
-      const back = new THREE.Mesh(new THREE.BoxGeometry(len, 8, 0.4), mat);
-      back.position.set(0, 4, side * (steps * 1.2 + 0.4));
+      const rm = new THREE.Mesh(mergeGeometries(riserGeos, false), crowdMat);
+      rm.receiveShadow = true;
+      g.add(rm);
+      const tm = new THREE.Mesh(mergeGeometries(treadGeos, false), concrete);
+      tm.receiveShadow = true; tm.castShadow = true;
+      g.add(tm);
+      // raked support structure under the stand and the back wall
+      const back = new THREE.Mesh(new THREE.BoxGeometry(len, steps * 0.55 + 7, 0.35), concrete);
+      back.position.set(0, (steps * 0.55 + 7) / 2, side * (steps * 1.1 + 0.2));
+      back.castShadow = true; back.receiveShadow = true;
       g.add(back);
-      const roof = new THREE.Mesh(new THREE.PlaneGeometry(len, 15), roofMat);
-      roof.rotation.x = -Math.PI / 2 - side * 0.12;
-      roof.position.set(0, 10, side * 6);
-      roof.castShadow = true;
+      const under = new THREE.Mesh(new THREE.BoxGeometry(len, 0.5, steps * 1.15), concrete);
+      under.rotation.x = side * Math.atan2(0.55, 1.1);
+      under.position.set(0, steps * 0.55 / 2 - 0.6, side * steps * 1.1 / 2);
+      g.add(under);
+      // front: railing + advertising hoarding
+      const hoard = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.0), new THREE.MeshStandardMaterial({ map: hoardingTexture(seed), roughness: 0.5 }));
+      { const uv = hoard.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * len / 12); }
+      hoard.rotation.y = side > 0 ? Math.PI : 0;
+      hoard.position.set(0, 0.5, -side * 0.75);
+      g.add(hoard);
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, len, 6).rotateZ(Math.PI / 2), steel);
+      rail.position.set(0, 1.15, -side * 0.7);
+      g.add(rail);
+      // cantilever roof on steel columns with raking trusses
+      const roofW = steps * 1.1 + 4;
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(len + 2, 0.18, roofW), roofMat);
+      roof.rotation.x = side * 0.07;
+      roof.position.set(0, steps * 0.55 + 7.2, side * (steps * 1.1 - roofW / 2 + 1.2));
+      roof.castShadow = true; roof.receiveShadow = true;
       g.add(roof);
-      for (let x = -len / 2; x <= len / 2; x += 20) {
-        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 10), mat);
-        col.position.set(x, 5, side * (steps * 1.2 + 0.2));
+      for (let x = -len / 2; x <= len / 2 + 0.1; x += 15) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, steps * 0.55 + 7.2, 10), steel);
+        col.position.set(x, (steps * 0.55 + 7.2) / 2, side * (steps * 1.1 + 0.6));
+        col.castShadow = true;
         g.add(col);
+        const truss = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, roofW), steel);
+        truss.rotation.x = side * 0.07;
+        truss.position.set(x, steps * 0.55 + 6.85, side * (steps * 1.1 - roofW / 2 + 1.2));
+        truss.castShadow = true;
+        g.add(truss);
       }
       // local x along the track, local +z = track right (steps rise away from the track)
       g.position.set(p.x, p.y - 0.2, p.z);
@@ -546,6 +586,63 @@ function gableRoof(L, S, rh, th) {
 }
 
 const _houseCache = new Map();
+
+// seated spectators over the stand's seat rows: shirts, heads, the odd flag and cap; 6 m tile
+function crowdTexture(seed) {
+  const key = 'crowd' + seed;
+  if (_houseCache.has(key)) return _houseCache.get(key);
+  const W = 512, H = 96;
+  const { c, g } = makeCanvas(W, H);
+  const r = rng(seed * 31 + 7);
+  const seat = ['#1d4fb8', '#c8102e', '#1d4fb8', '#2a2c30'][seed % 4];
+  g.fillStyle = '#7d7d78'; g.fillRect(0, 0, W, H);
+  // seat backs
+  for (let x = 0; x < W; x += 21) { g.fillStyle = seat; g.fillRect(x + 2, 34, 17, 34); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x + 2, 62, 17, 6); }
+  const shirts = ['#d8d8d8', '#202226', '#c8102e', '#1e4bb0', '#f2c200', '#2a8a3a', '#f08020', '#ffffff', '#6a3a8a', '#e85a9a', '#3a3a3a', '#8a5a3a'];
+  const skins = ['#f1c7a5', '#e0ac87', '#c68863', '#9a6544', '#6e4630', '#f7d7bd'];
+  for (let x = 4; x < W; x += 10.5) {
+    if (r() < 0.16) continue; // empty seat
+    const px = x + (r() - 0.5) * 3, top = 22 + r() * 8;
+    g.fillStyle = shirts[Math.floor(r() * shirts.length)];
+    g.beginPath(); g.moveTo(px - 6, H - 10); g.lineTo(px - 5.5, top + 14); g.quadraticCurveTo(px, top + 9, px + 5.5, top + 14); g.lineTo(px + 6, H - 10); g.fill();
+    g.fillStyle = skins[Math.floor(r() * skins.length)];
+    g.beginPath(); g.arc(px, top + 6, 4.2, 0, Math.PI * 2); g.fill();
+    // hair / caps
+    const hr = r();
+    g.fillStyle = hr < 0.2 ? shirts[Math.floor(r() * shirts.length)] : ['#2a1a10', '#4a2a18', '#0e0e0e', '#c0a060', '#8a8a8a'][Math.floor(r() * 5)];
+    g.beginPath(); g.arc(px, top + 4.5, 4.4, Math.PI, 0); g.fill();
+    if (hr < 0.2) g.fillRect(px - 1, top + 3, 7, 2);
+    // a raised arm or a flag now and then
+    if (r() < 0.06) { g.fillStyle = shirts[Math.floor(r() * shirts.length)]; g.fillRect(px + 4, top - 14, 2, 22); g.fillStyle = ['#c8102e', '#1e4bb0', '#f2c200', '#ffffff'][Math.floor(r() * 4)]; g.fillRect(px + 6, top - 14, 12, 8); }
+  }
+  // the step below (concrete) and soft shadow from the people
+  g.fillStyle = '#8a8a85'; g.fillRect(0, H - 10, W, 10);
+  const grd = g.createLinearGradient(0, H - 18, 0, H - 10); grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,0.35)');
+  g.fillStyle = grd; g.fillRect(0, H - 18, W, 8);
+  const tex = toTexture(c);
+  _houseCache.set(key, tex);
+  return tex;
+}
+
+// trackside advertising boards: 12 m tile of four sponsor panels
+function hoardingTexture(seed) {
+  const key = 'hoard' + seed;
+  if (_houseCache.has(key)) return _houseCache.get(key);
+  const W = 1024, H = 86;
+  const { c, g } = makeCanvas(W, H);
+  const names = ['MÍTICO', 'VELOX', 'KRYO', 'RAYO', 'NEXOL', 'ZENTEK', 'TURBOMAX', 'AURA'];
+  const bgs = ['#c8102e', '#101114', '#0a3a8a', '#f2c200', '#f2f2f2', '#0e7a4a', '#ff6a00', '#6a1aa0'];
+  for (let k = 0; k < 4; k++) {
+    const i = (seed * 3 + k) % names.length;
+    g.fillStyle = bgs[i]; g.fillRect(k * W / 4, 0, W / 4, H);
+    g.fillStyle = i === 3 || i === 4 ? '#111' : '#fff'; g.font = 'bold 54px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(names[i], k * W / 4 + W / 8, H / 2 + 2);
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(k * W / 4, 0, 2, H);
+  }
+  const tex = toTexture(c);
+  _houseCache.set(key, tex);
+  return tex;
+}
 // plaster wall with one window bay per 4 m tile (shutters for villas, timber + window boxes for chalets)
 function houseWallTexture(kind) {
   if (_houseCache.has('w' + kind)) return _houseCache.get('w' + kind);

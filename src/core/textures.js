@@ -343,28 +343,60 @@ export function polishedConcreteTexture(seed = 4) {
   });
 }
 
-export function tireWallTexture() {
-  return cached('tirewall', () => {
-    const { c, g } = makeCanvas(256, 128);
-    g.fillStyle = '#111'; g.fillRect(0, 0, 256, 128);
-    for (let row = 0; row < 3; row++) {
-      for (let i = 0; i < 4; i++) {
-        const x = i * 64 + 32 + (row % 2) * 32, y = row * 42 + 22;
-        const grd = g.createRadialGradient(x, y, 4, x, y, 30);
-        grd.addColorStop(0, '#000');
-        grd.addColorStop(0.45, '#000');
-        grd.addColorStop(0.5, '#2a2a2a');
-        grd.addColorStop(0.9, '#1a1a1a');
-        grd.addColorStop(1, '#080808');
-        g.fillStyle = grd;
-        g.beginPath(); g.arc(x, y, 30, 0, Math.PI * 2); g.fill();
-        g.beginPath(); g.arc(x - 64 * 4, y, 30, 0, Math.PI * 2); g.fill();
+export function tireWallTexture() { return tireWallSet().map; }
+
+// Tyre barrier seen from the track (tile 2.6 m x 0.95 m): stacks of tyres laid flat, so
+// each shows its tread as a rounded band, bolted in rows; a sponsor conveyor belt covers
+// the upper stacks. map + relief normal + roughness.
+export function tireWallSet() {
+  return cached('tirewall3', () => {
+    const W = 512, H = 256;
+    const { c, g } = makeCanvas(W, H);
+    const img = g.createImageData(W, H);
+    const h = new Float32Array(W * H);
+    const r = rng(12);
+    const rows = 4, rowH = H / rows, tyreW = 122;
+    for (let row = 0; row < rows; row++) {
+      const off = (row % 2) * tyreW * 0.5 + r() * 10;
+      for (let y = row * rowH; y < (row + 1) * rowH; y++) {
+        const v = (y - row * rowH) / rowH;           // across the tread (0..1)
+        const prof = Math.sin(v * Math.PI);            // tread crown
+        for (let x = 0; x < W; x++) {
+          const u = (((x - off) % tyreW) + tyreW) % tyreW / tyreW; // around the visible half of the tyre
+          const cyl = Math.sin(u * Math.PI);           // cylinder seen side-on: darker toward its flanks
+          const groove = (Math.abs(((u * 26) % 1) - 0.5) < 0.12 && v > 0.18 && v < 0.82) ? 0.6 : 1;
+          const gap = cyl < 0.12 || v < 0.05 || v > 0.95;
+          const base = gap ? 4 : (14 + 26 * cyl * prof) * groove + 6;
+          const o = (y * W + x) * 4;
+          img.data[o] = img.data[o + 1] = img.data[o + 2] = base; img.data[o + 3] = 255;
+          h[y * W + x] = gap ? 0 : cyl * (0.6 + 0.4 * prof) * (groove < 1 ? 0.85 : 1);
+        }
       }
     }
-    // colored belt
-    g.fillStyle = '#c8102e'; g.fillRect(0, 54, 256, 16);
-    g.fillStyle = '#fff'; g.fillRect(0, 58, 256, 3);
-    return toTexture(c);
+    g.putImageData(img, 0, 0);
+    // conveyor belt over the upper three rows: sponsor panels with bolts and a little sag
+    const names = ['MÍTICO', 'VELOX', 'KRYO', 'RAYO', 'NEXOL'];
+    const cols = ['#c8102e', '#f0f0f0', '#0a3a8a', '#f2c200', '#141517'];
+    const bt = 6, bb = rowH * 3 - 4;
+    for (let k = 0; k < 2; k++) {
+      const x0 = k * (W / 2), ci = (k * 2 + 1) % cols.length;
+      g.fillStyle = cols[ci]; g.fillRect(x0, bt, W / 2, bb - bt);
+      const grd = g.createLinearGradient(0, bt, 0, bb); grd.addColorStop(0, 'rgba(255,255,255,0.08)'); grd.addColorStop(1, 'rgba(0,0,0,0.18)');
+      g.fillStyle = grd; g.fillRect(x0, bt, W / 2, bb - bt);
+      g.fillStyle = ci === 1 || ci === 3 ? '#121212' : '#ffffff'; g.font = 'bold 74px sans-serif'; g.textAlign = 'center';
+      g.fillText(names[(k * 3) % names.length], x0 + W / 4, bt + (bb - bt) * 0.66);
+      g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x0 + W / 2 - 2, bt, 3, bb - bt);
+      for (let y = bt; y < bb; y++) for (let x = x0; x < x0 + W / 2; x++) h[y * W + x] = 1.15 - ((x - x0) % (W / 2) < 3 ? 0.4 : 0);
+      g.fillStyle = 'rgba(175,175,175,0.9)';
+      for (const by of [bt + 7, bb - 7]) for (let bx = x0 + 14; bx < x0 + W / 2; bx += 40) { g.beginPath(); g.arc(bx, by, 3, 0, Math.PI * 2); g.fill(); }
+    }
+    // dust thrown up from the run-off, rubber scuffs low down
+    for (let k = 0; k < 700; k++) { g.fillStyle = `rgba(125,112,95,${r() * 0.1})`; g.fillRect(r() * W, H * (0.55 + r() * 0.45), 2 + r() * 12, 1 + r() * 3); }
+    for (let k = 0; k < 30; k++) { g.fillStyle = `rgba(0,0,0,${0.1 + r() * 0.2})`; g.fillRect(r() * W, bt + r() * (bb - bt), 20 + r() * 60, 2 + r() * 4); }
+    const rc = makeCanvas(W, H);
+    rc.g.fillStyle = 'rgb(228,228,228)'; rc.g.fillRect(0, 0, W, H);
+    rc.g.fillStyle = 'rgb(140,140,140)'; rc.g.fillRect(0, bt, W, bb - bt);
+    return { map: toTexture(c), normalMap: toTexture(heightToNormal(h, W, H, 3), { srgb: false }), roughnessMap: toTexture(rc.c, { srgb: false }) };
   });
 }
 

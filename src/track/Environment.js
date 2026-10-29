@@ -142,7 +142,8 @@ export class Environment {
       const a = this.psky.skyAvg, g = this.psky.groundL;
       const la = Math.max(1e-4, a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722), lg = Math.max(1e-4, g[0] * 0.2126 + g[1] * 0.7152 + g[2] * 0.0722);
       hemi.color.setRGB(a[0] / la, a[1] / la, a[2] / la);
-      hemi.groundColor.setRGB(g[0] / lg, g[1] / lg, g[2] / lg).multiplyScalar(Math.min(1, lg / la));
+      // ground bounce: mixed surfaces (asphalt, gravel, grass), so only half the ground's chroma
+      hemi.groundColor.setRGB(g[0] / lg, g[1] / lg, g[2] / lg).lerp(new THREE.Color(1, 1, 1), 0.5).multiplyScalar(Math.min(1, lg / la));
       hemi.intensity *= 0.75;
       if (W.gray) hemi.color.lerp(new THREE.Color(0xc8ccd4), W.gray * 0.5);
     } else if (W.gray) hemi.color.lerp(new THREE.Color(0xc8ccd4), W.gray * 0.6);
