@@ -62,6 +62,8 @@ export class CameraController {
     const model = bike.model;
     const mode = opts.forceMode ?? this.mode;
     const cam = this.cam;
+    // a forced camera (the flag, the replay director) frees the helmet-camera rider's head
+    if (mode !== 2 && this._pov) { this._pov.pov = false; this._pov = null; }
     const sp = ph.v;
     const yawTarget = ph.vh + clamp(wrapAngle(ph.h - ph.vh), -0.4, 0.4) * 0.5;
     if (!this.initialized) { this.yaw = yawTarget; }
