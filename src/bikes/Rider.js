@@ -23,7 +23,7 @@
 // downshift throttle blips, standing up over gravel and grass, stoppies braced on locked
 // arms, visor wipes with the left glove on wet straights, idle life at a standstill
 // (breathing, glances, visor wipes, hand flexes, standing up off the seat to stretch),
-// victory celebrations (fist pumps, the
+// victory celebrations (fist pumps, both arms up in a V with the machine stopped, the
 // winner standing to point at the sky, waves to the crowd), a relaxed cool-down lap with a
 // hand resting on the thigh, and crashes in world space:
 // a highside flings the body over the front in a curled tumble that lands on the shoulders
@@ -1263,6 +1263,7 @@ export class Rider {
     this.sp = { surge: new Spring(70, 11), heave: new Spring(160, 13), sway: new Spring(55, 9), headP: new Spring(120, 12), headR: new Spring(100, 11) };
     this.t = hash(seed * 1.7) * 10;
     this._ovP = V(); this._ovD = new THREE.Vector3(1, 0, 0);
+    this._ovRP = V(); this._ovRD = new THREE.Vector3(1, 0, 0); // right arm, only with the machine stopped
     this.update({ speed: 0 }, 1);
   }
 
@@ -1359,7 +1360,7 @@ export class Rider {
     const headLagR = sp.headR.step(clamp(-st.leanVel * 0.06, -0.2, 0.2), dt);
 
     // ---------------- idle life and celebrations: the left arm can leave the bar
-    let ovW = 0, headYaw = 0, headPitch = 0, headRoll = 0, fingL = 0, armRaise = 0, sitUp = 0, straddle = 0;
+    let ovW = 0, ovRW = 0, fingR = 0, headYaw = 0, headPitch = 0, headRoll = 0, fingL = 0, armRaise = 0, sitUp = 0, straddle = 0;
     const ov = this._ovP, ovD = this._ovD;
     if (st.stop > 0.9 && st.grid < 0.5 && !crashed && finT < 0) {
       if (!settle) {
@@ -1437,6 +1438,16 @@ export class Rider {
       }
       headYaw += -0.55 * on * (finT < 5.6 ? 1 : 0.5) + (win && finT > 3.6 && finT < 5.6 ? 0.55 * on : 0);
       headPitch += (win && finT > 3.6 && finT < 5.6 ? 0.45 : 0.12) * on;
+      // stopped (the podium): no throttle to hold, so both arms go up in a V, fists clenched
+      if (st.stop > 0.5 && !waving) {
+        ovRW = on * st.stop;
+        this._ovRP.copy(this.limbs[1].sh).add(_tmp.set(0.05 + 0.03 * pump, 0.44 + 0.07 * pump, 0.22));
+        this._ovRD.set(0.05, 1, 0.25);
+        fingR = 0.9;
+        // the left arm mirrors it (unless the winner is pointing to the sky)
+        if (!(win && finT >= 3.6)) { ov.copy(this.limbs[0].sh).add(_tmp.set(0.05 + 0.03 * pump, 0.44 + 0.07 * pump, -0.22)); ovD.set(0.05, 1, -0.25); }
+        headYaw *= 0.3; // facing the crowd, not one side
+      }
       // cool-down lap: sitting up, relaxed, the left hand resting on the thigh now and then
       if (cool > 0) {
         sitUp = Math.max(sitUp, 0.55 * cool);
@@ -1529,7 +1540,7 @@ export class Rider {
     for (const L of this.limbs) {
       const s0 = L.s;
       const prot = 0.38 * tuck + 0.12 * st.brake + 0.1 * st.grid;
-      const elev = (s0 < 0 ? armRaise * 0.55 + ovW * 0.25 : 0) - 0.06 + (s0 === Math.sign(h) ? -0.12 * ha : 0.06 * ha);
+      const elev = (s0 < 0 ? armRaise * 0.55 + ovW * 0.25 : ovRW * 0.8) - 0.06 + (s0 === Math.sign(h) ? -0.12 * ha : 0.06 * ha);
       L.c0.copy(_N).addScaledVector(_g, -0.03).addScaledVector(_latC, s0 * 0.025);
       _tmp.copy(_latC).multiplyScalar(s0 * Math.cos(prot)).addScaledVector(_fw, Math.sin(prot)).addScaledVector(_g, elev).normalize();
       L.sh.copy(L.c0).addScaledVector(_tmp, B.clav);
@@ -1566,10 +1577,10 @@ export class Rider {
       if (s0 > 0) _hd.applyAxisAngle(ZAX, roll);
       _hd.applyAxisAngle(UP, steerA);
       _hz.copy(ZAX).applyAxisAngle(UP, steerA);
-      const w = s0 < 0 ? ovW : 0;
+      const w = s0 < 0 ? ovW : ovRW;
       if (w > 0.001) {
-        wrist.lerp(ov, w);
-        _hd.lerp(_tmp.copy(ovD).normalize(), w).normalize();
+        wrist.lerp(s0 < 0 ? ov : this._ovRP, w);
+        _hd.lerp(_tmp.copy(s0 < 0 ? ovD : this._ovRD).normalize(), w).normalize();
         _hz.lerp(_tmp.copy(_latC), w).normalize();
       }
       if (st.crash > 0) {
@@ -1588,7 +1599,7 @@ export class Rider {
       placeSeg(b('hand'), wrist, _tmp, _hz);
       // lever fingers: brake (right) and clutch (left); a fist or a pointing finger when raised
       const hand = b('hand'), fing = b('fing');
-      const curl = s0 > 0 ? st.brakeF * 0.42 : Math.max(st.clutch * 0.5, fingL);
+      const curl = s0 > 0 ? Math.max(st.brakeF * 0.42, fingR) : Math.max(st.clutch * 0.5, fingL);
       fing.position.set(...KNUCKLE).applyQuaternion(hand.quaternion).add(hand.position);
       _qa.setFromAxisAngle(ZAX, -curl);
       fing.quaternion.copy(hand.quaternion).multiply(_qa);
