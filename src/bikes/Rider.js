@@ -8,7 +8,9 @@
 // graphic design, chin curtain and a smoked or iridium visor. Fictional brands and names only.
 //
 // Every rigid piece of gear is skinned 100 % to its bone and merged with the body by
-// material, so a whole rider is five draw calls (suit, gear, boots, helmet, visor).
+// material, so a whole rider is five draw calls (suit, gear, boots, helmet, visor). Riders
+// differ in height (±5 %) and build: the bones carry the scale and the solver uses each
+// rider's own segment lengths.
 //
 // Animation is procedural and layered every frame on top of two-bone IK (seat under the
 // pelvis, hands on the grips following the steering, balls of the feet on the pegs):
@@ -1244,6 +1246,18 @@ export class Rider {
       sm.bind(skeleton);
       this.meshes.push(sm);
     }
+    // body proportions differ between riders: height (segment lengths) and build (girth,
+    // shoulder and hip width). The bones carry the scale, so the shared skinned meshes
+    // stretch with them; the solver works with this rider's own lengths.
+    const kH = opts.height ?? 0.95 + 0.1 * hash(seed * 0.71), kW = opts.build ?? 0.95 + 0.12 * hash(seed * 1.37);
+    this.B = { ...B };
+    for (const n of ['pelvis', 'spine', 'chest', 'neck', 'shoulderDrop', 'upper', 'fore', 'thigh', 'shin']) this.B[n] = B[n] * kH;
+    this.B.clav = B.clav * kW; this.B.hipW = B.hipW * kW;
+    for (const i of [BONE.pelvis, BONE.spine, BONE.chest]) this.bones[i].scale.set(kW, kH, kW);
+    for (const sd of [-1, 1]) {
+      for (const n of ['upper', 'fore', 'thigh', 'shin']) this.bones[boneIndex(sd, n)].scale.set(kW, kH, kW);
+      this.bones[boneIndex(sd, 'clav')].scale.set(1, kW, 1);
+    }
     // skeleton targets from the bike
     const seat = ctx.seat || { x: (ctx.pegs?.x ?? -0.2) + 0.05, y: 0.82 };
     this.seat = new THREE.Vector3(seat.x, seat.y, 0);
@@ -1272,6 +1286,7 @@ export class Rider {
 
   update(s, dt) {
     if (s.stand) { this._standPose(dt); return; }
+    const B = this.B; // this rider's own proportions
     if (this._standing) { this._standing = false; this.root.position.set(0, 0, 0); this.root.quaternion.identity(); }
     const st = this.st, S = this.style, bn = this.bones, sp = this.sp;
     const settle = !(dt > 0) || dt > 0.25;
@@ -1783,6 +1798,7 @@ export class Rider {
   // the right hand resting on the seat; idle glances, a visor check, glove flexes, a neck
   // stretch, the left hand on the hip
   _standPose(dt) {
+    const B = this.B;
     const st = this.st, bn = this.bones;
     const settle = !(dt > 0) || dt > 0.25;
     if (!settle) this.t += dt;
@@ -1812,7 +1828,7 @@ export class Rider {
     // contrapposto: the weight settles on one leg for a while, then the other
     const shift = clamp(Math.sin(t * 0.22 + this.seed) * 1.7, -1, 1) * 0.85 + Math.sin(t * 0.13 + 1) * 0.15, breath = Math.sin(t * 1.6);
     // pelvis over the loaded leg, spine upright with a slight sway, chest lifting on the breath
-    const P = _P.set(0, 0.925 - 0.015 * Math.abs(shift), 0.05 * shift);
+    const P = _P.set(0, 0.075 + 0.966 * (B.thigh + B.shin) - 0.015 * Math.abs(shift), 0.05 * shift);
     const segDir = (a, b, out) => out.set(Math.sin(a), Math.cos(a), Math.tan(b)).normalize();
     const th = 0.03 + 0.012 * breath, latBend = -0.09 * shift, twist = -0.12 + 0.06 * shift;
     segDir(th * 0.5, latBend * 0.3, _e); _L.copy(P).addScaledVector(_e, B.pelvis);
